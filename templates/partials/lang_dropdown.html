@@ -1,0 +1,36 @@
+{# Canonical pibiCo language dropdown — drop into .app-header-actions.
+   Wired to the canonical i18n.js engine (window.i18n.setLang + _updateLangDropdown).
+   Add a .pibico-lang-opt row per supported locale; the engine keeps the button
+   flag/label in sync. Flags are inline SVG (no image assets, no CDN). #}
+<div class="pibico-lang-dropdown" id="langDropdown">
+  <button type="button" class="pibico-lang-btn"
+          onclick="document.getElementById('langMenu').classList.toggle('open')">
+    <span class="pibico-flag" id="langFlagCurrent">
+      <svg viewBox="0 0 36 36"><rect fill="#c60b1e" width="36" height="9"/><rect fill="#ffc400" y="9" width="36" height="18"/><rect fill="#c60b1e" y="27" width="36" height="9"/></svg>
+    </span>
+    <span id="langLabelCurrent">ES</span>
+    <span class="pibico-lang-arrow">&#9662;</span>
+  </button>
+  <div class="pibico-lang-menu" id="langMenu">
+    <div class="pibico-lang-opt selected" data-lang="es" onclick="i18n.setLang('es')">
+      <span class="pibico-flag">
+        <svg viewBox="0 0 36 36"><rect fill="#c60b1e" width="36" height="9"/><rect fill="#ffc400" y="9" width="36" height="18"/><rect fill="#c60b1e" y="27" width="36" height="9"/></svg>
+      </span>
+      Espa&ntilde;ol
+    </div>
+    <div class="pibico-lang-opt" data-lang="en" onclick="i18n.setLang('en')">
+      <span class="pibico-flag">
+        <svg viewBox="0 0 36 36"><rect fill="#00247d" width="36" height="36"/><path d="M0,0 L36,36 M36,0 L0,36" stroke="#fff" stroke-width="6"/><path d="M0,0 L36,36 M36,0 L0,36" stroke="#cf142b" stroke-width="4"/><path d="M18,0 V36 M0,18 H36" stroke="#fff" stroke-width="10"/><path d="M18,0 V36 M0,18 H36" stroke="#cf142b" stroke-width="6"/></svg>
+      </span>
+      English
+    </div>
+    {# Optional French locale — uncomment if the app ships i18n.fr.js
+    <div class="pibico-lang-opt" data-lang="fr" onclick="i18n.setLang('fr')">
+      <span class="pibico-flag">
+        <svg viewBox="0 0 36 36"><rect fill="#fff" width="36" height="36"/><rect fill="#002395" width="12" height="36"/><rect fill="#ed2939" x="24" width="12" height="36"/></svg>
+      </span>
+      Fran&ccedil;ais
+    </div>
+    #}
+  </div>
+</div>

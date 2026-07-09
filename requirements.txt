@@ -1,0 +1,7 @@
+fastapi>=0.115.0
+uvicorn[standard]
+pydantic>=2.0
+pydantic-settings
+python-dotenv
+jinja2
+paho-mqtt

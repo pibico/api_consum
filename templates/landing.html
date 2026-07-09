@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>CONSUM-IA — Entiende y reduce el consumo de tu casa · pibiCo</title>
+<meta name="description" content="CONSUM-IA: la pasarela de energía doméstica de pibiCo. Mide cada aparato, detecta electrodomésticos por su firma de consumo y te lo cuenta en euros y frases claras.">
+<link rel="icon" href="{{ root_path }}/static/icons/pibico_icon.svg">
+<link rel="stylesheet" href="{{ root_path }}/static/css/fonts.css">
+<link rel="stylesheet" href="{{ root_path }}/static/css/pibico.css">
+<link rel="stylesheet" href="{{ root_path }}/static/css/consum.css?v=1">
+<script>window.ROOT_PATH = '{{ root_path }}';</script>
+<script src="{{ root_path }}/static/js/i18n.es.js?v=1" defer></script>
+<script src="{{ root_path }}/static/js/i18n.en.js?v=1" defer></script>
+<script src="{{ root_path }}/static/js/i18n.js?v=1" defer></script>
+</head>
+<body>
+<div class="app-layout">
+  <header class="app-header">
+    <div class="app-header-title">
+      <img src="{{ root_path }}/static/icons/pibico_icon.svg" alt="pibiCo" width="26" height="26">
+      <span>CONSUM-IA</span>
+    </div>
+    <div class="app-header-actions">
+      {% include "partials/lang_dropdown.html" %}
+      <a class="app-header-btn" href="{{ root_path }}/api/redoc" target="_blank" title="API Docs" aria-label="API Docs">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+      </a>
+    </div>
+  </header>
+
+  <main class="ld">
+    <!-- ============================ HERO ============================ -->
+    <section class="ld-hero">
+      <h1 data-i18n="ld.heroTitle">Entiende y reduce el consumo de tu casa</h1>
+      <p class="ld-hero-sub" data-i18n="ld.heroSub">CONSUM-IA es una pequeña caja que se conecta a tu cuadro eléctrico. Mide lo que gasta cada cosa, aprende los hábitos de tu hogar y te lo cuenta en euros y frases claras — pensada para que la use cualquiera, sin tecnicismos.</p>
+      <div class="ld-hero-chips">
+        <span class="ld-chip" data-i18n="ld.chip1">Sin cambiar de compañía</span>
+        <span class="ld-chip" data-i18n="ld.chip2">Funciona sin internet</span>
+        <span class="ld-chip" data-i18n="ld.chip3">Tus datos se quedan en casa</span>
+      </div>
+    </section>
+
+    <!-- ========================= HOME SCREEN ======================== -->
+    <section class="ld-block">
+      <div class="ld-txt">
+        <h2 data-i18n="ld.s1Title">Un vistazo y lo sabes todo</h2>
+        <p data-i18n="ld.s1Text">La pantalla de Inicio habla claro: un semáforo dice si hoy vas normal o alto; lo gastado hoy y este mes, en euros; si la luz está cara o barata ahora mismo; un consejo al día; y lo que está encendido — traducido a bombillas y céntimos por hora. Si ayer lo hiciste bien, te lo celebra.</p>
+      </div>
+      <img src="{{ root_path }}/static/images/help/help-home-es.png" data-i18n-attr-src="ld.imgHome" alt="Inicio" loading="lazy">
+    </section>
+
+    <!-- ========================== HOW IT WORKS ====================== -->
+    <section class="ld-block ld-alt">
+      <div class="ld-txt">
+        <h2 data-i18n="ld.s2Title">Contadores virtuales: mide hasta lo que no tiene enchufe</h2>
+        <p data-i18n="ld.s2Text">Una pinza en el cuadro mide toda la casa; enchufes inteligentes miden los aparatos importantes. Lo demás — vitro, horno, microondas, plancha — lo detecta por su firma de consumo, sin instalar nada más. Y cada corrección tuya le enseña.</p>
+      </div>
+      <img src="{{ root_path }}/static/images/help/help-dashboard-es.png" data-i18n-attr-src="ld.imgDashboard" alt="Sensores" loading="lazy">
+    </section>
+
+    <!-- ============================ COST ============================ -->
+    <section class="ld-block">
+      <div class="ld-txt">
+        <h2 data-i18n="ld.s3Title">Tu dinero, con tus precios</h2>
+        <p data-i18n="ld.s3Text">Introduce los precios de tu factura y todo pasa a euros: cuánto llevas hoy, cómo acabará el mes, quién gasta qué, cuánto se va en standby cada noche. Simula otra tarifa con tu curva real — "con esa oferta habrías pagado X" — y comprueba si tu factura cuadra con lo medido.</p>
+      </div>
+      <img src="{{ root_path }}/static/images/help/help-cost-es.png" data-i18n-attr-src="ld.imgCost" alt="Coste" loading="lazy">
+    </section>
+
+    <!-- ========================== WIRING/FLOW ======================= -->
+    <section class="ld-block ld-alt">
+      <div class="ld-txt">
+        <h2 data-i18n="ld.s4Title">Tu casa, dibujada</h2>
+        <p data-i18n="ld.s4Text">El árbol eléctrico muestra qué alimenta a qué; el plano de habitaciones enseña qué cuarto está gastando ahora; y el diagrama de flujo en vivo pinta a dónde va cada vatio en este momento.</p>
+      </div>
+      <img src="{{ root_path }}/static/images/help/help-wiring-es.png" data-i18n-attr-src="ld.imgWiring" alt="Cableado" loading="lazy">
+    </section>
+
+    <!-- =========================== FAMILY =========================== -->
+    <section class="ld-feature">
+      <h2 data-i18n="ld.famTitle">Tranquilidad también para la familia</h2>
+      <p data-i18n="ld.famText">Si algo se queda encendido demasiado tiempo — un horno, un radiador — la caja lo detecta y puede avisar a un familiar o cuidador. Pensado para que los mayores vivan en su casa con una red de seguridad silenciosa.</p>
+    </section>
+
+    <!-- =========================== PREMIUM ========================== -->
+    <section class="ld-tiers">
+      <div class="ld-tier">
+        <h3 data-i18n="ld.tierBasic">Básico</h3>
+        <ul>
+          <li data-i18n="ld.tb1">Pantalla de Inicio sin tecnicismos</li>
+          <li data-i18n="ld.tb2">Euros con tus precios de factura</li>
+          <li data-i18n="ld.tb3">Contadores virtuales que aprenden</li>
+          <li data-i18n="ld.tb4">Consejo del día y avisos</li>
+          <li data-i18n="ld.tb5">Todo local: funciona sin internet</li>
+        </ul>
+      </div>
+      <div class="ld-tier ld-tier-premium">
+        <h3 data-i18n="ld.tierPremium">Premium</h3>
+        <ul>
+          <li data-i18n="ld.tp1">Precios PVPC de hoy y mañana, mejores horas</li>
+          <li data-i18n="ld.tp2">Aviso a un familiar o cuidador</li>
+          <li data-i18n="ld.tp3">Previsión con clima y recomendación de tarifa</li>
+          <li data-i18n="ld.tp4">Acceso remoto seguro</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- =========================== CONTACT ========================== -->
+    <section class="ld-cta">
+      <h2 data-i18n="ld.ctaTitle">¿Quieres probarlo?</h2>
+      <p data-i18n="ld.ctaText">Estamos desplegando pilotos en hogares reales. Escríbenos y te contamos.</p>
+      <a class="ld-cta-btn" href="mailto:proyectos@pibico.org">proyectos@pibico.org</a>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <span>&copy; 2026 pibiCo</span>
+    <span class="footer-sep">|</span>
+    <a href="{{ root_path }}/api/docs" target="_blank">API Docs</a>
+    <span class="footer-sep">|</span>
+    <span>v{{ version }}</span>
+  </footer>
+</div>
+</body>
+</html>
