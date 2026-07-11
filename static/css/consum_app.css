@@ -743,3 +743,11 @@
 .comfort-stack { display: flex; flex-direction: column; gap: 0.75rem; }
 .comfort-stack > * { flex: 1; display: flex; flex-direction: column; justify-content: center; }
 @media (max-width: 768px) { .comfort-2col { grid-template-columns: 1fr; } }
+
+/* ── Ahorro (F3/OE3) ─────────────────────────────────────────────── */
+.sav-explain {
+  font-size: 0.78rem;
+  color: var(--color-text-light, #666);
+  line-height: 1.45;
+}
+#sav-cards .kpi-card { min-height: 150px; }

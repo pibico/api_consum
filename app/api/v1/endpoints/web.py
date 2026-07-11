@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "3"  # 3: Consumo page (CNS-F2)
+ASSET_VERSION = "4"  # 4: Ahorro/OE3 page (CNS-F3)
 
 
 def render_template(template_name: str, **context) -> str:
@@ -117,4 +117,4 @@ async def savings_page(request: Request):
     guard = await _require_member_page(request)
     if guard:
         return guard
-    return render_template("app.html")  # placeholder until F3 (savings.html)
+    return render_template("savings.html")

@@ -51,8 +51,12 @@ async def pvpc_range(start: str, end: str) -> Optional[dict]:
     return await _get(f"/prices/pvpc?start_date={start}&end_date={end}", ttl=3600)
 
 
-async def degree_days(lat: float, lon: float) -> Optional[dict]:
-    return await _get(f"/climate/degree-days?lat={lat}&lon={lon}", ttl=3600)
+async def degree_days(lat: float, lon: float, start: str, end: str) -> Optional[dict]:
+    """Daily HDD/CDD range → {days: [{date, temp_mean, hdd, cdd}]} (OE3)."""
+    return await _get(
+        f"/climate/degree-days?lat={lat}&lon={lon}&start_date={start}&end_date={end}",
+        ttl=3600,
+    )
 
 
 async def solar_forecast(lat: float, lon: float) -> Optional[dict]:

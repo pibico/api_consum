@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Ahorro — CONSUM-IA{% endblock %}
+{% block page_title_key %}nav.savings{% endblock %}
+{% block page_title %}Ahorro{% endblock %}
+{% block topbar_actions %}
+<select id="sav-device" class="pibico-select" style="width:auto;min-width:150px;" onchange="SavPage.reload()"></select>
+{% endblock %}
+
+{% block content %}
+{# F3 — OE3 cross-analysis: 3 insight cards (shift / thermal / window) +
+   real-vs-expected chart + tomorrow's hourly recommendation table. #}
+
+<!-- Insight cards -->
+<div class="kpi-grid-8" style="grid-template-columns:repeat(3,1fr);" id="sav-cards">
+  <div class="glass-panel kpi-card" style="align-items:flex-start;text-align:left;">
+    <div class="kpi-label" data-i18n="sav.shiftTitle">Ahorro potencial</div>
+    <div class="kpi-value" id="sv-shift" style="color:var(--color-success,#28946a);">—</div>
+    <div class="kpi-sub" data-i18n="sav.shiftUnit">€/mes desplazando consumo</div>
+    <p class="sav-explain" id="sv-shift-txt" style="margin:0.5rem 0 0;"></p>
+  </div>
+  <div class="glass-panel kpi-card" style="align-items:flex-start;text-align:left;">
+    <div class="kpi-label" data-i18n="sav.thermalTitle">Clima vs hábitos</div>
+    <div class="kpi-value" id="sv-thermal">—</div>
+    <div class="kpi-sub" data-i18n="sav.thermalUnit">del consumo lo explica el clima</div>
+    <p class="sav-explain" id="sv-thermal-txt" style="margin:0.5rem 0 0;"></p>
+  </div>
+  <div class="glass-panel kpi-card" style="align-items:flex-start;text-align:left;">
+    <div class="kpi-label" data-i18n="sav.windowTitle">Ventana recomendada</div>
+    <div class="kpi-value" id="sv-window" style="font-size:1.6rem;">—</div>
+    <div class="kpi-sub" id="sv-window-date">—</div>
+    <p class="sav-explain" id="sv-window-txt" style="margin:0.5rem 0 0;"></p>
+  </div>
+</div>
+
+<!-- Charts: real vs weather-expected + window scores -->
+<div class="wx-2col">
+  <div class="glass-panel" style="padding:0.75rem 1rem;">
+    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="sav.chartThermal">Consumo real vs esperado por clima</span>
+      <span class="text-muted" id="sv-r2" style="font-weight:400;"></span></h4>
+    <canvas id="sav-thermal-chart" style="width:100%;height:200px;"></canvas>
+    <div style="display:flex;gap:12px;margin-top:6px;font-size:0.7rem;color:var(--color-text-light);">
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(70,130,180,0.75);"></span> <span data-i18n="sav.legReal">kWh real</span></span>
+      <span><span style="display:inline-block;width:14px;height:3px;background:#8e44ad;vertical-align:middle;"></span> <span data-i18n="sav.legExpected">esperado (HDD/CDD)</span></span>
+    </div>
+  </div>
+  <div class="glass-panel" style="padding:0.75rem 1rem;">
+    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="sav.chartWindow">Precio y sol — mejores horas</span>
+      <span class="text-muted" id="sv-window-day" style="font-weight:400;"></span></h4>
+    <canvas id="sav-window-chart" style="width:100%;height:200px;"></canvas>
+    <div style="display:flex;gap:12px;margin-top:6px;font-size:0.7rem;color:var(--color-text-light);">
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(70,130,180,0.75);"></span> PVPC €/kWh</span>
+      <span><span style="display:inline-block;width:14px;height:3px;background:#f39c12;vertical-align:middle;"></span> <span data-i18n="sav.legSolar">irradiancia solar</span></span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(46,204,113,0.35);"></span> <span data-i18n="sav.legBest">ventana recomendada</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- Hourly recommendations table -->
+<div class="glass-panel">
+  <div class="filters-bar" style="justify-content:space-between;">
+    <h3 data-i18n="sav.tableTitle">Recomendaciones por hora</h3>
+    <span class="text-muted" id="sv-table-day" style="font-size:0.8rem;"></span>
+  </div>
+  <div class="table-scroll">
+    <table class="data-table" id="sav-table">
+      <thead><tr>
+        <th data-i18n="cons.colHour">Hora</th>
+        <th>PVPC €/kWh</th>
+        <th data-i18n="cons.colPeriod">Periodo</th>
+        <th data-i18n="sav.colSolar">Sol W/m²</th>
+        <th data-i18n="sav.colScore">Índice</th>
+        <th data-i18n="sav.colVerdict">Valoración</th>
+      </tr></thead>
+      <tbody id="sav-tbody"><tr><td colspan="6" class="text-center"><span class="spinner"></span></td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script src="{{ root }}/static/js/pages/savings.js?v={{ v }}" defer></script>
+{% endblock %}

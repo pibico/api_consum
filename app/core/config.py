@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     CHAT_BASE_URL: str = "https://api.pibico.es/chat"
     CHAT_API_KEY: str = ""     # api_chat service key (AI narrative, F4)
 
+    # ── Household default location (OE3 climate cross) — v1 single-site;
+    #    per-customer coords come later with the org onboarding flow ──
+    DEFAULT_LAT: float = 43.36
+    DEFAULT_LON: float = -5.84
+
     # ── MQTT uplink (family-notify subscriber, unchanged) ──
     MQTT_BROKER: str = ""
     MQTT_PORT: int = 1883
