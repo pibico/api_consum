@@ -118,7 +118,7 @@ window.I18N_ES = {
   'app.priciest': 'Máx',
   'app.weatherTitle': 'El tiempo en tu casa',
   'app.mapTitle': 'Tu hogar',
-  'app.radar': 'radar de lluvia',
+  'app.radar': 'radar (Windy)',
   'app.next7': 'próximos 7 días',
   'app.source': 'Fuente',
   'app.station': 'estación',

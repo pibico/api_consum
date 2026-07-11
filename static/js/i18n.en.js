@@ -118,7 +118,7 @@ window.I18N_EN = {
   'app.priciest': 'Max',
   'app.weatherTitle': 'Weather at your home',
   'app.mapTitle': 'Your home',
-  'app.radar': 'rain radar',
+  'app.radar': 'radar (Windy)',
   'app.next7': 'next 7 days',
   'app.source': 'Source',
   'app.station': 'station',
