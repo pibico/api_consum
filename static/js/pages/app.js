@@ -25,11 +25,18 @@
         tb.style.display = '';
         tb.className = 'badge ' + (c.tier === 'basic' ? 'badge-info' : 'badge-ok');
       }
-      // customer selector (only if >1 household)
+      // Household selector — a household IS an enrolled GATEWAY (one gateway
+      // per home), never a bare client slug. Value = the gateway's customer
+      // slug (the tenancy key); label = the gateway hostname.
       var sel = q('customer-select');
-      if (sel && (c.customers || []).length > 1) {
+      var gateways = (c.devices || []).filter(function (d) {
+        return (d.device_type || '') === 'gateway' || !d.device_type;
+      });
+      if (sel && gateways.length > 1) {
         sel.innerHTML = '<option value="">' + __t('app.allHomes', 'Todos mis hogares') + '</option>' +
-          c.customers.map(function (s) { return '<option value="' + s + '">' + s + '</option>'; }).join('');
+          gateways.map(function (d) {
+            return '<option value="' + d.customer + '">' + d.hostname + '</option>';
+          }).join('');
         sel.style.display = '';
       }
       q('kpi-devices').textContent = (c.devices || []).length || '—';

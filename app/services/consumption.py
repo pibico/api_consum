@@ -74,6 +74,28 @@ async def devices_for(slugs: Sequence[str]) -> List[Dict[str, Any]]:
             ]
 
 
+async def sensor_devices(slugs: Sequence[str]) -> List[str]:
+    """DISTINCT device_ids reporting POWER/ENERGY in the last 7 days — the
+    real per-device filter list. Excludes gateways (never in sensor_data)
+    and legacy non-energy publishers (F100, map, …) on the same tenant."""
+    ids = await _slugs_to_ids(slugs)
+    if not ids:
+        return []
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT DISTINCT device_id FROM sensor_data
+                WHERE customer_id::text = ANY(%s)
+                  AND variable IN ('apower', 'apower_energy')
+                  AND ts > now() - interval '7 days'
+                ORDER BY device_id
+                """,
+                (list(ids.values()),),
+            )
+            return [r[0] for r in await cur.fetchall()]
+
+
 async def current_power(slugs: Sequence[str]) -> Dict[str, Any]:
     """Latest instantaneous power per device (+ whole-house total from the
     EM numeric channels only). Looks at the last 10 minutes."""
@@ -126,7 +148,8 @@ async def energy_series(
     if not ids:
         return []
     trunc = {"hour": "1 hour", "day": "1 day"}.get(bucket, "1 hour")
-    where = ["customer_id::text = ANY(%s)", "variable = 'apower_energy'",
+    hours_per_bucket = 24.0 if trunc == "1 day" else 1.0
+    where = ["customer_id::text = ANY(%s)",
              "ts >= %s::timestamptz", "ts < (%s::timestamptz + interval '1 day')"]
     params: List[Any] = [list(ids.values()), start, end]
     if device:
@@ -134,24 +157,43 @@ async def energy_series(
         params.append(device)
     elif house_only:
         where.append(_HOUSE_CHANNEL_SQL)
-    sql = f"""
-        SELECT bucket, SUM(kwh) AS kwh FROM (
-            SELECT time_bucket(%s::interval, ts) AS bucket,
-                   device_id, channel,
-                   GREATEST(MAX(value_num) - MIN(value_num), 0) / 1000.0 AS kwh
-            FROM sensor_data
-            WHERE {' AND '.join(where)}
-            GROUP BY bucket, device_id, channel
-        ) sub
-        GROUP BY bucket ORDER BY bucket
+    cond = " AND ".join(where)
+    # Counter-based kWh (devices WITH apower_energy — the EM meter) ...
+    sql_counter = f"""
+        SELECT time_bucket(%s::interval, ts) AS bucket, device_id, channel,
+               GREATEST(MAX(value_num) - MIN(value_num), 0) / 1000.0 AS kwh
+        FROM sensor_data
+        WHERE variable = 'apower_energy' AND {cond}
+        GROUP BY bucket, device_id, channel
+    """
+    # ... and power integration for plugs that ONLY publish instantaneous
+    # `apower` (kWh ≈ avg W × bucket hours / 1000; Shellies report ~1/min,
+    # so the approximation is tight while the device is online).
+    sql_power = f"""
+        SELECT time_bucket(%s::interval, ts) AS bucket, device_id, channel,
+               AVG(value_num) * {hours_per_bucket} / 1000.0 AS kwh
+        FROM sensor_data
+        WHERE variable = 'apower' AND {cond}
+        GROUP BY bucket, device_id, channel
     """
     async with db.raw_connection() as con:
         async with con.cursor() as cur:
-            await cur.execute(sql, [trunc] + params)
-            return [
-                {"ts": r[0].isoformat(), "kwh": round(float(r[1] or 0), 3)}
-                for r in await cur.fetchall()
-            ]
+            await cur.execute(sql_counter, [trunc] + params)
+            counter_rows = await cur.fetchall()
+            await cur.execute(sql_power, [trunc] + params)
+            power_rows = await cur.fetchall()
+    # Counter wins per (device, channel); integration only fills the gaps.
+    countered = {(r[1], r[2]) for r in counter_rows}
+    buckets: Dict[Any, float] = {}
+    for b, _, _, kwh in counter_rows:
+        buckets[b] = buckets.get(b, 0.0) + float(kwh or 0)
+    for b, dev, ch, kwh in power_rows:
+        if (dev, ch) not in countered:
+            buckets[b] = buckets.get(b, 0.0) + float(kwh or 0)
+    return [
+        {"ts": b.isoformat(), "kwh": round(k, 3)}
+        for b, k in sorted(buckets.items())
+    ]
 
 
 async def summary(slugs: Sequence[str]) -> Dict[str, Any]:

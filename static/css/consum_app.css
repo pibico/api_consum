@@ -177,7 +177,7 @@
 }
 .data-table th {
   text-align: left;
-  padding: 0.5rem 0.75rem;
+  padding: 3px 0.75rem;   /* compact vertical (user rule: 3px, all tables) */
   border-bottom: 2px solid rgba(70,130,180,0.2);
   color: var(--color-text-light);
   font-weight: 600;
@@ -186,7 +186,7 @@
   letter-spacing: 0.05em;
 }
 .data-table td {
-  padding: 0.5rem 0.75rem;
+  padding: 3px 0.75rem;   /* compact vertical (user rule: 3px, all tables) */
   border-bottom: 1px solid rgba(0,0,0,0.05);
 }
 .data-table tr:hover td {

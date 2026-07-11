@@ -237,11 +237,13 @@
   }
 
   function loadDevices() {
-    return App.apiFetch('/consumption/context').then(function (c) {
+    // Real reporting sensors (sensor_data device_ids) — NOT the gateway,
+    // which never reports power and would filter everything to zero.
+    return App.apiFetch('/consumption/sensors').then(function (r) {
       var sel = q('cons-device');
       var opts = ['<option value="">' + __t('cons.wholeHouse', 'Toda la casa') + '</option>'];
-      (c.devices || []).forEach(function (d) {
-        opts.push('<option value="' + d.hostname + '">' + d.hostname + '</option>');
+      (r.data || []).forEach(function (id) {
+        opts.push('<option value="' + id + '">' + id + '</option>');
       });
       sel.innerHTML = opts.join('');
     });

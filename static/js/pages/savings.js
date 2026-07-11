@@ -232,11 +232,12 @@
   }
 
   function loadDevices() {
-    return App.apiFetch('/consumption/context').then(function (c) {
+    // Real reporting sensors — not the gateway (see consumption.js).
+    return App.apiFetch('/consumption/sensors').then(function (r) {
       var sel = q('sav-device');
       var opts = ['<option value="">' + __t('cons.wholeHouse', 'Toda la casa') + '</option>'];
-      (c.devices || []).forEach(function (d) {
-        opts.push('<option value="' + d.hostname + '">' + d.hostname + '</option>');
+      (r.data || []).forEach(function (id) {
+        opts.push('<option value="' + id + '">' + id + '</option>');
       });
       sel.innerHTML = opts.join('');
     });

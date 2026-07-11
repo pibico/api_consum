@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "5"  # 5: IA page + pro tiers (CNS-F4)
+ASSET_VERSION = "6"  # 6: compact tables 3px + gateway/sensor filters
 
 
 def render_template(template_name: str, **context) -> str:

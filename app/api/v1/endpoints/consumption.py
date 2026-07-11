@@ -92,6 +92,14 @@ async def summary(customer: Optional[str] = Query(None),
     return data
 
 
+@router.get("/sensors")
+async def sensors(customer: Optional[str] = Query(None),
+                  ctx: ConsumContext = Depends(consum_context)):
+    """Reporting sensor device_ids (last 30 d) — feeds the per-device filter
+    in Consumo/Ahorro. Gateways live in /devices; they never report power."""
+    return {"data": await consumption.sensor_devices(await _slugs(ctx, customer))}
+
+
 @router.get("/devices")
 async def devices(customer: Optional[str] = Query(None),
                   ctx: ConsumContext = Depends(consum_context)):
