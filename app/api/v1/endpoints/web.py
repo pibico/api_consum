@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "20"  # 20: solar card = api_exo parity (48h chart + sun times)
+ASSET_VERSION = "21"  # 21: weather card = api_exo parity (7d temp chart + strip)
 
 
 def render_template(template_name: str, **context) -> str:

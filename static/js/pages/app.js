@@ -347,19 +347,73 @@
         (wx.now.humidity != null ? ' · ' + fmt(wx.now.humidity, 0) + '% ' + __t('app.humidityShort', 'humedad') : '') +
         '</span></div>';
     }
-    html += days.map(function (d, i) {
-      return '<div class="pnl-wx-row">' +
-        '<span class="pnl-wx-ico">' + wxIcon(d.description) + '</span>' +
-        '<span class="pnl-wx-day">' + dayLabel(d.date, i) + '</span>' +
-        '<span class="pnl-wx-desc" title="' + (d.description || '') + '">' + (d.description || '—') + '</span>' +
-        '<span class="pnl-wx-temp mono">' + fmt(d.temp_min, 0) + '–' + fmt(d.temp_max, 0) + '°</span>' +
-        '<span class="pnl-wx-rain mono">' + (d.precipitation_prob != null ? fmt(d.precipitation_prob, 0) + '%' : '—') + '</span>' +
+    // Glance strip: one mini-column per day (icon + rain prob), the detail
+    // lives in the temp chart's hover below (api_exo weather-page parity).
+    html += '<div class="pnl-wx-strip">' + days.map(function (d, i) {
+      return '<div class="pnl-wx-cell" title="' + (d.description || '') + '">' +
+        '<span class="pnl-wx-cell-day">' + dayLabel(d.date, i) + '</span>' +
+        wxIcon(d.description) +
+        '<span class="pnl-wx-cell-rain mono">' +
+        (d.precipitation_prob != null ? fmt(d.precipitation_prob, 0) + '%' : '—') + '</span>' +
         '</div>';
-    }).join('');
-    var s = sources();
-    html += srcLine((s.weather || 'AEMET') +
-      (s.weather_station ? ' · ' + __t('app.station', 'estación') + ' ' + s.weather_station : ''));
+    }).join('') + '</div>';
     q('pnl-weather').innerHTML = html;
+    var s = sources();
+    q('pnl-wx-src').innerHTML = srcLine((s.weather || 'AEMET') +
+      (s.weather_station ? ' · ' + __t('app.station', 'estación') + ' ' + s.weather_station : ''));
+    drawWxChart(days);
+  }
+
+  // 7-day high/low temperature chart — api_exo weather-page parity: red max
+  // and blue min lines with the band between them (stacked base+delta),
+  // point labels, and a hover carrying the day's full story.
+  function drawWxChart(days) {
+    var c = chart('pnl-wx-chart');
+    if (!c) return;
+    if (!days.length) { c.clear(); return; }
+    var all = [];
+    days.forEach(function (d) { all.push(d.temp_max, d.temp_min); });
+    var mn = Math.min.apply(null, all) - 3, mx = Math.max.apply(null, all) + 3;
+    c.setOption({
+      grid: { left: 34, right: 14, top: 18, bottom: 20 },
+      tooltip: Object.assign({}, TOOLTIP, {
+        axisPointer: { type: 'line' },
+        formatter: function (params) {
+          var d = days[params[0].dataIndex];
+          return '<b>' + dayLabel(d.date, params[0].dataIndex) + ' · ' + d.date + '</b><br>' +
+            (d.description || '') + '<br>' +
+            __t('app.tMax', 'Máx') + ' ' + Math.round(d.temp_max) + '° · ' +
+            __t('app.tMin', 'Mín') + ' ' + Math.round(d.temp_min) + '°' +
+            (d.precipitation_prob != null
+              ? ' · ' + fmt(d.precipitation_prob, 0) + '% ' + __t('app.rainShort', 'lluvia') : '');
+        },
+      }),
+      xAxis: { type: 'category', boundaryGap: false,
+               data: days.map(function (d, i) { return dayLabel(d.date, i); }),
+               axisLabel: AXIS, axisTick: { show: false } },
+      yAxis: { type: 'value', min: Math.floor(mn), max: Math.ceil(mx),
+               axisLabel: Object.assign({ formatter: '{value}°' }, AXIS),
+               splitLine: { lineStyle: { opacity: 0.25 } } },
+      series: [
+        { type: 'line', stack: 'band', symbol: 'none', silent: true,
+          data: days.map(function (d) { return d.temp_min; }),
+          lineStyle: { opacity: 0 }, tooltip: { show: false } },
+        { type: 'line', stack: 'band', symbol: 'none', silent: true,
+          data: days.map(function (d) { return d.temp_max - d.temp_min; }),
+          lineStyle: { opacity: 0 }, areaStyle: { color: 'rgba(44,107,90,0.12)' },
+          tooltip: { show: false } },
+        { type: 'line', symbol: 'circle', symbolSize: 5,
+          data: days.map(function (d) { return d.temp_max; }),
+          lineStyle: { color: '#e74c3c', width: 2 }, itemStyle: { color: '#e74c3c' },
+          label: { show: true, position: 'top', fontSize: 9,
+                   formatter: function (p) { return Math.round(p.value) + '°'; } } },
+        { type: 'line', symbol: 'circle', symbolSize: 5,
+          data: days.map(function (d) { return d.temp_min; }),
+          lineStyle: { color: '#3498db', width: 2 }, itemStyle: { color: '#3498db' },
+          label: { show: true, position: 'bottom', fontSize: 9,
+                   formatter: function (p) { return Math.round(p.value) + '°'; } } },
+      ],
+    }, true);
   }
 
   function renderSolar() {
