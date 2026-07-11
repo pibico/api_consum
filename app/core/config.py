@@ -55,7 +55,10 @@ class Settings(BaseSettings):
     EDGE_BASE_URL: str = "https://app.pibico.es/apiedge"
     EDGE_API_KEY: str = ""     # api_edge service key (device listing)
     CHAT_BASE_URL: str = "https://api.pibico.es/chat"
-    CHAT_API_KEY: str = ""     # api_chat service key (AI narrative, F4)
+    CHAT_API_KEY: str = ""     # AIDA (LLM Chat Service) key — empty = AI off
+    CHAT_PROVIDER: str = "ollama"
+    CHAT_MODEL: str = ""       # e.g. "qwen2.5:14b" / "claude-haiku-4-5" — empty = AI off
+    AI_ASK_DAILY_LIMIT: int = 30   # chat questions per org·day (cost control)
 
     # ── Household default location (OE3 climate cross) — v1 single-site;
     #    per-customer coords come later with the org onboarding flow ──

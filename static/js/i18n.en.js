@@ -128,5 +128,23 @@ window.I18N_EN = {
   'sav.vBest': 'Recommended',
   'sav.vGood': 'Good',
   'sav.vAvoid': 'Avoid',
-  'sav.vNeutral': 'Normal'
+  'sav.vNeutral': 'Normal',
+  // AI + PRO (F4)
+  'nav.ai': 'AI',
+  'ai.regen': 'Regenerate',
+  'ai.upsellTitle': 'Your consumption AI assistant',
+  'ai.upsellBody': 'The daily narrative and consumption chat are part of the AI plan. Contact us to enable it for your organization.',
+  'ai.narrativeTitle': 'Your day, explained',
+  'ai.generating': 'Generating narrative…',
+  'ai.chatTitle': 'Ask about your consumption',
+  'ai.placeholder': 'Why did I spend more yesterday?',
+  'ai.send': 'Send',
+  'ai.remaining': '{n} questions left today',
+  'cons.forecastTitle': 'Month-end forecast',
+  'cons.bandsTitle': 'Tariff-band breakdown',
+  'cons.export': 'Export CSV',
+  'cons.proUpsell': 'Available on the PRO plan — bill forecast, band breakdown and export.',
+  'cons.fcCost': 'forecast month cost',
+  'cons.fcKwh': 'forecast kWh',
+  'cons.fcExplain': '{mtd} € so far in {d} days; projected to day {n} using your recent average of {avg} €/day.'
 };

@@ -128,5 +128,23 @@ window.I18N_ES = {
   'sav.vBest': 'Recomendada',
   'sav.vGood': 'Buena',
   'sav.vAvoid': 'Evitar',
-  'sav.vNeutral': 'Normal'
+  'sav.vNeutral': 'Normal',
+  // IA + PRO (F4)
+  'nav.ai': 'IA',
+  'ai.regen': 'Regenerar',
+  'ai.upsellTitle': 'Asistente IA de tu consumo',
+  'ai.upsellBody': 'La narrativa diaria y el chat sobre tu consumo forman parte del plan con IA. Habla con nosotros para activarlo en tu organización.',
+  'ai.narrativeTitle': 'Tu día, explicado',
+  'ai.generating': 'Generando narrativa…',
+  'ai.chatTitle': 'Pregunta sobre tu consumo',
+  'ai.placeholder': '¿Por qué gasté más ayer?',
+  'ai.send': 'Enviar',
+  'ai.remaining': '{n} preguntas restantes hoy',
+  'cons.forecastTitle': 'Previsión fin de mes',
+  'cons.bandsTitle': 'Desglose por franjas',
+  'cons.export': 'Exportar CSV',
+  'cons.proUpsell': 'Disponible en el plan PRO — predicción de factura, desglose por franjas y exportación.',
+  'cons.fcCost': 'coste previsto del mes',
+  'cons.fcKwh': 'kWh previstos',
+  'cons.fcExplain': 'Llevas {mtd} € en {d} días; proyección al día {n} usando tu media reciente de {avg} €/día.'
 };

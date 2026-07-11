@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "4"  # 4: Ahorro/OE3 page (CNS-F3)
+ASSET_VERSION = "5"  # 5: IA page + pro tiers (CNS-F4)
 
 
 def render_template(template_name: str, **context) -> str:
@@ -118,3 +118,11 @@ async def savings_page(request: Request):
     if guard:
         return guard
     return render_template("savings.html")
+
+
+@router.get("/app/ai", response_class=HTMLResponse)
+async def ai_page(request: Request):
+    guard = await _require_member_page(request)
+    if guard:
+        return guard
+    return render_template("ai.html")

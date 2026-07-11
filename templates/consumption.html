@@ -62,10 +62,28 @@
   </div>
 </div>
 
+<!-- PRO row: bill forecast + tariff-band breakdown (F4) -->
+<div class="wx-2col">
+  <div class="glass-panel" style="padding:0.75rem 1rem;">
+    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="cons.forecastTitle">Previsión fin de mes</span>
+      <span class="pro-badge">PRO</span></h4>
+    <div id="cons-forecast"><span class="spinner"></span></div>
+  </div>
+  <div class="glass-panel" style="padding:0.75rem 1rem;">
+    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="cons.bandsTitle">Desglose por franjas</span>
+      <span class="pro-badge">PRO</span>
+      <span class="text-muted" id="cons-bands-month" style="font-weight:400;"></span></h4>
+    <div id="cons-bands"><span class="spinner"></span></div>
+  </div>
+</div>
+
 <!-- Hourly table -->
 <div class="glass-panel">
   <div class="filters-bar" style="justify-content:space-between;">
     <h3 data-i18n="cons.tableTitle">Detalle horario</h3>
+    <button class="btn btn-sm" id="cons-export" title="CSV">
+      <span data-i18n="cons.export">Exportar CSV</span> <span class="pro-badge">PRO</span>
+    </button>
   </div>
   <div class="ev-pager" id="cons-pager-top" hidden></div>
   <div class="table-scroll">

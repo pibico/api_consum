@@ -141,6 +141,77 @@
 
   function custQS(sep) { return device ? ((sep || '&') + 'device=' + encodeURIComponent(device)) : ''; }
 
+  // ── PRO cards (F4): forecast + bands; 403 TIER_REQUIRED → upsell ──
+  function upsellOf(e) {
+    try {
+      var d = JSON.parse(e.message);
+      if (d.code === 'TIER_REQUIRED') {
+        return '<div class="pro-upsell">' + __t('cons.proUpsell',
+          'Disponible en el plan PRO — predicción de factura, desglose por franjas y exportación.') + '</div>';
+      }
+    } catch (_) {}
+    return '<span class="text-muted">—</span>';
+  }
+
+  function loadForecast() {
+    return App.apiFetch('/consumption/forecast-month' + custQS('?')).then(function (r) {
+      q('cons-forecast').innerHTML =
+        '<div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:baseline;">' +
+        '<div><div class="kpi-value" style="font-size:1.7rem;color:#e67e22;">' + fmt(r.forecast_cost_eur) + ' €</div>' +
+        '<div class="kpi-sub">' + __t('cons.fcCost', 'coste previsto del mes') + '</div></div>' +
+        '<div><div class="kpi-value" style="font-size:1.7rem;">' + fmt(r.forecast_kwh, 1) + '</div>' +
+        '<div class="kpi-sub">' + __t('cons.fcKwh', 'kWh previstos') + '</div></div>' +
+        '</div>' +
+        '<p class="sav-explain" style="margin:0.5rem 0 0;">' + __t('cons.fcExplain',
+          'Llevas {mtd} € en {d} días; proyección al día {n} usando tu media reciente de {avg} €/día.')
+          .replace('{mtd}', fmt(r.mtd_cost_eur))
+          .replace('{d}', r.day_of_month)
+          .replace('{n}', r.days_in_month)
+          .replace('{avg}', fmt(r.avg_day_cost_eur)) + '</p>';
+    }).catch(function (e) { q('cons-forecast').innerHTML = upsellOf(e); });
+  }
+
+  function loadBands() {
+    var m = (q('cons-date').value || today()).slice(0, 7);
+    return App.apiFetch('/consumption/bands?month=' + m + custQS()).then(function (r) {
+      q('cons-bands-month').textContent = '· ' + m;
+      var total = r.total_kwh || 0;
+      q('cons-bands').innerHTML = (r.values || []).map(function (v) {
+        var pctW = total > 0 ? Math.max(v.share_pct, 2) : 0;
+        return '<div style="display:flex;align-items:center;gap:10px;margin:6px 0;">' +
+          '<span class="badge" style="width:34px;text-align:center;background:' + periodColor(v.period).replace('0.75', '0.18') + ';color:#333;">' + v.period + '</span>' +
+          '<div style="flex:1;background:rgba(44,62,80,0.08);border-radius:4px;height:14px;overflow:hidden;">' +
+          '<div style="width:' + pctW + '%;height:100%;background:' + periodColor(v.period) + ';"></div></div>' +
+          '<span class="mono" style="font-size:0.75rem;min-width:150px;text-align:right;">' +
+          fmt(v.kwh, 1) + ' kWh · ' + fmt(v.cost_eur) + ' € · ' + fmt(v.share_pct, 0) + '%</span>' +
+          '</div>';
+      }).join('');
+    }).catch(function (e) { q('cons-bands').innerHTML = upsellOf(e); });
+  }
+
+  function exportCsv() {
+    var d = q('cons-date').value || today();
+    var start = d.slice(0, 7) + '-01';
+    var url = (window.__ROOT__ || '') + '/api/v1/consumption/export.csv?start=' + start + '&end=' + d + custQS();
+    // Cookie-authenticated GET — a 403 (basic tier) lands as JSON in a tab
+    fetch(url, { credentials: 'same-origin' }).then(function (res) {
+      if (!res.ok) {
+        return res.text().then(function (t) {
+          var msg;
+          try { msg = (JSON.parse(t).detail || {}).message; } catch (_) {}
+          App.showNotification('PRO', msg || __t('cons.proUpsell', 'Disponible en el plan PRO.'), 'warning');
+        });
+      }
+      return res.blob().then(function (b) {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(b);
+        a.download = 'consumo_' + start + '_' + d + '.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      });
+    });
+  }
+
   function loadDay() {
     var d = q('cons-date').value || today();
     return App.apiFetch('/consumption/day?date=' + d + custQS()).then(function (r) {
@@ -180,6 +251,8 @@
     device = q('cons-device').value || '';
     loadDay().catch(function (e) { App.showNotification(__t('common.error', 'Error'), e.message, 'danger'); });
     loadMonth().catch(function () {});
+    loadForecast();
+    loadBands();
   }
 
   function shift(days) {
@@ -203,6 +276,7 @@
       q('cons-prev').onclick = function () { shift(-1); };
       q('cons-next').onclick = function () { shift(1); };
       q('cons-today').onclick = function () { q('cons-date').value = today(); reload(); };
+      q('cons-export').onclick = exportCsv;
       loadDevices().then(reload).catch(reload);
       // Auto-refresh cards every 5 min
       setInterval(reload, 300000);

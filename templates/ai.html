@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}IA — CONSUM-IA{% endblock %}
+{% block page_title_key %}nav.ai{% endblock %}
+{% block page_title %}IA{% endblock %}
+{% block topbar_actions %}
+<button class="btn btn-sm" id="ai-refresh" data-i18n="ai.regen" style="display:none;">Regenerar</button>
+{% endblock %}
+
+{% block content %}
+{# F4 — AI narrative + Q&A. Server-side AIDA calls over AGGREGATES only.
+   Three states: upsell (ai_enabled=false), not-configured, active. #}
+
+<!-- Upsell (shown when the org has no AI) -->
+<div class="glass-panel" id="ai-upsell" style="display:none;padding:2rem;text-align:center;">
+  <h3 data-i18n="ai.upsellTitle" style="margin-top:0;">Asistente IA de tu consumo</h3>
+  <p class="sav-explain" style="max-width:560px;margin:0.5rem auto 0;" data-i18n="ai.upsellBody">
+    La narrativa diaria y el chat sobre tu consumo forman parte del plan con IA.
+    Habla con nosotros para activarlo en tu organización.</p>
+</div>
+
+<div id="ai-active" style="display:none;">
+  <!-- Daily narrative -->
+  <div class="glass-panel" style="padding:1rem 1.25rem;">
+    <h3 style="margin:0 0 0.5rem;"><span data-i18n="ai.narrativeTitle">Tu día, explicado</span>
+      <span class="text-muted" id="ai-narr-date" style="font-weight:400;font-size:0.8rem;"></span></h3>
+    <div id="ai-narrative" class="ai-prose"><span class="spinner"></span>
+      <span class="text-muted" data-i18n="ai.generating" style="font-size:0.8rem;"> Generando narrativa…</span></div>
+  </div>
+
+  <!-- Chat -->
+  <div class="glass-panel" style="padding:1rem 1.25rem;margin-top:12px;display:flex;flex-direction:column;">
+    <h3 style="margin:0 0 0.5rem;"><span data-i18n="ai.chatTitle">Pregunta sobre tu consumo</span>
+      <span class="text-muted" id="ai-quota" style="font-weight:400;font-size:0.8rem;"></span></h3>
+    <div id="ai-chat-log" class="ai-chat-log"></div>
+    <form id="ai-form" style="display:flex;gap:8px;margin-top:0.75rem;">
+      <input type="text" id="ai-q" class="pibico-input" style="flex:1;" maxlength="500"
+             data-i18n-placeholder="ai.placeholder" placeholder="¿Por qué gasté más ayer?" autocomplete="off">
+      <button type="submit" class="btn btn-primary" id="ai-send" data-i18n="ai.send">Enviar</button>
+    </form>
+  </div>
+</div>
+
+<script src="{{ root }}/static/js/pages/ai.js?v={{ v }}" defer></script>
+{% endblock %}

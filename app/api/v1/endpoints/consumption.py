@@ -10,7 +10,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.api.v1.dependencies.rbac import ConsumContext, consum_context
+from app.api.v1.dependencies.rbac import ConsumContext, consum_context, require_tier
 from app.services import consumption, edge_client, exo_client
 
 router = APIRouter(prefix="/consumption", tags=["consumption"])
@@ -181,3 +181,131 @@ async def month(month: str = Query(..., pattern=r"^\d{4}-\d{2}$", description="Y
     return {"month": month, "values": values,
             "total_kwh": round(sum(v["kwh"] for v in values), 2),
             "total_cost_eur": round(sum(v["cost_eur"] or 0 for v in values), 2)}
+
+
+# ---------------------------------------------------------------------------
+# F4 — PRO tier: bill forecast, tariff-band breakdown, CSV export
+# ---------------------------------------------------------------------------
+
+async def _month_hourly_costed(slugs, month: str, device):
+    """Shared helper: the month's hourly rows joined with PVPC (F2 logic)."""
+    import calendar
+    from datetime import date as _date
+    y, m = int(month[:4]), int(month[5:7])
+    last = calendar.monthrange(y, m)[1]
+    start, end = f"{month}-01", f"{month}-{last:02d}"
+    today = _date.today().isoformat()
+    if end > today:
+        end = today if today >= start else start
+    hourly = await consumption.energy_series(slugs, start, end, bucket="hour", device=device)
+    prices = await exo_client.pvpc_map(start, end)
+    rows = []
+    for r in hourly:
+        d, h = r["ts"][:10], int(r["ts"][11:13])
+        if d < start or d > end:
+            continue
+        p = prices.get((d, h)) or {}
+        rows.append({"date": d, "hour": h, "kwh": r["kwh"],
+                     "price_eur_kwh": p.get("price_eur_kwh"),
+                     "period": p.get("period")})
+    return rows, last
+
+
+@router.get("/forecast-month")
+async def forecast_month(customer: Optional[str] = Query(None),
+                         device: Optional[str] = Query(None),
+                         ctx: ConsumContext = Depends(require_tier("pro"))):
+    """PRO — month-end kWh/€ projection: month-to-date + remaining days at
+    the recent daily average (last 14 complete days)."""
+    from datetime import date as _date, timedelta
+    slugs = await _slugs(ctx, customer)
+    today = _date.today()
+    month = today.strftime("%Y-%m")
+    rows, last_day = await _month_hourly_costed(slugs, month, device)
+
+    mtd_kwh = sum(r["kwh"] for r in rows)
+    mtd_cost = sum(r["kwh"] * r["price_eur_kwh"] for r in rows
+                   if r["price_eur_kwh"] is not None)
+    # Recent daily averages (14 complete days, may span into previous month)
+    ref_start = (today - timedelta(days=14)).isoformat()
+    ref_end = (today - timedelta(days=1)).isoformat()
+    ref = await consumption.energy_series(slugs, ref_start, ref_end,
+                                          bucket="hour", device=device)
+    ref_prices = await exo_client.pvpc_map(ref_start, ref_end)
+    daily: dict = {}
+    for r in ref:
+        d, h = r["ts"][:10], int(r["ts"][11:13])
+        e = daily.setdefault(d, {"kwh": 0.0, "cost": 0.0})
+        e["kwh"] += r["kwh"]
+        p = ref_prices.get((d, h))
+        if p and p.get("price_eur_kwh") is not None:
+            e["cost"] += r["kwh"] * p["price_eur_kwh"]
+    days_ref = [v for v in daily.values() if v["kwh"] > 0]
+    avg_kwh = sum(v["kwh"] for v in days_ref) / len(days_ref) if days_ref else 0.0
+    avg_cost = sum(v["cost"] for v in days_ref) / len(days_ref) if days_ref else 0.0
+    remaining = max(last_day - today.day, 0) + 1   # today still accruing
+
+    return {"month": month, "day_of_month": today.day, "days_in_month": last_day,
+            "mtd_kwh": round(mtd_kwh, 2), "mtd_cost_eur": round(mtd_cost, 2),
+            "ref_days": len(days_ref),
+            "avg_day_kwh": round(avg_kwh, 2), "avg_day_cost_eur": round(avg_cost, 2),
+            "forecast_kwh": round(mtd_kwh + avg_kwh * remaining, 1),
+            "forecast_cost_eur": round(mtd_cost + avg_cost * remaining, 2)}
+
+
+@router.get("/bands")
+async def bands(month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
+                customer: Optional[str] = Query(None),
+                device: Optional[str] = Query(None),
+                ctx: ConsumContext = Depends(require_tier("pro"))):
+    """PRO — kWh and € split by tariff band (P1/P2/P3) for one month."""
+    slugs = await _slugs(ctx, customer)
+    rows, _ = await _month_hourly_costed(slugs, month, device)
+    out = {p: {"period": p, "kwh": 0.0, "cost_eur": 0.0} for p in ("P1", "P2", "P3")}
+    total_kwh = 0.0
+    for r in rows:
+        total_kwh += r["kwh"]
+        p = r["period"]
+        if p in out:
+            out[p]["kwh"] += r["kwh"]
+            if r["price_eur_kwh"] is not None:
+                out[p]["cost_eur"] += r["kwh"] * r["price_eur_kwh"]
+    values = []
+    for p in ("P1", "P2", "P3"):
+        e = out[p]
+        values.append({"period": p, "kwh": round(e["kwh"], 2),
+                       "cost_eur": round(e["cost_eur"], 2),
+                       "share_pct": round(e["kwh"] / total_kwh * 100, 1) if total_kwh else 0.0})
+    return {"month": month, "values": values, "total_kwh": round(total_kwh, 2)}
+
+
+@router.get("/export.csv")
+async def export_csv(start: str = Query(..., description="YYYY-MM-DD"),
+                     end: str = Query(..., description="YYYY-MM-DD (inclusive, max 92 days)"),
+                     customer: Optional[str] = Query(None),
+                     device: Optional[str] = Query(None),
+                     ctx: ConsumContext = Depends(require_tier("pro"))):
+    """PRO — hourly CSV: date,hour,kwh,pvpc_eur_kwh,period,cost_eur."""
+    from datetime import date as _date
+    from fastapi.responses import PlainTextResponse
+    try:
+        d0, d1 = _date.fromisoformat(start), _date.fromisoformat(end)
+    except ValueError:
+        raise HTTPException(400, detail="invalid date format")
+    if (d1 - d0).days > 92 or d1 < d0:
+        raise HTTPException(400, detail="range must be 1-92 days")
+    slugs = await _slugs(ctx, customer)
+    hourly = await consumption.energy_series(slugs, start, end, bucket="hour", device=device)
+    prices = await exo_client.pvpc_map(start, end)
+    lines = ["date,hour,kwh,pvpc_eur_kwh,period,cost_eur"]
+    for r in hourly:
+        d, h = r["ts"][:10], int(r["ts"][11:13])
+        if d < start or d > end:
+            continue
+        p = prices.get((d, h)) or {}
+        price = p.get("price_eur_kwh")
+        cost = round(r["kwh"] * price, 4) if price is not None else ""
+        lines.append(f"{d},{h},{r['kwh']},{price if price is not None else ''},{p.get('period') or ''},{cost}")
+    return PlainTextResponse("\n".join(lines) + "\n", media_type="text/csv",
+                             headers={"Content-Disposition":
+                                      f"attachment; filename=consumo_{start}_{end}.csv"})

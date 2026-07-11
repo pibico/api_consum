@@ -22,6 +22,7 @@ from fastapi.templating import Jinja2Templates
 from app.api.v1.endpoints import auth as auth_endpoints
 from app.api.v1.endpoints import consumption as consumption_endpoints
 from app.api.v1.endpoints import health
+from app.api.v1.endpoints import ai as ai_endpoints
 from app.api.v1.endpoints import savings as savings_endpoints
 from app.core import db as ts_db
 from app.core import http_client
@@ -76,6 +77,7 @@ app.include_router(health.router, prefix=settings.API_V1_STR, tags=["core"])
 app.include_router(auth_endpoints.router, prefix=settings.API_V1_STR)
 app.include_router(consumption_endpoints.router, prefix=settings.API_V1_STR)
 app.include_router(savings_endpoints.router, prefix=settings.API_V1_STR)
+app.include_router(ai_endpoints.router, prefix=settings.API_V1_STR)
 
 # Web HTML routes (/app product pages + SSO /login; landing stays below)
 from app.api.v1.endpoints.web import router as web_router  # noqa: E402
