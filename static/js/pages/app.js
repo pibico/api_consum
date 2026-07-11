@@ -375,38 +375,83 @@
         __t('app.solarPeak', 'Mejores horas de sol') + ': <b>' +
         pk.start.slice(11, 16) + '–' + pk.end.slice(11, 16) + '</b> (' + pk.start.slice(5, 10) + ')</div>';
     }
+    var sun = s.sun || {};
+    var sunTxt = '';
+    if (sun.sunrise && sun.sunset) {
+      var hrs = sun.daylight_seconds != null ? (sun.daylight_seconds / 3600) : null;
+      sunTxt = '<div class="sav-explain">' +
+        __t('app.sunrise', 'Amanece') + ' <b>' + sun.sunrise.slice(11, 16) + '</b> · ' +
+        __t('app.sunset', 'Anochece') + ' <b>' + sun.sunset.slice(11, 16) + '</b>' +
+        (hrs != null ? ' (' + fmt(hrs, 1) + ' ' + __t('app.daylightHours', 'h de luz') + ')' : '') +
+        '</div>';
+    }
     q('pnl-solar').innerHTML =
       '<div style="display:flex;gap:1.4rem;align-items:baseline;flex-wrap:wrap;">' +
       '<div><span class="kpi-value" style="font-size:1.5rem;color:#c49a18;">' + fmt(s.today_kwh, 1) + '</span>' +
       ' <span class="kpi-sub">kWh ' + __t('app.today', 'hoy').toLowerCase() + '</span></div>' +
       '<div><span class="kpi-value" style="font-size:1.5rem;color:#c49a18;opacity:0.75;">' + fmt(s.tomorrow_kwh, 1) + '</span>' +
       ' <span class="kpi-sub">kWh ' + __t('app.tomorrow', 'mañana').toLowerCase() + '</span></div>' +
-      '</div>' +
-      '<div class="sav-explain">' + __t('app.solarExplain', 'Producción estimada para {kwp} kWp orientación sur.')
-        .replace('{kwp}', fmt(s.peak_kwp, 1)) + '</div>' + pkTxt +
+      '<div class="kpi-sub">' + __t('app.solarExplain', 'estimado para {kwp} kWp orientación sur')
+        .replace('{kwp}', fmt(s.peak_kwp, 1)) + '</div>' +
+      '</div>' + sunTxt + pkTxt +
       srcLine(sources().solar || 'Open-Meteo');
-    // Mini GHI curve (today) — hover shows the exact irradiance per hour
+    drawSolarChart(s.hourly || []);
+  }
+
+  // 48 h production chart — api_exo solar-page parity: bars kW tinted by
+  // cloud cover (clear=orange → cloudy=grey-blue), day separators and a
+  // "now" line; hover = kW + GHI + clouds.
+  function drawSolarChart(hourly) {
     var c = chart('pnl-solar-chart');
-    var hours = s.hourly_today || [];
-    if (!c || !hours.length) return;
+    if (!c) return;
+    if (!hourly.length) { c.clear(); return; }
+    var now = new Date();
+    var nowIdx = null, seps = [];
+    var cats = hourly.map(function (h, i) {
+      var d = new Date(h.ts);
+      if (d.getHours() === 0 && i > 0) seps.push(i);
+      if (nowIdx === null && d.getDate() === now.getDate() && d.getHours() === now.getHours()) nowIdx = i;
+      return String(d.getHours()).padStart(2, '0') +
+        (d.getHours() === 0 && i > 0 ? ' ' + dayLabel(String(h.ts).slice(0, 10), 1) : '');
+    });
+    var marks = seps.map(function (i) {
+      return { xAxis: i, lineStyle: { type: 'dashed', color: 'rgba(0,0,0,0.18)', width: 1 } };
+    });
+    if (nowIdx !== null) {
+      marks.push({ xAxis: nowIdx, lineStyle: { type: 'solid', color: '#2c5171', width: 2 } });
+    }
+    var lang = (window.i18n && window.i18n.getLang()) || 'es';
     c.setOption({
-      grid: { left: 4, right: 4, top: 4, bottom: 4 },
+      grid: { left: 42, right: 6, top: 8, bottom: 18 },
       tooltip: Object.assign({}, TOOLTIP, {
-        axisPointer: { type: 'line' },
         formatter: function (params) {
-          var h = hours[params[0].dataIndex];
-          return String(h.hour).padStart(2, '0') + ':00 — ' + fmt(h.ghi, 0) + ' W/m²';
+          var h = hourly[params[0].dataIndex];
+          var d = new Date(h.ts);
+          return '<b>' + (DOW[lang] || DOW.es)[d.getDay()] + ' ' +
+            String(d.getHours()).padStart(2, '0') + ':00</b><br>' +
+            (h.p_kw || 0).toFixed(2) + ' kW · GHI ' + Math.round(h.ghi || 0) + ' W/m²<br>' +
+            Math.round(h.cloud_pct || 0) + '% ' + __t('app.clouds', 'nubes');
         },
       }),
-      xAxis: { type: 'category', show: false, data: hours.map(function (h) { return h.hour; }) },
-      yAxis: { type: 'value', show: false },
+      xAxis: { type: 'category', data: cats,
+               axisLabel: Object.assign({ interval: 5 }, AXIS), axisTick: { show: false } },
+      yAxis: { type: 'value',
+               axisLabel: Object.assign({ formatter: function (v) { return v.toFixed(1) + ' kW'; } }, AXIS),
+               splitLine: { lineStyle: { opacity: 0.25 } } },
       series: [{
-        type: 'line', smooth: true, symbol: 'none',
-        data: hours.map(function (h) { return h.ghi; }),
-        lineStyle: { color: 'rgba(196,154,24,0.85)', width: 1.5 },
-        areaStyle: { color: 'rgba(242,200,78,0.35)' },
+        type: 'bar', barCategoryGap: '10%',
+        data: hourly.map(function (h) {
+          var cld = h.cloud_pct || 0;
+          var alpha = 0.85 - (cld / 100) * 0.4;
+          var r = Math.round(230 - (cld / 100) * 80);
+          var g = Math.round(126 + (cld / 100) * 40);
+          var b = Math.round(34 + (cld / 100) * 100);
+          return { value: h.p_kw || 0,
+                   itemStyle: { color: 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')' } };
+        }),
+        markLine: { silent: true, symbol: 'none', label: { show: false }, data: marks },
       }],
-    });
+    }, true);
   }
 
   function renderWindow() {

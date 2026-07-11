@@ -136,7 +136,7 @@ async def environment(customer: Optional[str] = Query(None),
     lat = loc["lat"] if loc else settings.DEFAULT_LAT
     lon = loc["lon"] if loc else settings.DEFAULT_LON
     (today, tomorrow, omie_today, omie_tomorrow, carbon,
-     weather, obs, solar, window) = await asyncio.gather(
+     weather, obs, solar, sun, window) = await asyncio.gather(
         exo_client.pvpc_day("today"),
         exo_client.pvpc_day("tomorrow"),
         exo_client.omie_day("today"),
@@ -145,6 +145,7 @@ async def environment(customer: Optional[str] = Query(None),
         exo_client.weather_forecast(lat, lon),
         exo_client.weather_observations(lat, lon),
         exo_client.solar_forecast(lat, lon),
+        exo_client.daylight(lat, lon),
         oe3.green_window(lat, lon),
     )
 
@@ -193,13 +194,16 @@ async def environment(customer: Optional[str] = Query(None),
 
     days = (weather or {}).get("forecast") or []
     now_wx = (obs or {}).get("data") or None
-    tstr = _date.today().isoformat()
-    solar_hours = []
-    for row in (solar or {}).get("hourly") or []:
-        ts = str(row.get("ts") or "")
-        if ts[:10] == tstr:
-            solar_hours.append({"hour": int(ts[11:13]),
-                                "ghi": round(float(row.get("ghi") or 0))})
+    # Full 48 h production curve (api_exo solar page parity): kW per hour
+    # with cloud cover, so the card chart carries the same detail.
+    solar_hours = [
+        {"ts": row.get("ts"), "ghi": round(float(row.get("ghi") or 0)),
+         "cloud_pct": row.get("cloud_pct"),
+         "p_kw": round(float(row.get("p_kw") or 0), 3),
+         "is_day": bool(row.get("is_day"))}
+        for row in (solar or {}).get("hourly") or []
+    ]
+    sun_today = (((sun or {}).get("daily")) or [{}])[0]
     return {
         "location": {"lat": lat, "lon": lon,
                      "municipality": (loc or {}).get("municipality")
@@ -222,7 +226,10 @@ async def environment(customer: Optional[str] = Query(None),
                   "tomorrow_kwh": (solar or {}).get("tomorrow_kwh"),
                   "peak_kwp": ((solar or {}).get("config") or {}).get("peak_kwp"),
                   "peak_window": (solar or {}).get("peak_window"),
-                  "hourly_today": solar_hours},
+                  "hourly": solar_hours,
+                  "sun": {"sunrise": sun_today.get("sunrise"),
+                          "sunset": sun_today.get("sunset"),
+                          "daylight_seconds": sun_today.get("daylight_seconds")}},
         "window": window,
         # Data provenance per card (transparency requirement): pass the
         # upstream `source` fields through instead of hardcoding names.
