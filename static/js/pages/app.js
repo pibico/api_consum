@@ -211,7 +211,7 @@
         data: prices.map(function (p) {
           var current = cur && labelOf(p) === labelOf(cur);
           return { value: p.price_eur_kwh,
-                   itemStyle: { color: periodColor(p.period, current ? 0.95 : 0.45),
+                   itemStyle: { color: periodColor(p.period, current ? 1 : 0.75),
                                 borderColor: current ? '#2c5171' : undefined,
                                 borderWidth: current ? 1.5 : 0 } };
         }),

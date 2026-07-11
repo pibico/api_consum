@@ -126,7 +126,7 @@ async def environment(customer: Optional[str] = Query(None),
     and the OE3 green window. Location: household coords (v1 = defaults;
     per-customer coords come with the onboarding flow)."""
     import asyncio
-    from datetime import date as _date
+    from datetime import date as _date, timedelta as _td
 
     from app.core.config import settings
     from app.services import oe3
@@ -160,16 +160,34 @@ async def environment(customer: Optional[str] = Query(None),
                         "period": r.get("period")})
         return out
 
-    def _omie_points(payload):
+    def _band(hour: int, weekend: bool) -> str:
+        # 2.0TD calendar (fallback when no PVPC rows to copy from):
+        # weekends/holidays are all-P3; weekdays P1 10-14/18-22,
+        # P2 8-10/14-18/22-24, P3 0-8.
+        if weekend:
+            return "P3"
+        if 10 <= hour < 14 or 18 <= hour < 22:
+            return "P1"
+        if 8 <= hour < 10 or 14 <= hour < 18 or 22 <= hour < 24:
+            return "P2"
+        return "P3"
+
+    def _omie_points(payload, pvpc_rows, day_date):
         # OMIE day-ahead is quarter-hourly (15-min MTU) — keep the full 96
-        # points so the chart hover shows the exact quarter price. Spot has
-        # no tariff bands (period stays absent).
+        # points so the chart hover shows the exact quarter price. The spot
+        # has no bands of its own, but the 2.0TD access-toll band applies by
+        # calendar — copy it from the same day's PVPC rows (fallback: static
+        # schedule) so the chart colours match PVPC's.
+        by_hour = {p["hour"]: p.get("period") for p in pvpc_rows or []}
+        weekend = day_date.weekday() >= 5
         pts = []
         for r in (payload or {}).get("prices") or []:
             dl = str(r.get("datetime_local") or "")
             if len(dl) >= 16:
+                h = int(dl[11:13])
                 pts.append({"time": dl[11:16],
-                            "price_eur_kwh": round(_kwh(r), 5)})
+                            "price_eur_kwh": round(_kwh(r), 5),
+                            "period": by_hour.get(h) or _band(h, weekend)})
         pts.sort(key=lambda p: p["time"])
         return pts
 
@@ -187,8 +205,9 @@ async def environment(customer: Optional[str] = Query(None),
                      "municipality": (loc or {}).get("municipality")
                      or (days[0].get("municipality") if days else None)},
         "pvpc": {"today": _prices(today), "tomorrow": _prices(tomorrow) or None},
-        "omie": {"today": _omie_points(omie_today),
-                 "tomorrow": _omie_points(omie_tomorrow) or None},
+        "omie": {"today": _omie_points(omie_today, _prices(today), _date.today()),
+                 "tomorrow": _omie_points(omie_tomorrow, _prices(tomorrow),
+                                          _date.today() + _td(days=1)) or None},
         "carbon": {"intensity_gco2_kwh": (carbon or {}).get("intensity_gco2_kwh"),
                    "band": (carbon or {}).get("band")},
         "weather": {
