@@ -14,7 +14,12 @@
 
   function q(id) { return document.getElementById(id); }
   function fmt(n, dec) { return (n == null) ? '—' : Number(n).toLocaleString(undefined, { maximumFractionDigits: dec == null ? 2 : dec }); }
-  function today() { return new Date().toISOString().slice(0, 10); }
+  function today() {
+    // LOCAL calendar date (toISOString() is UTC — wrong between 00:00-02:00 CEST)
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') +
+      '-' + String(d.getDate()).padStart(2, '0');
+  }
 
   function periodColor(p) {
     if (p === 'P1') return 'rgba(231,76,60,0.75)';
@@ -240,6 +245,15 @@
   }
 
   function reloadFast() {
+    // Midnight rollover on a long-lived tab: bump the picker's max (and the
+    // selection, if it was sitting on "today") to the new local date.
+    var t = today();
+    var de = q('cons-date');
+    if (de && de.max !== t) {
+      var wasToday = de.value === de.max;
+      de.max = t;
+      if (wasToday || !de.value) de.value = t;
+    }
     // Continuous refresh: the day view (KPIs + hourly chart/table) moves
     // with live data — 60s cadence, cheap single-day query.
     loadDay().catch(function (e) { App.showNotification(__t('common.error', 'Error'), e.message, 'danger'); });

@@ -22,7 +22,13 @@
 
   function q(id) { return document.getElementById(id); }
   function fmt(n, dec) { return (n == null) ? '—' : Number(n).toLocaleString(undefined, { maximumFractionDigits: dec == null ? 1 : dec }); }
-  function today() { return new Date().toISOString().slice(0, 10); }
+  function today() {
+    // LOCAL calendar date — toISOString() is UTC and made the panel serve
+    // yesterday between 00:00 and 02:00 CEST (backend + DB run Europe/Madrid).
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') +
+      '-' + String(d.getDate()).padStart(2, '0');
+  }
   function custQS(sep) { return customer ? ((sep || '?') + 'customer=' + encodeURIComponent(customer)) : ''; }
 
   function periodColor(p, a) {
@@ -547,6 +553,15 @@
 
   // ── Continuous refresh ────────────────────────────────────────────────
   function refreshHouse() {
+    // Midnight rollover on a long-lived tab: advance the picker (and the
+    // chart, if it was sitting on "today") to the new local date.
+    var t = today();
+    var hd = q('pnl-house-date');
+    if (hd && hd.max !== t) {
+      var wasToday = houseDate === hd.max;
+      hd.max = t;
+      if (wasToday || !houseDate) { houseDate = t; hd.value = t; }
+    }
     loadPower().catch(function () {});
     loadToday().catch(function () {});
     loadHouseDay();
