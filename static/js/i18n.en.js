@@ -30,6 +30,8 @@ window.I18N_EN = {
   'ld.tp3': 'Weather-aware forecast and tariff recommendation',
   'ld.tp4': 'Secure remote access',
 
+  'ld.enter': 'Sign in',
+  'ld.enterPanel': 'Go to my home',
   'ld.ctaTitle': 'Want to try it?',
   'ld.ctaText': 'We are deploying pilots in real homes. Write to us and we will tell you more.',
 

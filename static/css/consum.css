@@ -62,3 +62,15 @@ body { margin: 0; background: var(--bg-gradient, linear-gradient(135deg,#2c5171,
   .ld-block.ld-alt img { order: 2; }
   .ld-tiers { grid-template-columns: 1fr; }
 }
+
+/* Landing — Acceder CTA (v2) */
+.ld-enter-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-top: 18px; padding: 10px 22px;
+  background: rgba(255,255,255,.92); color: var(--color-primary-dark, #2c5171);
+  font-family: var(--font-body, 'Inter'); font-weight: 600; font-size: 0.95rem;
+  border-radius: 10px; text-decoration: none;
+  box-shadow: 0 4px 14px rgba(0,0,0,.18);
+  transition: transform .15s, box-shadow .15s;
+}
+.ld-enter-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,.25); }

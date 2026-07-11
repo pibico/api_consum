@@ -30,6 +30,8 @@ window.I18N_ES = {
   'ld.tp3': 'Previsión con clima y recomendación de tarifa',
   'ld.tp4': 'Acceso remoto seguro',
 
+  'ld.enter': 'Acceder',
+  'ld.enterPanel': 'Acceder a mi hogar',
   'ld.ctaTitle': '¿Quieres probarlo?',
   'ld.ctaText': 'Estamos desplegando pilotos en hogares reales. Escríbenos y te contamos.',
 
