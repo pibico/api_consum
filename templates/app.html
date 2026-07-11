@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Panel — CONSUM-IA{% endblock %}
+{% block page_title_key %}nav.panel{% endblock %}
+{% block page_title %}Panel{% endblock %}
+{% block topbar_actions %}
+<select id="customer-select" class="pibico-select" style="width:auto;min-width:140px;display:none;" onchange="ConsumApp.onCustomerChange()"></select>
+<span id="tier-badge" class="badge badge-info" style="display:none;"></span>
+{% endblock %}
+
+{% block content %}
+{# F0/F1 (CNS-F0): product Panel — live KPIs from /consumption/summary,
+   device list from /consumption/devices. F2 adds the charts page. #}
+
+<div class="kpi-grid-8" id="kpi-grid">
+  <div class="glass-panel kpi-card">
+    <div class="kpi-label" data-i18n="app.powerNow">Potencia ahora</div>
+    <div class="kpi-value" id="kpi-power">—</div>
+    <div class="kpi-sub">W</div>
+  </div>
+  <div class="glass-panel kpi-card">
+    <div class="kpi-label" data-i18n="app.kwhToday">Hoy</div>
+    <div class="kpi-value" id="kpi-today">—</div>
+    <div class="kpi-sub">kWh</div>
+  </div>
+  <div class="glass-panel kpi-card">
+    <div class="kpi-label" data-i18n="app.costToday">Coste hoy</div>
+    <div class="kpi-value" id="kpi-cost-today">—</div>
+    <div class="kpi-sub">€ (aprox.)</div>
+  </div>
+  <div class="glass-panel kpi-card">
+    <div class="kpi-label" data-i18n="app.kwhWeek">7 días</div>
+    <div class="kpi-value" id="kpi-week">—</div>
+    <div class="kpi-sub">kWh</div>
+  </div>
+  <div class="glass-panel kpi-card">
+    <div class="kpi-label" data-i18n="app.kwhMonth">30 días</div>
+    <div class="kpi-value" id="kpi-month">—</div>
+    <div class="kpi-sub">kWh</div>
+  </div>
+  <div class="glass-panel kpi-card">
+    <div class="kpi-label" data-i18n="app.pvpcNow">PVPC ahora</div>
+    <div class="kpi-value" id="kpi-pvpc" style="font-size:1.6rem;">—</div>
+    <div class="kpi-sub">€/kWh · <span id="kpi-period">—</span></div>
+  </div>
+  <div class="glass-panel kpi-card">
+    <div class="kpi-label" data-i18n="app.carbonNow">CO₂ red</div>
+    <div class="kpi-value" id="kpi-carbon" style="font-size:1.6rem;">—</div>
+    <div class="kpi-sub">gCO₂/kWh</div>
+  </div>
+  <div class="glass-panel kpi-card">
+    <div class="kpi-label" data-i18n="app.devices">Dispositivos</div>
+    <div class="kpi-value" id="kpi-devices">—</div>
+    <div class="kpi-sub" id="kpi-devices-online"></div>
+  </div>
+</div>
+
+<!-- Live per-device power -->
+<div class="glass-panel" style="margin-bottom:1rem;">
+  <div class="filters-bar" style="justify-content:space-between;">
+    <h3 data-i18n="app.liveDevices">Consumo por dispositivo (ahora)</h3>
+  </div>
+  <div class="table-scroll">
+    <table class="data-table" id="live-table">
+      <thead><tr>
+        <th data-i18n="app.colDevice">Dispositivo</th>
+        <th data-i18n="app.colPower">Potencia (W)</th>
+        <th data-i18n="app.colState">Estado</th>
+      </tr></thead>
+      <tbody id="live-tbody"><tr><td colspan="3" class="text-center"><span class="spinner"></span></td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script src="{{ root }}/static/js/pages/app.js?v={{ v }}" defer></script>
+{% endblock %}

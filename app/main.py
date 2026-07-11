@@ -1,8 +1,12 @@
 """api_consum — CONSUM-IA server side.
 
-Public landing (consum.pibico.es) + `/api/v1` (health, edge-event feed) +
-the family-notify MQTT subscriber. The edge counterpart lives in the
+Public landing (consum.pibico.es) + the member-facing product app (/app:
+dashboard + OE3) + `/api/v1` (health, consumption, edge-event feed) + the
+family-notify MQTT subscriber. The edge counterpart lives in the
 cm4-consumia repo (api_consum_edge).
+
+F0/F1 (2026-07-11): api_auth remote auth (SSO cookie + OTP proxy), org/tier
+RBAC, read-only pool over the shared Timescale, api_exo/api_edge clients.
 """
 import logging
 import mimetypes
@@ -11,10 +15,15 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
+from app.api.v1.endpoints import auth as auth_endpoints
+from app.api.v1.endpoints import consumption as consumption_endpoints
 from app.api.v1.endpoints import health
+from app.core import db as ts_db
+from app.core import http_client
 from app.core.config import settings
 from app.workers import notify_sub
 
@@ -31,17 +40,69 @@ static_path = BASE / "static"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     log.info("api_consum %s up on :%s", settings.VERSION, settings.PORT)
+    # Timescale pool — log-and-degrade: landing/auth must survive a DB outage.
+    try:
+        await ts_db.open_pool()
+    except Exception as e:  # noqa: BLE001
+        log.error("TS pool failed to open (continuing, consumption disabled): %s", e)
     notify_sub.start()
     yield
+    try:
+        await ts_db.close_pool()
+    except Exception as e:  # noqa: BLE001
+        log.error("Error closing TS pool: %s", e)
+    await http_client.aclose()
     log.info("api_consum down")
 
 
 app = FastAPI(title=settings.PROJECT_NAME, description=settings.DESCRIPTION,
-              version=settings.VERSION, root_path=os.getenv("ROOT_PATH", ""),
-              docs_url="/api/docs", redoc_url="/api/redoc",
+              version=settings.VERSION, root_path=os.getenv("ROOT_PATH", settings.ROOT_PATH),
+              docs_url=None, redoc_url=None,   # served locally from static/vendor (no CDN)
               openapi_url="/api/openapi.json", lifespan=lifespan)
 
+if settings.CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+# API routers. health stays PUBLIC (the api_auth registry badge polls
+# /api/v1/health); /events (household alerts) is gated inside health.py.
 app.include_router(health.router, prefix=settings.API_V1_STR, tags=["core"])
+app.include_router(auth_endpoints.router, prefix=settings.API_V1_STR)
+app.include_router(consumption_endpoints.router, prefix=settings.API_V1_STR)
+
+# Web HTML routes (/app product pages + SSO /login; landing stays below)
+from app.api.v1.endpoints.web import router as web_router  # noqa: E402
+app.include_router(web_router)
+
+
+# --- Local API docs (no CDN — static/vendor, pibiCo guidelines) ---
+from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html  # noqa: E402
+
+_ROOT = os.getenv("ROOT_PATH", settings.ROOT_PATH).rstrip("/")
+
+
+@app.get("/api/docs", include_in_schema=False)
+async def api_docs():
+    return get_swagger_ui_html(
+        openapi_url=_ROOT + "/api/openapi.json",
+        title="api_consum — API Docs — pibiCo",
+        swagger_js_url=_ROOT + "/static/vendor/swagger-ui-bundle.js",
+        swagger_css_url=_ROOT + "/static/vendor/swagger-ui.css",
+    )
+
+
+@app.get("/api/redoc", include_in_schema=False)
+async def api_redoc():
+    return get_redoc_html(
+        openapi_url=_ROOT + "/api/openapi.json",
+        title="api_consum — ReDoc — pibiCo",
+        redoc_js_url=_ROOT + "/static/vendor/redoc.standalone.js",
+    )
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)

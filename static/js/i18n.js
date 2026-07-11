@@ -22,7 +22,7 @@
    ============================================ */
 (function () {
   const ROOT = (window.ROOT_PATH || '');
-  const STORE = 'consum_lang';                 // ← per-app knob (e.g. 'auth_lang', 'collab_lang')
+  const STORE = 'consum_lang';                  // ← per-app knob (api_consum)
   const SUPPORTED = ['es', 'en', 'fr'];
   const DICT = {};
   if (window.I18N_ES) DICT.es = window.I18N_ES;
@@ -48,7 +48,7 @@
     if (DICT[lang]) return Promise.resolve();
     return new Promise((resolve) => {
       const s = document.createElement('script');
-      s.src = ROOT + '/static/js/i18n.' + lang + '.js?v=1';   // ← bump v=N on dict change
+      s.src = ROOT + '/static/js/i18n.' + lang + '.js?v=2';   // ← bump v=N on dict change
       s.onload = function () {
         const g = lang === 'en' ? window.I18N_EN : lang === 'fr' ? window.I18N_FR : window.I18N_ES;
         DICT[lang] = g || {};

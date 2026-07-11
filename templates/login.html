@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — CONSUM-IA</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: linear-gradient(135deg, #2c5171 0%, #4682b4 50%, #6a9bc3 100%);
+      min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .login-card {
+      background: rgba(255,255,255,0.92); backdrop-filter: blur(20px);
+      border-radius: 12px; padding: 2.5rem; width: 380px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.15); text-align: center;
+    }
+    .login-card h1 { font-size: 1.5rem; color: #2c5171; margin-bottom: 0.3rem; }
+    .login-card .subtitle { color: #7f8c8d; font-size: 0.8rem; margin-bottom: 1.5rem; }
+    .login-card input {
+      width: 100%; padding: 0.65rem 0.8rem; border: 1px solid rgba(70,130,180,0.3);
+      border-radius: 6px; font-size: 0.85rem; margin-bottom: 0.75rem; text-align: center;
+    }
+    .login-card input:focus { outline: none; border-color: #4682b4; box-shadow: 0 0 0 3px rgba(70,130,180,0.15); }
+    .login-card input.otp-input { font-family: monospace; font-size: 1.4rem; letter-spacing: 0.5rem; padding: 0.8rem; }
+    .login-card button {
+      width: 100%; padding: 0.65rem; background: #4682b4; color: white;
+      border: none; border-radius: 6px; font-size: 0.9rem; cursor: pointer;
+    }
+    .login-card button:hover { background: #2c5171; }
+    .login-card button:disabled { background: #bdc3c7; cursor: not-allowed; }
+    .login-msg { font-size: 0.8rem; margin-top: 0.5rem; }
+    .login-error { color: #e74c3c; }
+    .login-info { color: #2ecc71; }
+    .step { display: none; }
+    .step.active { display: block; }
+    .back-link { display: inline-block; margin-top: 0.75rem; font-size: 0.75rem; color: #4682b4; cursor: pointer; text-decoration: underline; }
+    .user-info { background: rgba(70,130,180,0.08); border-radius: 6px; padding: 0.5rem; margin-bottom: 1rem; font-size: 0.8rem; color: #2c5171; }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <h1>CONSUM-IA</h1>
+    <p class="subtitle">Tu consumo, en claro</p>
+    <div id="step-email" class="step active">
+      <form onsubmit="return requestOTP()">
+        <input type="email" id="email-input" placeholder="Email" autofocus required>
+        <button type="submit" id="btn-otp">Send OTP Code</button>
+      </form>
+      <div id="email-msg" class="login-msg" style="display:none"></div>
+    </div>
+    <div id="step-otp" class="step">
+      <div class="user-info" id="otp-email-display"></div>
+      <form onsubmit="return verifyOTP()">
+        <input type="text" id="otp-input" class="otp-input" placeholder="000000" maxlength="6" pattern="[0-9]{6}" inputmode="numeric" required>
+        <button type="submit" id="btn-verify">Verify</button>
+      </form>
+      <div id="otp-msg" class="login-msg" style="display:none"></div>
+      <span class="back-link" onclick="showStep('email')">Change email</span>
+    </div>
+    <div id="step-success" class="step">
+      <div class="user-info" id="welcome-name"></div>
+      <p class="login-info">Authenticated. Redirecting...</p>
+    </div>
+    <div style="margin-top:1.5rem;font-size:0.7rem;color:#999;">pibiCo — CONSUM-IA</div>
+  </div>
+  <script>
+    var ROOT = '{{ root }}';
+    var API = ROOT + '/api/v1';
+    var userEmail = '';
+    var existing = localStorage.getItem('auth_jwt');
+    if (existing && existing.length > 20) {
+      // Real validation (not a public-health ping): only skip login if the
+      // stored token still validates against api_auth.
+      fetch(API + '/auth/validate', { headers: { 'Authorization': 'Bearer ' + existing } })
+        .then(function(r) { if (r.ok) window.location.href = ROOT + '/app'; });
+    }
+    function showStep(s) {
+      document.querySelectorAll('.step').forEach(function(e){e.classList.remove('active');});
+      document.getElementById('step-' + s).classList.add('active');
+    }
+    function requestOTP() {
+      userEmail = document.getElementById('email-input').value.trim();
+      if (!userEmail) return false;
+      var btn = document.getElementById('btn-otp'); btn.disabled = true; btn.textContent = 'Sending...';
+      fetch(API + '/auth/request-otp', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email:userEmail}) })
+        .then(function(r){return r.json();}).then(function(d) {
+          btn.disabled = false; btn.textContent = 'Send OTP Code';
+          if (d.ok) { document.getElementById('otp-email-display').textContent = userEmail; showStep('otp'); }
+          else { var el = document.getElementById('email-msg'); el.textContent = d.detail||'Error'; el.className='login-msg login-error'; el.style.display='block'; }
+        }).catch(function(){btn.disabled=false;btn.textContent='Send OTP Code';});
+      return false;
+    }
+    function verifyOTP() {
+      var code = document.getElementById('otp-input').value.trim();
+      if (!code || code.length !== 6) return false;
+      var btn = document.getElementById('btn-verify'); btn.disabled = true; btn.textContent = 'Verifying...';
+      fetch(API + '/auth/verify-otp', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email:userEmail,code:code}) })
+        .then(function(r){return r.json();}).then(function(d) {
+          btn.disabled=false; btn.textContent='Verify';
+          if (d.access_token) {
+            var user = d.user || {};
+            localStorage.setItem('auth_jwt', d.access_token);
+            localStorage.setItem('api_key', d.access_token);
+            localStorage.setItem('auth_user', JSON.stringify({email:user.email||userEmail,name:user.name||userEmail}));
+            document.getElementById('welcome-name').textContent = user.name||userEmail;
+            showStep('success');
+            setTimeout(function(){window.location.href=ROOT+'/app';},800);
+          } else {
+            var el=document.getElementById('otp-msg');el.textContent=d.detail||'Invalid code';el.className='login-msg login-error';el.style.display='block';
+          }
+        }).catch(function(){btn.disabled=false;btn.textContent='Verify';});
+      return false;
+    }
+  </script>
+</body>
+</html>

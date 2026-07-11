@@ -1,0 +1,745 @@
+/* ==========================================================================
+   api_exo.css — app-specific layer.
+   PART 1: canonical app-layer vendored from api_edge.css (data tables,
+           ev-pager, toasts, confirm dialog, slide-panel + finger-tab
+           overrides, filters bar). Keep in sync with api_edge.
+   PART 2: exo page widgets (prices hero, charts grid, weather map, KPI
+           variants) — retinted from the legacy teal to pibiCo steel blue.
+   ========================================================================== */
+
+/* api_consum (app layer, vendored from api_edge) — App-specific CSS */
+
+/* Page header */
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.page-header h2 {
+  margin: 0;
+  color: #fff;
+  font-family: 'Montserrat', sans-serif;
+}
+
+/* KPI grid */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.kpi-card {
+  text-align: center;
+  padding: 1rem !important;
+}
+.kpi-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-light);
+  margin-bottom: 0.5rem;
+}
+.kpi-value {
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  font-family: 'JetBrains Mono', monospace;
+  line-height: 1.2;
+}
+.kpi-sub {
+  font-size: 0.75rem;
+  color: var(--color-text-light);
+  margin-top: 0.3rem;
+}
+
+/* Status pill (text label — NOT `.status-dot`, which pibico.css reserves for
+   the canonical 8x8 empty circle indicator; colliding names caused the pill
+   to be clipped to 8x8 with overflowing text). */
+.status-pill {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.status-ok {
+  background: rgba(46, 204, 113, 0.15);
+  color: #27ae60;
+}
+.status-err {
+  background: rgba(231, 76, 60, 0.15);
+  color: #c0392b;
+}
+
+/* WS badge in navbar */
+.ws-badge {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+.ws-connected {
+  background: #2ecc71;
+  color: #fff;
+}
+.ws-disconnected {
+  background: #e74c3c;
+  color: #fff;
+}
+
+/* 2-column grid */
+.grid-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+/* Info table */
+.info-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.info-table td {
+  padding: 0.4rem 0;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  font-size: 0.9rem;
+}
+.info-table td:first-child {
+  color: var(--color-text-light);
+  width: 50%;
+}
+
+/* Alert rows */
+.alert-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
+}
+.alert-high {
+  background: rgba(231, 76, 60, 0.1);
+  border-left: 3px solid #e74c3c;
+}
+.alert-low {
+  background: rgba(243, 156, 18, 0.1);
+  border-left: 3px solid #f39c12;
+}
+.alert-device {
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+}
+.alert-sensor {
+  color: var(--color-text-light);
+}
+.alert-type {
+  font-weight: 700;
+  font-size: 0.75rem;
+}
+
+/* Empty state */
+.empty-state {
+  text-align: center;
+  padding: 2rem;
+  color: var(--color-text-light);
+  font-style: italic;
+}
+
+/* Horizontal scroll wrapper for wide tables — prevents page-level overflow on
+   narrow viewports (pibiCo guidelines: no horizontal scroll on body, ≥360px). */
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Truncate long ids/hostnames/paths instead of forcing column/table overflow */
+.truncate {
+  display: inline-block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* Data table */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.data-table th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 2px solid rgba(70,130,180,0.2);
+  color: var(--color-text-light);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.data-table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+}
+.data-table tr:hover td {
+  background: rgba(70,130,180,0.04);
+}
+.data-table .mono {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+}
+
+/* Confirm dialog (replaces native confirm() — pibiCo guidelines forbid JS
+   dialogs; centered modal is the one allowed case, for confirm/input). */
+.confirm-overlay {
+  position: fixed; inset: 0; z-index: 2000;
+  background: rgba(20,30,40,0.45);
+  display: flex; align-items: center; justify-content: center;
+  animation: fadeIn 0.15s ease;
+}
+.confirm-box {
+  background: #fff;
+  border-radius: 10px;
+  padding: 1.25rem;
+  width: 90%;
+  max-width: 360px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+}
+.confirm-msg { font-size: 0.9rem; color: var(--color-text); margin-bottom: 1rem; line-height: 1.4; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* Toast notifications */
+.toast {
+  background: var(--color-bg-glass);
+  backdrop-filter: blur(20px);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  border-left: 4px solid var(--color-primary);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  animation: slideIn 0.3s ease;
+}
+.toast-danger { border-left-color: #e74c3c; }
+.toast-warning { border-left-color: #f39c12; }
+.toast-success { border-left-color: #2ecc71; }
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* Logs viewer */
+.logs-viewer {
+  background: #1a1a1a;
+  color: #2ecc71;
+  padding: 1rem;
+  border-radius: 6px;
+  max-height: 400px;
+  overflow-y: auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+
+/* Query editor */
+.query-editor {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  min-height: 200px;
+  width: 100%;
+  padding: 1rem;
+  border: 1px solid rgba(70,130,180,0.3);
+  border-radius: 6px;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  line-height: 1.6;
+  resize: vertical;
+}
+.query-results {
+  background: #1a1a1a;
+  color: #2ecc71;
+  padding: 1rem;
+  border-radius: 6px;
+  max-height: 400px;
+  overflow: auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  margin-top: 1rem;
+  white-space: pre-wrap;
+}
+
+/* Badges */
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.badge-ok { background: rgba(46,204,113,0.15); color: #27ae60; }
+.badge-warn { background: rgba(243,156,18,0.15); color: #d68910; }
+.badge-err { background: rgba(231,76,60,0.15); color: #c0392b; }
+.badge-info { background: rgba(70,130,180,0.15); color: #2c5171; }
+
+/* Filters bar */
+.filters-bar {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.filters-bar input, .filters-bar select {
+  padding: 0.4rem 0.75rem;
+  border: 1px solid rgba(70,130,180,0.3);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+/* Sensors grid */
+#sensors-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+#sensors-grid > .glass-panel {
+  margin: 0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .grid-2col { grid-template-columns: 1fr; }
+  .data-table { font-size: 0.75rem; }
+}
+@media (max-width: 480px) {
+  .kpi-grid { grid-template-columns: 1fr; }
+}
+
+/* alerts.html section switcher — REAL pibiCo finger tabs (guidelines §6.2),
+   same three-layer mask engine as cm4-consumia/local-webui (pibico-tabs.js):
+   .pibico-card-area > .pibico-glass + .pibico-tab-row + .pibico-content. The
+   base geometry/colours live in pibico.css; this block only supplies the
+   page-specific sizing so the card fills `<main>` height (needed for the SVG
+   mask to compute correctly) and each tab section scrolls independently. */
+.alerts-card-area, .exo-card-area { flex: 1; min-width: 0; min-height: calc(100vh - 150px); }
+.alerts-card-area .pibico-content, .exo-card-area .pibico-content { display: flex; flex-direction: column; min-height: 0; }
+.alerts-card-area .pibico-tab-content, .exo-card-area .pibico-tab-content {
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+}
+.alerts-card-area .pibico-tab, .exo-card-area .pibico-tab { color: rgba(255, 255, 255, 0.9); }
+.alerts-card-area .pibico-tab:hover, .exo-card-area .pibico-tab:hover { color: #fff; }
+.alerts-card-area .pibico-tab.active,
+.alerts-card-area .pibico-tab.active .pibico-tab-label,
+.exo-card-area .pibico-tab.active,
+.exo-card-area .pibico-tab.active .pibico-tab-label { color: var(--accent-color, #2c5171); font-weight: 600; }
+
+/* Sections were previously wrapped in `.glass-panel` (its own glass surface)
+   for the pill-tab layout; now they live inside the finger-tab `.pibico-content`,
+   which is ALREADY glass (Layer 1 `.pibico-glass`). Neutralize the inner
+   `.glass-panel` so we never double-composite two glass surfaces (visible
+   seam) — pibico-guidelines §3 Glass Tokens. */
+.alerts-card-area .pibico-content .glass-panel {
+  background: transparent; box-shadow: none; border: none;
+  backdrop-filter: none; -webkit-backdrop-filter: none; padding: 0;
+}
+
+.pibico-label { margin-top: 0.4rem; }
+.read-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--color-primary); flex-shrink: 0;
+}
+.read-dot.is-read { background: transparent; border: 1px solid var(--color-text-light); }
+
+/* === Canonical slide-panel close button (pibico-guidelines §6.5) ==========
+ * Every panel header uses the SAME icon-only close button (matches the
+ * About panel's `×`, previously the only styled instance — the other 9
+ * panels used a text "Cerrar" `.btn.btn-secondary`). Reuses the existing
+ * `.icon-btn-ghost` visual language (collab.css) at a size that fits the
+ * compact 32-40px header row. */
+.panel-close {
+  width: 28px; height: 28px; min-width: 28px;
+  /* padding:0 is REQUIRED — the global `button{padding:.35rem .8rem}` (base.html)
+   * + box-sizing:border-box otherwise collapses this fixed-28px button's content
+   * box to ~0, clipping a block SVG icon to invisible (the `×` font glyph
+   * overflowed, which hid the bug). Verified with a headless render. */
+  padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--icon-btn-border, rgba(44,81,113,0.25)); border-radius: var(--radius-sm, 8px);
+  background: transparent; color: #577793;
+  font-size: 20px; line-height: 1; cursor: pointer; flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.panel-close:hover { background: rgba(44,81,113,0.08); color: #2c5171; }
+/* SVG-icon variant of the close button (e.g. the device-panel width toggle):
+ * guarantee the glyph is sized + inherits the button color — an SVG with no
+ * CSS sizing can collapse to zero and render invisible. */
+.panel-close svg { width: 16px; height: 16px; display: block; stroke: currentColor; }
+
+/* === Header icon buttons — 1px line border ==================================
+ * `.app-header-btn` (pibico-guidelines canonical navbar button, defined in
+ * the vendored pibico.css — left untouched) ships `border: none`. Per
+ * explicit "every button gets a 1px line border" requirement, override just
+ * the border here (app-owned file), same token as every other button. */
+.app-header-btn {
+  border: 1px solid var(--icon-btn-border, rgba(44,81,113,0.25));
+}
+
+/* === Detail definition list (device/tunnel panels) =========================
+ * `.detail-dl` was referenced by devices.js/tunnels.js but never styled —
+ * rendered as unstyled stacked <dt>/<dd>. Label/value grid, dividers, mono
+ * values via the existing `.mono` class already used inline. */
+.detail-dl {
+  display: grid;
+  grid-template-columns: minmax(120px, 40%) 1fr;
+  gap: 0;
+  font-size: 0.85rem;
+}
+.detail-dl dt {
+  padding: 0.4rem 0.6rem 0.4rem 0;
+  color: var(--color-text-light);
+  font-weight: 600;
+  font-size: 0.78rem;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  display: flex; align-items: center;
+}
+.detail-dl dd {
+  margin: 0;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  display: flex; align-items: center;
+  word-break: break-word;
+}
+.detail-dl dt:last-of-type,
+.detail-dl dd:last-of-type { border-bottom: none; }
+
+/* === Badges — canonical semantic set ========================================
+ * `.badge-success`/`.badge-danger`/`.badge-warning` are used ~27x across the
+ * page JS but were never defined (only the older -ok/-warn/-err existed) —
+ * those badges rendered as plain unstyled inline text. Define the canonical
+ * set; keep the older aliases (same colors) so nothing already shipping
+ * regresses while call sites are normalized to the new names. */
+.badge-success  { background: rgba(46,204,113,0.15); color: #27ae60; }
+.badge-danger   { background: rgba(231,76,60,0.15);  color: #c0392b; }
+.badge-warning  { background: rgba(243,156,18,0.15); color: #d68910; }
+.badge-secondary{ background: rgba(148,163,184,0.15); color: #64748b; }
+
+/* === Buttons — canonical danger variant =====================================
+ * This app's established button system (base.html) is `.btn`/`.btn-primary`/
+ * `.btn-secondary`/`.btn-sm` — `.pibico-btn-*` is not used anywhere here.
+ * `.btn-danger` was missing (destructive actions had no dedicated look). */
+.btn-danger { background: #e74c3c; color: #fff; border-color: #c0392b; }
+.btn-danger:hover { background: #c0392b; }
+
+/* === Square icon-only action buttons (panel-body + table-row actions) ======
+ * Every action button rendered inside a slide-panel body or a table row
+ * (open terminal/VNC, stop, release, reset, configure, edit, delete, test,
+ * acknowledge, download, deploy, cancel…) is a square 32x32 icon button with
+ * a title/aria-label tooltip instead of a text label — one class, reused
+ * everywhere, so they never drift page to page. Size matches the pibiCo
+ * guidelines "body icon button" spec (32x32, icon 16-18). Form Cancel/Save
+ * footer buttons and page-level toolbar CTAs (+Nueva regla, Sincronizar…)
+ * are NOT part of this set — they keep their text labels. */
+.btn-icon {
+  width: 32px; height: 32px; min-width: 32px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--icon-btn-border, rgba(44,81,113,0.25));
+  border-radius: var(--radius-sm, 8px);
+  background: rgba(44,81,113,0.08);
+  color: var(--color-primary-dark, #2c5171);
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+  flex-shrink: 0;
+  text-decoration: none; /* covers <a class="btn-icon"> (e.g. downloads, external links) */
+}
+.btn-icon:hover { background: rgba(44,81,113,0.16); transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+.btn-icon svg { width: 18px; height: 18px; stroke: currentColor; flex-shrink: 0; }
+.btn-icon.btn-icon-danger { color: #c0392b; border-color: #c0392b; background: rgba(231,76,60,0.08); }
+.btn-icon.btn-icon-danger:hover { background: rgba(231,76,60,0.18); }
+
+/* Neat flex row for grouping several .btn-icon buttons together (table-row
+ * action cells, slide-panel action rows). MUST stay on one line — a wrapped
+ * second row of icons breaks row height/alignment in compact data tables. */
+.btn-icon-group {
+  display: flex; align-items: center; gap: 4px; flex-wrap: nowrap;
+}
+/* Actions column itself must never wrap either, so the group above never
+ * gets squeezed onto two lines by a narrow <td>. */
+.data-table td:has(.btn-icon-group) {
+  white-space: nowrap;
+}
+
+/* === Canonical pager — CM4 local-webui pattern ==============================
+ * Reference: cm4-consumia/local-webui/app/static/js/app.js:1611 (evPagerHtml)
+ * + app/static/css/consumia.css:608/883 (.an-ic / .ev-pager). Retokenized to
+ * this console's --color-* vars, per explicit instruction to replace the
+ * generic vh-pagination with this compact chevron pattern — rendered above
+ * AND below every paginated table/list, ONE shared JS helper
+ * (static/js/pages/_pagination.js) drives every instance identically.
+ * `border: none` (CM4 original) changed to the console-wide 1px line-border
+ * per the "every button gets an outline" requirement. */
+.an-ic {
+  border: 1px solid var(--icon-btn-border, rgba(44,81,113,0.25));
+  background: rgba(44,81,113,0.1); color: #1a3a54;
+  width: 26px; height: 26px; border-radius: 999px; cursor: pointer;
+  font-size: 0.85rem; line-height: 1; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background 0.12s;
+}
+.an-ic:hover { background: rgba(44,81,113,0.2); }
+.an-ic[disabled] { opacity: 0.3; cursor: default; }
+.ev-pager {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 6px 0;
+  font-size: 0.72rem; color: var(--color-text-light, #7f8c8d);
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+}
+.ev-pager[hidden] { display: none; }
+
+/* === Device panel — vertical tab rail =======================================
+ * Cloned from the iot-hub reference (app/static/js/devices.js ~L178
+ * `.device-panel-layout`/`.device-tab-bar`/`.device-tab-content`, CSS
+ * app/static/css/style.css `.device-tab-bar`/`.device-tab`), retokenized to
+ * this console's --color-* vars instead of iot-hub's --primary-color/
+ * --border-color/--text-secondary. Icon-only 36x36 square buttons (no visible
+ * label — title + data-i18n-title tooltip only), 52px rail width, exactly
+ * matching iot-hub's dimensions. Replaces the standalone Tunnels page: the
+ * device slide-panel body becomes rail (Overview/Terminal/VNC/Files/RPC/Logs)
+ * + content pane instead of a flat detail-dl. Negative margin cancels
+ * `.slide-panel-body`'s 10px/14px padding so rail/pane reach the panel edges;
+ * each pane re-adds its own padding via `.dev-tabpane`. */
+.dev-tabs {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  margin: -10px -14px;
+}
+.dev-tab-rail {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--icon-btn-border, rgba(44,81,113,0.25));
+  padding: 8px;
+  gap: 4px;
+  width: 52px;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: rgba(70,130,180,0.04);
+}
+.dev-tab {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-light);
+  border-radius: var(--radius-sm, 8px);
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+.dev-tab svg { width: 18px; height: 18px; stroke: currentColor; flex-shrink: 0; }
+.dev-tab:hover { background: rgba(70,130,180,0.14); color: var(--color-text); }
+.dev-tab.active {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary-dark);
+}
+.dev-tabpane {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* Terminal/VNC panes: the iframe fills the whole pane, no scroll/padding on
+ * the pane itself (the embedded page scrolls itself) — iot-hub's equivalent
+ * is `.slide-panel.terminal-panel .panel-body{padding:10px;overflow:hidden}`.
+ * We reuse the console's EXISTING (previously unused) `.slide-panel.expanded`
+ * modifier (collab.css, width:100vw) instead of introducing a new
+ * `.terminal-panel` class for the same "widen to near-full-screen while a
+ * live iframe tab is open" behavior — devices.js toggles `.expanded` on
+ * `#device-panel` when the Terminal/VNC tab is active and removes it for
+ * every other tab. */
+.dev-tabpane.no-scroll { overflow: hidden; padding: 0; }
+.dev-iframe-toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(0,0,0,0.08);
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  color: var(--color-text-light);
+}
+.dev-iframe-wrap { flex: 1; min-height: 0; }
+.dev-iframe-wrap iframe { width: 100%; height: 100%; border: none; display: block; background: #1e1e1e; }
+
+/* Files tab */
+.dev-file-toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+}
+.dev-file-path {
+  font-family: var(--font-mono); font-size: 0.76rem; color: var(--color-text-light);
+  word-break: break-all;
+}
+/* Dense file-manager rhythm (CM4 local-webui compactness rule: ~3px vertical
+ * padding, line-height 1–1.2, zero row gap — rows are delineated by the
+ * hover background instead of whitespace, not airy list-style spacing). */
+.dev-file-list { display: flex; flex-direction: column; gap: 0; line-height: 1.15; }
+.dev-file-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 2px 8px; border-radius: 4px;
+  line-height: 1.15;
+  font-size: 0.82rem;
+}
+.dev-file-row:hover { background: rgba(70,130,180,0.06); }
+.dev-file-row .dev-file-icon { flex-shrink: 0; color: var(--color-text-light); display: flex; }
+.dev-file-row.is-dir .dev-file-icon { color: var(--color-primary); }
+.dev-file-row .dev-file-name {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  line-height: 1.15;
+}
+.dev-file-row.is-dir .dev-file-name { font-weight: 600; color: var(--color-primary-dark); cursor: pointer; }
+.dev-file-size {
+  font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-text-light);
+  width: 70px; text-align: right; flex-shrink: 0; line-height: 1.15;
+}
+
+/* RPC / Logs tabs */
+.dev-rpc-form { display: flex; flex-direction: column; gap: 8px; }
+.dev-rpc-params { display: flex; flex-direction: column; gap: 8px; }
+.dev-rpc-param label {
+  display: block; font-size: 0.72rem; color: var(--color-text-light); margin-bottom: 2px;
+}
+.dev-rpc-param input, .dev-rpc-param select {
+  width: 100%; padding: 0.35rem 0.6rem; border: 1px solid rgba(70,130,180,0.3);
+  border-radius: 6px; font-family: inherit; font-size: 0.82rem;
+}
+.dev-rpc-result {
+  background: #1a1a1a; color: #2ecc71; padding: 0.75rem; border-radius: 6px;
+  font-family: var(--font-mono); font-size: 0.78rem; white-space: pre-wrap;
+  max-height: 280px; overflow: auto;
+}
+/* Tight line rhythm for the Logs tab's <pre> — scoped modifier (NOT a change
+ * to the shared `.logs-viewer` base class, which templates/logs.html also
+ * uses at its normal 1.6 line-height) so only this dense device-panel view
+ * gets the CM4-style ~1.15 line-height/compact feel. */
+.dev-logs-viewer { line-height: 1.15; padding: 8px 10px; }
+
+/* Mobile: rail becomes a horizontal scrolling strip above the pane (same
+ * adaptation as the iot-hub reference's `.device-tab-bar` mobile breakpoint). */
+@media (max-width: 768px) {
+  .dev-tabs { flex-direction: column; }
+  .dev-tab-rail {
+    flex-direction: row; width: 100%; overflow-x: auto; overflow-y: hidden;
+    border-right: none; border-bottom: 1px solid var(--icon-btn-border, rgba(44,81,113,0.25));
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Visible form controls on WHITE surfaces (slide panels, cards).
+ * The shared --glass-border token is translucent white (rgba(255,255,
+ * 255,.3)) — meant for glass over the gradient, but INVISIBLE on the
+ * #fff slide panels, so rule/channel inputs, selects, checkboxes and
+ * placeholders had no perceptible outline. Give them a solid 1px border.
+ * Applies to every alerts-page tab + panel (rule-panel, channel-panel)
+ * and any other pibico-input/select/textarea in the console.
+ * ------------------------------------------------------------------ */
+.pibico-input,
+.pibico-select,
+.pibico-textarea {
+  border: 1px solid #c3ccd6;              /* solid slate — clearly visible on white */
+}
+.pibico-input:hover,
+.pibico-select:hover,
+.pibico-textarea:hover {
+  border-color: #9aa5b1;
+}
+.pibico-input::placeholder,
+.pibico-textarea::placeholder {
+  color: #97a2b0;                         /* readable, not washed out */
+  opacity: 1;                             /* Firefox dims placeholders by default */
+}
+
+/* Native checkbox/radio inside panels → custom bordered box with brand
+ * accent when checked (the browser default was a faint box lost on #fff). */
+.slide-panel input[type="checkbox"],
+.slide-panel input[type="radio"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0 6px 0 0;
+  border: 1px solid #8a97a5;
+  border-radius: 3px;
+  background: #fff;
+  vertical-align: middle;
+  position: relative;
+  flex: none;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.slide-panel input[type="radio"] { border-radius: 50%; }
+.slide-panel input[type="checkbox"]:hover,
+.slide-panel input[type="radio"]:hover { border-color: var(--primary-color, #4682b4); }
+.slide-panel input[type="checkbox"]:checked,
+.slide-panel input[type="radio"]:checked {
+  background: var(--primary-color, #4682b4);
+  border-color: var(--primary-color, #4682b4);
+}
+.slide-panel input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px; top: 1px;
+  width: 4px; height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.slide-panel input[type="radio"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px; top: 4px;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #fff;
+}
+.slide-panel input[type="checkbox"]:focus-visible,
+.slide-panel input[type="radio"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(70, 130, 180, 0.25);
+}
+
+
+
+/* =====================  PART 2 — consum app widgets  ===================== */
+/* (F2+ page-specific styles land here) */
+
+/* Layout grids (shared shapes with api_edge/api_exo) */
+.kpi-grid-8 { display: grid; grid-template-columns: repeat(8, 1fr); gap: 0.6rem; margin-bottom: 1rem; }
+.kpi-grid-8 .kpi-card {
+  text-align: center; padding: 0.9rem 0.4rem !important;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+  gap: 4px; min-height: 130px; min-width: 0;
+}
+.kpi-grid-8 .kpi-card .kpi-label { font-size: 0.68rem; }
+@media (max-width: 1400px) { .kpi-grid-8 { grid-template-columns: repeat(4, 1fr); } }
+@media (max-width: 768px)  { .kpi-grid-8 { grid-template-columns: repeat(2, 1fr); } }
+.wx-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; align-items: stretch; }
+.wx-2col > * { margin-bottom: 0 !important; min-width: 0; }
+@media (max-width: 768px) { .wx-2col { grid-template-columns: 1fr; } }
+.comfort-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem; align-items: stretch; }
+.comfort-2col > * { min-width: 0; }
+.comfort-stack { display: flex; flex-direction: column; gap: 0.75rem; }
+.comfort-stack > * { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+@media (max-width: 768px) { .comfort-2col { grid-template-columns: 1fr; } }

@@ -1,8 +1,12 @@
-"""Health + edge-event endpoints."""
+"""Health + edge-event endpoints.
+
+/health stays PUBLIC (liveness + api_auth registry badge). /events exposes
+household alert events → auth required (JWT / service key), F0."""
 import sqlite3
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.core.auth import require_auth_always
 from app.core.config import settings
 
 router = APIRouter()
@@ -14,7 +18,7 @@ async def health():
             "version": settings.VERSION}
 
 
-@router.get("/events")
+@router.get("/events", dependencies=[Depends(require_auth_always)])
 async def events(limit: int = 50):
     """Latest edge events received from the gateways (family-notify feed)."""
     limit = max(1, min(int(limit), 200))

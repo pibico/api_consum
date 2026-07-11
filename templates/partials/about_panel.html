@@ -1,0 +1,53 @@
+{# Canonical pibiCo About slide-panel (opens from the RIGHT). Place as a sibling
+   of .app-layout (top level of <body>). Uses the ONE shared #panel-backdrop
+   (declared once in base.html) and the console-wide AppUI.openPanel/closePanel
+   mechanism — same as every other slide panel in this app. Legal links point
+   at the centralized api_auth legal hub: {{ auth_base_url }}/legal/<api_slug>/<type>. #}
+<aside class="slide-panel" id="aboutPanel" aria-hidden="true">
+  <div class="slide-panel-header">
+    <h2 data-i18n="aboutTitle">Acerca de</h2>
+    <button type="button" class="panel-close" onclick="pibicoCloseAbout()" aria-label="Cerrar">&times;</button>
+  </div>
+  <div class="slide-panel-body" style="padding:20px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+      <img src="{{ root_path }}/static/icons/pibico_icon.svg" width="40" height="40" alt="pibiCo">
+      <div>
+        <div style="font-family:var(--font-heading,'Montserrat',sans-serif);font-weight:700;color:var(--accent-color,#2c5171);font-size:1.05rem;" data-i18n="appTitle">CONSUM-IA</div>
+        <div style="font-size:.78rem;color:var(--text-light,#666);">v{{ version }}</div>
+      </div>
+    </div>
+    <p style="font-size:.86rem;color:var(--text-color,#333);line-height:1.5;" data-i18n="aboutBody">
+      Tu consumo, en claro: mide lo que gasta tu casa, cuánto cuesta con tus precios y cómo ahorrarlo — con datos meteorológicos y de mercado de fuentes oficiales.
+    </p>
+    <p style="font-size:.78rem;color:var(--text-light,#666);margin-top:14px;line-height:1.5;" data-i18n="aboutCompany">
+      pibiCo Compañía de Inteligencia de Negocio y Control S.L.<br>Gijón, Asturias, España
+    </p>
+
+    {# ENLACES legales — centralizados en api_auth #}
+    <div style="margin-top:16px;display:flex;gap:14px;flex-wrap:wrap;font-size:.8rem;">
+      <a href="{{ auth_base_url }}/legal/consum/privacy" target="_blank" rel="noopener" data-i18n="aboutLegalPrivacy">Privacidad</a>
+      <a href="{{ auth_base_url }}/legal/consum/cookies" target="_blank" rel="noopener" data-i18n="aboutLegalCookies">Cookies</a>
+      <a href="{{ auth_base_url }}/legal/consum/terms" target="_blank" rel="noopener" data-i18n="aboutLegalTerms">Términos</a>
+      <a href="{{ auth_base_url }}/legal/consum/dpa" target="_blank" rel="noopener" data-i18n="aboutLegalDpa">Tratamiento de datos</a>
+    </div>
+
+    {# API — served from LOCAL vendor assets (no CDN) #}
+    <div style="margin-top:10px;display:flex;gap:14px;flex-wrap:wrap;font-size:.8rem;">
+      <a href="{{ root_path }}/api/docs" target="_blank" rel="noopener" data-i18n="apiDocs">API Docs</a>
+      <a href="{{ root_path }}/api/redoc" target="_blank" rel="noopener" data-i18n="redocLink">ReDoc</a>
+    </div>
+
+    <div style="margin-top:16px;font-size:.8rem;">
+      <a href="https://www.pibico.es" target="_blank" rel="noopener">www.pibico.es</a>
+    </div>
+  </div>
+</aside>
+
+<script>
+/* About open/close — thin wrappers over the shared AppUI.openPanel/closePanel
+ * (api_edge.js), which already handles the shared #panel-backdrop and
+ * Escape-to-close for every panel in the console. Names kept for the
+ * existing onclick="pibicoOpenAbout(event)" / footer link call sites. */
+window.pibicoOpenAbout  = function (e) { if (e) e.preventDefault(); window.AppUI.openPanel('aboutPanel'); };
+window.pibicoCloseAbout = function () { window.AppUI.closePanel('aboutPanel'); };
+</script>
