@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "16"  # 16: price bands on OMIE too, legend, aligned date picker
+ASSET_VERSION = "17"  # 17: location map card (Leaflet) + 7-day weather
 
 
 def render_template(template_name: str, **context) -> str:

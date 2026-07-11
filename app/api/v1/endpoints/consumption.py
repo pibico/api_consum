@@ -216,7 +216,7 @@ async def environment(customer: Optional[str] = Query(None),
                                                 "station")} if now_wx else None),
             "days": [{k: d.get(k) for k in ("date", "temp_max", "temp_min",
                                             "description", "precipitation_prob")}
-                     for d in days[:4]],
+                     for d in days[:7]],
         },
         "solar": {"today_kwh": (solar or {}).get("today_kwh"),
                   "tomorrow_kwh": (solar or {}).get("tomorrow_kwh"),

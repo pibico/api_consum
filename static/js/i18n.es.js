@@ -117,6 +117,8 @@ window.I18N_ES = {
   'app.cheapest': 'Mín',
   'app.priciest': 'Máx',
   'app.weatherTitle': 'El tiempo en tu casa',
+  'app.mapTitle': 'Tu hogar',
+  'app.next7': 'próximos 7 días',
   'app.solarTitle': 'Sol en tu tejado',
   'app.solarPeak': 'Mejores horas de sol',
   'app.solarExplain': 'Producción estimada para {kwp} kWp orientación sur.',

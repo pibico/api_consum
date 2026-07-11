@@ -270,11 +270,30 @@
     return (DOW[lang] || DOW.es)[new Date(dateStr + 'T12:00:00').getDay()];
   }
 
+  // ── Location map (Leaflet, vendored; Carto light tiles like api_exo) ──
+  var map = null;
+  function renderMap() {
+    var loc = env && env.location;
+    var el = q('pnl-map');
+    if (!el || !loc || typeof L === 'undefined' || map) {
+      if (map && loc) map.setView([loc.lat, loc.lon]);
+      return;
+    }
+    q('pnl-map-muni').textContent = loc.municipality ? '· ' + loc.municipality : '';
+    map = L.map('pnl-map', { zoomControl: true, scrollWheelZoom: false })
+      .setView([loc.lat, loc.lon], 15);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19,
+    }).addTo(map);
+    L.circleMarker([loc.lat, loc.lon], {
+      radius: 9, color: '#2c5171', weight: 2,
+      fillColor: '#4682b4', fillOpacity: 0.85,
+    }).addTo(map).bindPopup(loc.municipality || 'Tu hogar');
+  }
+
   function renderWeather() {
     var wx = (env && env.weather) || {};
     var days = wx.days || [];
-    var muni = env && env.location && env.location.municipality;
-    q('pnl-wx-muni').textContent = muni ? '· ' + muni : '';
     if (!days.length && !wx.now) {
       q('pnl-weather').innerHTML = '<span class="text-muted">' + __t('common.noData', 'Sin datos') + '</span>';
       return;
@@ -374,6 +393,7 @@
       syncPriceButtons();
       updatePriceKpi();
       drawPvpcChart();
+      renderMap();
       renderWeather();
       renderSolar();
       renderWindow();

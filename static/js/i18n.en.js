@@ -117,6 +117,8 @@ window.I18N_EN = {
   'app.cheapest': 'Min',
   'app.priciest': 'Max',
   'app.weatherTitle': 'Weather at your home',
+  'app.mapTitle': 'Your home',
+  'app.next7': 'next 7 days',
   'app.solarTitle': 'Sun on your roof',
   'app.solarPeak': 'Best sun hours',
   'app.solarExplain': 'Estimated output for {kwp} kWp facing south.',

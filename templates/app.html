@@ -86,12 +86,21 @@
 </div>
 
 <!-- Personalized exogenous environment -->
-<div class="panel-3col">
+<link rel="stylesheet" href="{{ root }}/static/css/leaflet/leaflet.css">
+<div class="wx-2col">
+  <div class="glass-panel" style="padding:0.75rem 1rem;display:flex;flex-direction:column;">
+    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="app.mapTitle">Tu hogar</span>
+      <span class="text-muted" id="pnl-map-muni" style="font-weight:400;"></span></h4>
+    <div id="pnl-map" style="flex:1;min-height:230px;border-radius:8px;overflow:hidden;"></div>
+  </div>
   <div class="glass-panel" style="padding:0.75rem 1rem;">
     <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="app.weatherTitle">El tiempo en tu casa</span>
-      <span class="text-muted" id="pnl-wx-muni" style="font-weight:400;"></span></h4>
+      <span class="text-muted" style="font-weight:400;">· <span data-i18n="app.next7">próximos 7 días</span></span></h4>
     <div id="pnl-weather"><span class="spinner"></span></div>
   </div>
+</div>
+
+<div class="wx-2col">
   <div class="glass-panel" style="padding:0.75rem 1rem;">
     <h4 style="margin:0 0 0.5rem;font-size:0.85rem;" data-i18n="app.solarTitle">Sol en tu tejado</h4>
     <div id="pnl-solar"><span class="spinner"></span></div>
@@ -104,5 +113,6 @@
 </div>
 
 <script src="{{ root }}/static/js/vendor/echarts.min.js" defer></script>
+<script src="{{ root }}/static/js/leaflet/leaflet.js" defer></script>
 <script src="{{ root }}/static/js/pages/app.js?v={{ v }}" defer></script>
 {% endblock %}
