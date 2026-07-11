@@ -271,25 +271,57 @@
     return (DOW[lang] || DOW.es)[new Date(dateStr + 'T12:00:00').getDay()];
   }
 
-  // ── Location map (Leaflet, vendored; Carto light tiles like api_exo) ──
-  var map = null;
+  // ── Location map — api_exo radar parity: CARTO Dark base + RainViewer
+  //    precipitation frames (last 3, latest full opacity) + light labels
+  //    on top; the home as a white-ringed pibiCo-blue dot. ──
+  var map = null, radarLayers = [], labelsLayer = null;
+
+  function updateRadar() {
+    if (!map) return;
+    fetch('https://api.rainviewer.com/public/weather-maps.json')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.radar || !data.radar.past || !data.radar.past.length) return;
+        radarLayers.forEach(function (l) { map.removeLayer(l); });
+        radarLayers = [];
+        var frames = data.radar.past.slice(-3);
+        frames.forEach(function (frame, idx) {
+          var lyr = L.tileLayer(data.host + frame.path + '/256/{z}/{x}/{y}/6/1_1.png', {
+            opacity: idx === frames.length - 1 ? 1.0 : 0.3, maxZoom: 18,
+          });
+          lyr.addTo(map);
+          radarLayers.push(lyr);
+        });
+        // Re-add so the place labels stay above the radar tiles
+        if (labelsLayer) {
+          if (map.hasLayer(labelsLayer)) map.removeLayer(labelsLayer);
+          labelsLayer.addTo(map);
+        }
+      })
+      .catch(function () {});   // radar is best-effort decoration
+  }
+
   function renderMap() {
     var loc = env && env.location;
     var el = q('pnl-map');
-    if (!el || !loc || typeof L === 'undefined' || map) {
-      if (map && loc) map.setView([loc.lat, loc.lon]);
-      return;
+    if (!el || !loc || typeof L === 'undefined') return;
+    if (!map) {
+      q('pnl-map-muni').textContent = loc.municipality ? '· ' + loc.municipality : '';
+      map = L.map('pnl-map', { center: [loc.lat, loc.lon], zoom: 9,
+                               zoomControl: false, scrollWheelZoom: false });
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19, subdomains: 'abcd',
+      }).addTo(map);
+      labelsLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19, subdomains: 'abcd', pane: 'overlayPane',
+      });
+      L.control.zoom({ position: 'bottomleft' }).addTo(map);
+      L.circleMarker([loc.lat, loc.lon], {
+        radius: 8, color: '#fff', weight: 2,
+        fillColor: '#4682b4', fillOpacity: 1,
+      }).addTo(map).bindPopup(loc.municipality || 'Tu hogar');
     }
-    q('pnl-map-muni').textContent = loc.municipality ? '· ' + loc.municipality : '';
-    map = L.map('pnl-map', { zoomControl: true, scrollWheelZoom: false })
-      .setView([loc.lat, loc.lon], 15);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19,
-    }).addTo(map);
-    L.circleMarker([loc.lat, loc.lon], {
-      radius: 9, color: '#2c5171', weight: 2,
-      fillColor: '#4682b4', fillOpacity: 0.85,
-    }).addTo(map).bindPopup(loc.municipality || 'Tu hogar');
+    updateRadar();   // refreshed on every environment cycle (5 min)
   }
 
   // Per-card provenance line ("Fuente: AEMET · estación Gijón").
