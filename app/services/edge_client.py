@@ -42,3 +42,18 @@ async def devices(customer_slug: str) -> Optional[List[dict]]:
     except httpx.RequestError as e:
         logger.error("api_edge unreachable: %s", e)
         return None
+
+
+async def webui_ensure(webui_port: int) -> bool:
+    """Ask api_edge (tunnel owner) to (re)establish the ssh -L forward onto
+    the CM4 local-webui. Admin service key — server-side only."""
+    url = f"{settings.EDGE_BASE_URL.rstrip('/')}/api/v1/tunnels/webui/ensure"
+    try:
+        client = http_client.get_client()
+        r = await client.get(url, headers={"X-API-Key": settings.EDGE_API_KEY,
+                                           "X-Webui-Port": str(webui_port)},
+                             timeout=20.0)
+        return r.status_code == 200
+    except httpx.RequestError as e:
+        logger.error("api_edge webui/ensure unreachable: %s", e)
+        return False

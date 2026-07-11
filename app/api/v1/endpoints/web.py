@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "7"  # 7: sensor registry names (api_edge mig 017)
+ASSET_VERSION = "8"  # 8: Mi PLC (local-webui proxy via tunnel)
 
 
 def render_template(template_name: str, **context) -> str:
@@ -126,3 +126,11 @@ async def ai_page(request: Request):
     if guard:
         return guard
     return render_template("ai.html")
+
+
+@router.get("/app/plc", response_class=HTMLResponse)
+async def plc_page(request: Request):
+    guard = await _require_member_page(request)
+    if guard:
+        return guard
+    return render_template("plc.html")

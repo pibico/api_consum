@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Mi PLC — CONSUM-IA{% endblock %}
+{% block page_title_key %}nav.plc{% endblock %}
+{% block page_title %}Mi PLC{% endblock %}
+{% block topbar_actions %}
+<span class="text-muted" id="plc-host" style="font-size:0.8rem;color:rgba(255,255,255,0.7);"></span>
+<button class="btn btn-sm" id="plc-reload" data-i18n="plc.reload" style="display:none;">Recargar</button>
+{% endblock %}
+
+{% block content %}
+{# Mi PLC — the CM4 local-webui embedded through the reverse tunnel
+   (/plc/<port>/ nginx proxy, X-Forwarded-Prefix aware). Premium feature. #}
+
+<div class="glass-panel" id="plc-state" style="padding:2rem;text-align:center;">
+  <span class="spinner"></span>
+  <span class="text-muted" data-i18n="plc.connecting" style="font-size:0.85rem;"> Conectando con tu PLC…</span>
+</div>
+
+<div id="plc-frame-wrap" style="display:none;height:calc(100vh - 175px);min-height:480px;">
+  <iframe id="plc-frame" title="PLC"
+          style="width:100%;height:100%;border:0;border-radius:10px;
+                 box-shadow:0 4px 20px rgba(0,0,0,0.15);background:#fff;"></iframe>
+</div>
+
+<script src="{{ root }}/static/js/pages/plc.js?v={{ v }}" defer></script>
+{% endblock %}

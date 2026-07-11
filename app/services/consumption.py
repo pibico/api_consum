@@ -59,7 +59,7 @@ async def devices_for(slugs: Sequence[str]) -> List[Dict[str, Any]]:
         async with con.cursor() as cur:
             await cur.execute(
                 """
-                SELECT d.id, d.hostname, d.device_type, c.slug, d.last_seen
+                SELECT d.id, d.hostname, d.device_type, c.slug, d.last_seen, d.ssh_port
                 FROM devices d JOIN customers c ON c.customer_id = d.customer_id
                 WHERE c.slug = ANY(%s)
                 ORDER BY c.slug, d.hostname
@@ -69,7 +69,8 @@ async def devices_for(slugs: Sequence[str]) -> List[Dict[str, Any]]:
             return [
                 {"id": r[0], "hostname": r[1], "device_type": r[2],
                  "customer": r[3],
-                 "last_seen": r[4].isoformat() if r[4] else None}
+                 "last_seen": r[4].isoformat() if r[4] else None,
+                 "ssh_port": r[5]}
                 for r in await cur.fetchall()
             ]
 
