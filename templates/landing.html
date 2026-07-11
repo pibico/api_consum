@@ -8,7 +8,7 @@
 <link rel="icon" href="{{ root_path }}/static/icons/pibico_icon.svg">
 <link rel="stylesheet" href="{{ root_path }}/static/css/fonts.css">
 <link rel="stylesheet" href="{{ root_path }}/static/css/pibico.css">
-<link rel="stylesheet" href="{{ root_path }}/static/css/consum.css?v=3">
+<link rel="stylesheet" href="{{ root_path }}/static/css/consum.css?v=6">
 <script>window.ROOT_PATH = '{{ root_path }}';</script>
 <script src="{{ root_path }}/static/js/i18n.es.js?v=1" defer></script>
 <script src="{{ root_path }}/static/js/i18n.en.js?v=1" defer></script>
@@ -33,7 +33,7 @@
   </header>
 
   <main class="ld">
-    <!-- ============================ HERO ============================ -->
+    <!-- ====================== HERO (compact) ======================== -->
     <section class="ld-hero">
       <h1 data-i18n="ld.heroTitle">Entiende y reduce el consumo de tu casa</h1>
       <p class="ld-hero-sub" data-i18n="ld.heroSub">CONSUM-IA es una pequeña caja que se conecta a tu cuadro eléctrico. Mide lo que gasta cada cosa, aprende los hábitos de tu hogar y te lo cuenta en euros y frases claras — pensada para que la use cualquiera, sin tecnicismos.</p>
@@ -48,91 +48,74 @@
       </a>
     </section>
 
-    <!-- ========================= HOME SCREEN ======================== -->
-    <section class="ld-block">
-      <div class="ld-txt">
-        <h2 data-i18n="ld.s1Title">Un vistazo y lo sabes todo</h2>
-        <p data-i18n="ld.s1Text">La pantalla de Inicio habla claro: un semáforo dice si hoy vas normal o alto; lo gastado hoy y este mes, en euros; si la luz está cara o barata ahora mismo; un consejo al día; y lo que está encendido — traducido a bombillas y céntimos por hora. Si ayer lo hiciste bien, te lo celebra.</p>
+    <!-- ================= FEATURES (compact 4-col grid) ============== -->
+    <section class="ld-grid">
+      <div class="ld-mini">
+        <div class="ld-mini-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+        <h3 data-i18n="ld.f1T">Un vistazo y lo sabes</h3>
+        <p data-i18n="ld.f1D">Semáforo del día, euros de hoy y del mes, y si la luz está cara ahora mismo.</p>
       </div>
-      <img src="{{ root_path }}/static/images/help/help-home-es.png" data-i18n-attr-src="ld.imgHome" alt="Inicio" loading="lazy">
-    </section>
-
-    <!-- ========================== HOW IT WORKS ====================== -->
-    <section class="ld-block ld-alt">
-      <div class="ld-txt">
-        <h2 data-i18n="ld.s2Title">Contadores virtuales: mide hasta lo que no tiene enchufe</h2>
-        <p data-i18n="ld.s2Text">Una pinza en el cuadro mide toda la casa; enchufes inteligentes miden los aparatos importantes. Lo demás — vitro, horno, microondas, plancha — lo detecta por su firma de consumo, sin instalar nada más. Y cada corrección tuya le enseña.</p>
+      <div class="ld-mini">
+        <div class="ld-mini-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+        <h3 data-i18n="ld.f2T">Contadores virtuales</h3>
+        <p data-i18n="ld.f2D">Detecta vitro, horno o plancha por su firma de consumo, sin instalar nada más.</p>
       </div>
-      <img src="{{ root_path }}/static/images/help/help-dashboard-es.png" data-i18n-attr-src="ld.imgDashboard" alt="Sensores" loading="lazy">
-    </section>
-
-    <!-- ============================ COST ============================ -->
-    <section class="ld-block">
-      <div class="ld-txt">
-        <h2 data-i18n="ld.s3Title">Tu dinero, con tus precios</h2>
-        <p data-i18n="ld.s3Text">Introduce los precios de tu factura y todo pasa a euros: cuánto llevas hoy, cómo acabará el mes, quién gasta qué, cuánto se va en standby cada noche. Simula otra tarifa con tu curva real — "con esa oferta habrías pagado X" — y comprueba si tu factura cuadra con lo medido.</p>
+      <div class="ld-mini">
+        <div class="ld-mini-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+        <h3 data-i18n="ld.f3T">Tu dinero, con tus precios</h3>
+        <p data-i18n="ld.f3D">Cuánto llevas hoy, cómo acabará el mes y cuánto se va en standby cada noche.</p>
       </div>
-      <img src="{{ root_path }}/static/images/help/help-cost-es.png" data-i18n-attr-src="ld.imgCost" alt="Coste" loading="lazy">
-    </section>
-
-    <!-- ========================== WIRING/FLOW ======================= -->
-    <section class="ld-block ld-alt">
-      <div class="ld-txt">
-        <h2 data-i18n="ld.s4Title">Tu casa, dibujada</h2>
-        <p data-i18n="ld.s4Text">El árbol eléctrico muestra qué alimenta a qué; el plano de habitaciones enseña qué cuarto está gastando ahora; y el diagrama de flujo en vivo pinta a dónde va cada vatio en este momento.</p>
+      <div class="ld-mini">
+        <div class="ld-mini-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div>
+        <h3 data-i18n="ld.f4T">Tu casa, dibujada</h3>
+        <p data-i18n="ld.f4D">Árbol eléctrico, plano por habitaciones y flujo en vivo de cada vatio.</p>
       </div>
-      <img src="{{ root_path }}/static/images/help/help-wiring-es.png" data-i18n-attr-src="ld.imgWiring" alt="Cableado" loading="lazy">
-    </section>
-
-    <!-- =========================== FAMILY =========================== -->
-    <section class="ld-feature">
-      <h2 data-i18n="ld.famTitle">Tranquilidad también para la familia</h2>
-      <p data-i18n="ld.famText">Si algo se queda encendido demasiado tiempo — un horno, un radiador — la caja lo detecta y puede avisar a un familiar o cuidador. Pensado para que los mayores vivan en su casa con una red de seguridad silenciosa.</p>
-    </section>
-
-    <!-- ========================= CLOUD APP ========================== -->
-    <section class="ld-feature">
-      <h2 data-i18n="ld.clTitle">Y desde cualquier sitio: tu hogar en la nube</h2>
-      <p data-i18n="ld.clText">La caja funciona sola en casa; consum.pibico.es es su ventana desde fuera. El mismo hogar, con el análisis grande: precios de la luz hora a hora, clima, sol y carbono cruzados con tu consumo real.</p>
-    </section>
-
-    <section class="ld-block">
-      <div class="ld-txt">
-        <h2 data-i18n="ld.cl1Title">Panel: tu casa ahora mismo</h2>
-        <p data-i18n="ld.cl1Text">Potencia en vivo, lo gastado hoy y este mes en euros, el precio de la luz en este momento y la intensidad de carbono de la red. Todo en una pantalla.</p>
-        <a class="ld-link" href="{{ root_path }}/app" data-i18n="ld.clOpen">Abrir →</a>
+      <div class="ld-mini">
+        <div class="ld-mini-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+        <h3 data-i18n="ld.f5T">Tranquilidad familiar</h3>
+        <p data-i18n="ld.f5D">Si algo queda encendido demasiado tiempo, avisa a un familiar o cuidador.</p>
       </div>
-      <a href="{{ root_path }}/app"><img src="{{ root_path }}/static/images/landing/cloud-panel-es.png" alt="Panel" loading="lazy"></a>
-    </section>
-
-    <section class="ld-block ld-alt">
-      <div class="ld-txt">
-        <h2 data-i18n="ld.cl2Title">Consumo: cada hora, con su precio</h2>
-        <p data-i18n="ld.cl2Text">Cada barra es una hora, coloreada por lo que costaba la luz (punta, llano, valle). Coste exacto del día y del mes, previsión de factura y desglose por franjas.</p>
-        <a class="ld-link" href="{{ root_path }}/app/consumption" data-i18n="ld.clOpen">Abrir →</a>
+      <div class="ld-mini">
+        <div class="ld-mini-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></div>
+        <h3 data-i18n="ld.f6T">Tu hogar en la nube</h3>
+        <p data-i18n="ld.f6D">consum.pibico.es: precios, clima, sol y carbono cruzados con tu consumo real.</p>
       </div>
-      <a href="{{ root_path }}/app/consumption"><img src="{{ root_path }}/static/images/landing/cloud-consumo-es.png" alt="Consumo" loading="lazy"></a>
-    </section>
-
-    <section class="ld-block">
-      <div class="ld-txt">
-        <h2 data-i18n="ld.cl3Title">Ahorro: cuánto y cuándo</h2>
-        <p data-i18n="ld.cl3Text">Cruza tu consumo con precios, clima y sol: cuánto ahorrarías desplazando la lavadora a horas baratas, qué parte de tu gasto la explica el tiempo y cuál es la mejor franja de mañana.</p>
-        <a class="ld-link" href="{{ root_path }}/app/savings" data-i18n="ld.clOpen">Abrir →</a>
+      <div class="ld-mini">
+        <div class="ld-mini-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg></div>
+        <h3 data-i18n="ld.f7T">IA que te lo explica</h3>
+        <p data-i18n="ld.f7D">Narrativa diaria y chat sobre tu consumo — solo con tus datos agregados.</p>
       </div>
-      <a href="{{ root_path }}/app/savings"><img src="{{ root_path }}/static/images/landing/cloud-ahorro-es.png" alt="Ahorro" loading="lazy"></a>
-    </section>
-
-    <section class="ld-block ld-alt">
-      <div class="ld-txt">
-        <h2 data-i18n="ld.cl4Title">IA: tu día, explicado</h2>
-        <p data-i18n="ld.cl4Text">Una narrativa diaria en lenguaje claro y un chat que responde sobre TU consumo — solo con tus datos agregados, nunca con información personal.</p>
-        <a class="ld-link" href="{{ root_path }}/app/ai" data-i18n="ld.clOpen">Abrir →</a>
+      <div class="ld-mini">
+        <div class="ld-mini-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="12" rx="2"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/></svg></div>
+        <h3 data-i18n="ld.f8T">Tu PLC, desde fuera</h3>
+        <p data-i18n="ld.f8D">La misma pantalla de la caja, accesible en remoto de forma segura (PRO).</p>
       </div>
-      <a href="{{ root_path }}/app/ai"><img src="{{ root_path }}/static/images/landing/cloud-ia-es.png" alt="IA" loading="lazy"></a>
     </section>
 
-    <!-- =========================== PREMIUM ========================== -->
+    <!-- ================== CAROUSEL (screenshots) ==================== -->
+    <section class="ld-carousel" id="ld-carousel">
+      <button class="ld-car-arrow ld-car-prev" id="car-prev" aria-label="Anterior">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <div class="ld-car-frame">
+        <div class="ld-car-track" id="car-track">
+          <figure><img src="{{ root_path }}/static/images/help/help-home-es.png" alt="" loading="lazy"><figcaption data-i18n="ld.s1Title">Un vistazo y lo sabes todo</figcaption></figure>
+          <figure><img src="{{ root_path }}/static/images/help/help-dashboard-es.png" alt="" loading="lazy"><figcaption data-i18n="ld.s2Title">Contadores virtuales</figcaption></figure>
+          <figure><img src="{{ root_path }}/static/images/help/help-cost-es.png" alt="" loading="lazy"><figcaption data-i18n="ld.s3Title">Tu dinero, con tus precios</figcaption></figure>
+          <figure><img src="{{ root_path }}/static/images/help/help-wiring-es.png" alt="" loading="lazy"><figcaption data-i18n="ld.s4Title">Tu casa, dibujada</figcaption></figure>
+          <figure><img src="{{ root_path }}/static/images/landing/cloud-panel-es.png" alt="" loading="lazy"><figcaption data-i18n="ld.cl1Title">Panel: tu casa ahora mismo</figcaption></figure>
+          <figure><img src="{{ root_path }}/static/images/landing/cloud-consumo-es.png" alt="" loading="lazy"><figcaption data-i18n="ld.cl2Title">Consumo: cada hora, con su precio</figcaption></figure>
+          <figure><img src="{{ root_path }}/static/images/landing/cloud-ahorro-es.png" alt="" loading="lazy"><figcaption data-i18n="ld.cl3Title">Ahorro: cuánto y cuándo</figcaption></figure>
+          <figure><img src="{{ root_path }}/static/images/landing/cloud-ia-es.png" alt="" loading="lazy"><figcaption data-i18n="ld.cl4Title">IA: tu día, explicado</figcaption></figure>
+        </div>
+      </div>
+      <button class="ld-car-arrow ld-car-next" id="car-next" aria-label="Siguiente">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+      <div class="ld-car-dots" id="car-dots"></div>
+    </section>
+
+    <!-- ====================== TIERS (compact) ======================= -->
     <section class="ld-tiers">
       <div class="ld-tier">
         <h3 data-i18n="ld.tierBasic">Básico</h3>
@@ -155,13 +138,14 @@
       </div>
     </section>
 
-    <!-- =========================== CONTACT ========================== -->
+    <!-- ====================== CONTACT (compact) ===================== -->
     <section class="ld-cta">
       <h2 data-i18n="ld.ctaTitle">¿Quieres probarlo?</h2>
       <p data-i18n="ld.ctaText">Estamos desplegando pilotos en hogares reales. Escríbenos y te contamos.</p>
       <a class="ld-cta-btn" href="mailto:proyectos@pibico.org">proyectos@pibico.org</a>
     </section>
   </main>
+  <script src="{{ root_path }}/static/js/landing.js?v=4" defer></script>
 
   <footer class="app-footer">
     <span>&copy; 2026 pibiCo</span>
