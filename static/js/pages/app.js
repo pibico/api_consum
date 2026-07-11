@@ -9,6 +9,7 @@
 
   var ctx = null;         // /consumption/context payload
   var customer = '';      // '' = all my customers
+  var sensorNames = {};   // sensor_key -> curated name (api_edge registry)
 
   function q(id) { return document.getElementById(id); }
   function fmt(n, dec) { return (n == null) ? '—' : Number(n).toLocaleString(undefined, { maximumFractionDigits: dec == null ? 1 : dec }); }
@@ -41,6 +42,13 @@
       }
       q('kpi-devices').textContent = (c.devices || []).length || '—';
     });
+  }
+
+  function loadSensorNames() {
+    return App.apiFetch('/consumption/sensors' + custQS()).then(function (r) {
+      sensorNames = {};
+      (r.data || []).forEach(function (o) { if (o.name && o.name !== o.id) sensorNames[o.id] = o.name; });
+    }).catch(function () {});
   }
 
   function loadSummary() {
@@ -79,8 +87,11 @@
       }
       tbody.innerHTML = rows.map(function (d) {
         var on = (d.power_w || 0) > 1;
+        var label = sensorNames[d.device]
+          ? sensorNames[d.device] + ' <span class="text-muted" style="font-size:0.7rem;">' + d.device + '</span>'
+          : '<span class="mono">' + d.device + '</span>';
         return '<tr>' +
-          '<td class="mono">' + d.device + '</td>' +
+          '<td>' + label + '</td>' +
           '<td class="mono">' + fmt(d.power_w, 1) + '</td>' +
           '<td><span class="badge ' + (on ? 'badge-ok' : 'badge-info') + '">' +
             (on ? __t('app.active', 'Activo') : __t('app.idle', 'Reposo')) + '</span></td>' +
@@ -91,7 +102,7 @@
 
   function refresh() {
     loadSummary().catch(function () {});
-    loadLive().catch(function () {});
+    loadSensorNames().then(loadLive).catch(function () { loadLive(); });
     loadDevices().catch(function () {});
   }
 

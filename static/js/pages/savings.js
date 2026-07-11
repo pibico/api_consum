@@ -236,8 +236,8 @@
     return App.apiFetch('/consumption/sensors').then(function (r) {
       var sel = q('sav-device');
       var opts = ['<option value="">' + __t('cons.wholeHouse', 'Toda la casa') + '</option>'];
-      (r.data || []).forEach(function (id) {
-        opts.push('<option value="' + id + '">' + id + '</option>');
+      (r.data || []).forEach(function (o) {
+        opts.push('<option value="' + o.id + '">' + (o.name || o.id) + '</option>');
       });
       sel.innerHTML = opts.join('');
     });

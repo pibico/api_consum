@@ -74,10 +74,11 @@ async def devices_for(slugs: Sequence[str]) -> List[Dict[str, Any]]:
             ]
 
 
-async def sensor_devices(slugs: Sequence[str]) -> List[str]:
-    """DISTINCT device_ids reporting POWER/ENERGY in the last 7 days — the
-    real per-device filter list. Excludes gateways (never in sensor_data)
-    and legacy non-energy publishers (F100, map, …) on the same tenant."""
+async def sensor_devices(slugs: Sequence[str]) -> List[Dict[str, Any]]:
+    """Energy-capable sensors from api_edge's `sensors` REGISTRY (mig 017) —
+    the authoritative sensor→gateway assignment (devices = the gateways; the
+    MQTT stream itself carries no gateway ref). Friendly `name` curated in
+    the api_edge console; falls back to the sensor_key."""
     ids = await _slugs_to_ids(slugs)
     if not ids:
         return []
@@ -85,15 +86,16 @@ async def sensor_devices(slugs: Sequence[str]) -> List[str]:
         async with con.cursor() as cur:
             await cur.execute(
                 """
-                SELECT DISTINCT device_id FROM sensor_data
-                WHERE customer_id::text = ANY(%s)
-                  AND variable IN ('apower', 'apower_energy')
-                  AND ts > now() - interval '7 days'
-                ORDER BY device_id
+                SELECT sensor_key, MAX(name) AS name
+                FROM sensors
+                WHERE customer_id::text = ANY(%s) AND is_active
+                  AND ('apower' = ANY(variables) OR 'apower_energy' = ANY(variables))
+                GROUP BY sensor_key ORDER BY sensor_key
                 """,
                 (list(ids.values()),),
             )
-            return [r[0] for r in await cur.fetchall()]
+            return [{"id": r[0], "name": r[1] or r[0]}
+                    for r in await cur.fetchall()]
 
 
 async def current_power(slugs: Sequence[str]) -> Dict[str, Any]:
