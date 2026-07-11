@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "18"  # 18: weather glyphs per day (SVG, glanceable)
+ASSET_VERSION = "19"  # 19: per-card data provenance lines
 
 
 def render_template(template_name: str, **context) -> str:

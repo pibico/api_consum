@@ -749,6 +749,10 @@
   border-bottom: 1px solid rgba(44, 62, 80, 0.06);
 }
 .pnl-wx-row:last-child { border-bottom: none; }
+.pnl-src {
+  font-size: 0.62rem; color: rgba(102, 102, 102, 0.78);
+  margin-top: 6px; letter-spacing: 0.2px;
+}
 .pnl-wx-ico { flex: 0 0 18px; display: flex; align-items: center; }
 .pnl-wx-ico svg { display: block; }
 .pnl-wx-day { flex: 0 0 52px; font-weight: 600; color: var(--color-primary-dark, #2c5171); }

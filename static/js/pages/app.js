@@ -221,7 +221,8 @@
       (cur ? ('<b>' + __t('app.now', 'Ahora') + ' ' + cur.price_eur_kwh.toFixed(4) + ' €/kWh' +
         (cur.period ? ' (' + cur.period + ')' : '') + '</b> · ') : '') +
       __t('app.cheapest', 'Mín') + ' ' + minL + ' ' + pMin.toFixed(4) + ' · ' +
-      __t('app.priciest', 'Máx') + ' ' + maxL + ' ' + pMax.toFixed(4);
+      __t('app.priciest', 'Máx') + ' ' + maxL + ' ' + pMax.toFixed(4) +
+      ' · ' + __t('app.source', 'Fuente') + ': ' + (sources()[market] || 'ESIOS');
   }
 
   function updatePriceKpi() {
@@ -291,6 +292,12 @@
     }).addTo(map).bindPopup(loc.municipality || 'Tu hogar');
   }
 
+  // Per-card provenance line ("Fuente: AEMET · estación Gijón").
+  function srcLine(txt) {
+    return '<div class="pnl-src">' + __t('app.source', 'Fuente') + ': ' + txt + '</div>';
+  }
+  function sources() { return (env && env.sources) || {}; }
+
   // Weather glyph from the AEMET/OpenMeteo description — inline SVG
   // (Phosphor style, NO emoji) so a quick glance reads the week.
   function wxIcon(desc) {
@@ -349,6 +356,9 @@
         '<span class="pnl-wx-rain mono">' + (d.precipitation_prob != null ? fmt(d.precipitation_prob, 0) + '%' : '—') + '</span>' +
         '</div>';
     }).join('');
+    var s = sources();
+    html += srcLine((s.weather || 'AEMET') +
+      (s.weather_station ? ' · ' + __t('app.station', 'estación') + ' ' + s.weather_station : ''));
     q('pnl-weather').innerHTML = html;
   }
 
@@ -373,7 +383,8 @@
       ' <span class="kpi-sub">kWh ' + __t('app.tomorrow', 'mañana').toLowerCase() + '</span></div>' +
       '</div>' +
       '<div class="sav-explain">' + __t('app.solarExplain', 'Producción estimada para {kwp} kWp orientación sur.')
-        .replace('{kwp}', fmt(s.peak_kwp, 1)) + '</div>' + pkTxt;
+        .replace('{kwp}', fmt(s.peak_kwp, 1)) + '</div>' + pkTxt +
+      srcLine(sources().solar || 'Open-Meteo');
     // Mini GHI curve (today) — hover shows the exact irradiance per hour
     var c = chart('pnl-solar-chart');
     var hours = s.hourly_today || [];
@@ -414,7 +425,9 @@
       best.price_avg.toFixed(4) + ' €/kWh</div>' +
       '<div class="sav-explain" style="margin-top:6px;">' +
       __t('app.windowExplain', 'La franja más barata y con más sol: ideal para lavadora, lavavajillas o cargar el coche.') +
-      '</div>';
+      '</div>' +
+      srcLine('PVPC ' + (sources().pvpc || 'ESIOS') + ' + ' +
+        __t('app.solarShort', 'solar') + ' ' + (sources().solar || 'Open-Meteo'));
   }
 
   function loadEnvironment() {

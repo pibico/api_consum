@@ -224,6 +224,16 @@ async def environment(customer: Optional[str] = Query(None),
                   "peak_window": (solar or {}).get("peak_window"),
                   "hourly_today": solar_hours},
         "window": window,
+        # Data provenance per card (transparency requirement): pass the
+        # upstream `source` fields through instead of hardcoding names.
+        "sources": {
+            "pvpc": (today or {}).get("source") or "ESIOS",
+            "omie": (omie_today or {}).get("source") or "ESIOS",
+            "carbon": ((carbon or {}).get("source") or "REE/ESIOS").split(" ")[0],
+            "weather": (weather or {}).get("source") or "AEMET",
+            "weather_station": ((obs or {}).get("data") or {}).get("station"),
+            "solar": (solar or {}).get("source") or "Open-Meteo",
+        },
     }
 
 
