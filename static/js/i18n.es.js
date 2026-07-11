@@ -32,6 +32,17 @@ window.I18N_ES = {
 
   'ld.enter': 'Acceder',
   'ld.enterPanel': 'Acceder a mi hogar',
+  'ld.clTitle': 'Y desde cualquier sitio: tu hogar en la nube',
+  'ld.clText': 'La caja funciona sola en casa; consum.pibico.es es su ventana desde fuera. El mismo hogar, con el análisis grande: precios de la luz hora a hora, clima, sol y carbono cruzados con tu consumo real.',
+  'ld.cl1Title': 'Panel: tu casa ahora mismo',
+  'ld.cl1Text': 'Potencia en vivo, lo gastado hoy y este mes en euros, el precio de la luz en este momento y la intensidad de carbono de la red. Todo en una pantalla.',
+  'ld.cl2Title': 'Consumo: cada hora, con su precio',
+  'ld.cl2Text': 'Cada barra es una hora, coloreada por lo que costaba la luz (punta, llano, valle). Coste exacto del día y del mes, previsión de factura y desglose por franjas.',
+  'ld.cl3Title': 'Ahorro: cuánto y cuándo',
+  'ld.cl3Text': 'Cruza tu consumo con precios, clima y sol: cuánto ahorrarías desplazando la lavadora a horas baratas, qué parte de tu gasto la explica el tiempo y cuál es la mejor franja de mañana.',
+  'ld.cl4Title': 'IA: tu día, explicado',
+  'ld.cl4Text': 'Una narrativa diaria en lenguaje claro y un chat que responde sobre TU consumo — solo con tus datos agregados, nunca con información personal.',
+  'ld.clOpen': 'Abrir →',
   'ld.ctaTitle': '¿Quieres probarlo?',
   'ld.ctaText': 'Estamos desplegando pilotos en hogares reales. Escríbenos y te contamos.',
 

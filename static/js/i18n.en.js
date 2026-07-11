@@ -32,6 +32,17 @@ window.I18N_EN = {
 
   'ld.enter': 'Sign in',
   'ld.enterPanel': 'Go to my home',
+  'ld.clTitle': 'And from anywhere: your home in the cloud',
+  'ld.clText': 'The box runs on its own at home; consum.pibico.es is its window from outside. The same home, with the big picture: hourly electricity prices, weather, sun and carbon crossed with your real consumption.',
+  'ld.cl1Title': 'Panel: your home right now',
+  'ld.cl1Text': 'Live power, today and this month in euros, the electricity price right now and the grid carbon intensity. All on one screen.',
+  'ld.cl2Title': 'Consumption: every hour, with its price',
+  'ld.cl2Text': 'Each bar is an hour, colored by what electricity cost (peak, mid, off-peak). Exact daily and monthly cost, bill forecast and tariff-band breakdown.',
+  'ld.cl3Title': 'Savings: how much and when',
+  'ld.cl3Text': 'Crosses your consumption with prices, weather and sun: what you would save shifting the washer to cheap hours, how much of your usage the weather explains, and tomorrow\'s best window.',
+  'ld.cl4Title': 'AI: your day, explained',
+  'ld.cl4Text': 'A daily plain-language narrative and a chat that answers about YOUR consumption — aggregates only, never personal information.',
+  'ld.clOpen': 'Open →',
   'ld.ctaTitle': 'Want to try it?',
   'ld.ctaText': 'We are deploying pilots in real homes. Write to us and we will tell you more.',
 

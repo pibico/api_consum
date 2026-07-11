@@ -8,7 +8,7 @@
 <link rel="icon" href="{{ root_path }}/static/icons/pibico_icon.svg">
 <link rel="stylesheet" href="{{ root_path }}/static/css/fonts.css">
 <link rel="stylesheet" href="{{ root_path }}/static/css/pibico.css">
-<link rel="stylesheet" href="{{ root_path }}/static/css/consum.css?v=2">
+<link rel="stylesheet" href="{{ root_path }}/static/css/consum.css?v=3">
 <script>window.ROOT_PATH = '{{ root_path }}';</script>
 <script src="{{ root_path }}/static/js/i18n.es.js?v=1" defer></script>
 <script src="{{ root_path }}/static/js/i18n.en.js?v=1" defer></script>
@@ -88,6 +88,48 @@
     <section class="ld-feature">
       <h2 data-i18n="ld.famTitle">Tranquilidad también para la familia</h2>
       <p data-i18n="ld.famText">Si algo se queda encendido demasiado tiempo — un horno, un radiador — la caja lo detecta y puede avisar a un familiar o cuidador. Pensado para que los mayores vivan en su casa con una red de seguridad silenciosa.</p>
+    </section>
+
+    <!-- ========================= CLOUD APP ========================== -->
+    <section class="ld-feature">
+      <h2 data-i18n="ld.clTitle">Y desde cualquier sitio: tu hogar en la nube</h2>
+      <p data-i18n="ld.clText">La caja funciona sola en casa; consum.pibico.es es su ventana desde fuera. El mismo hogar, con el análisis grande: precios de la luz hora a hora, clima, sol y carbono cruzados con tu consumo real.</p>
+    </section>
+
+    <section class="ld-block">
+      <div class="ld-txt">
+        <h2 data-i18n="ld.cl1Title">Panel: tu casa ahora mismo</h2>
+        <p data-i18n="ld.cl1Text">Potencia en vivo, lo gastado hoy y este mes en euros, el precio de la luz en este momento y la intensidad de carbono de la red. Todo en una pantalla.</p>
+        <a class="ld-link" href="{{ root_path }}/app" data-i18n="ld.clOpen">Abrir →</a>
+      </div>
+      <a href="{{ root_path }}/app"><img src="{{ root_path }}/static/images/landing/cloud-panel-es.png" alt="Panel" loading="lazy"></a>
+    </section>
+
+    <section class="ld-block ld-alt">
+      <div class="ld-txt">
+        <h2 data-i18n="ld.cl2Title">Consumo: cada hora, con su precio</h2>
+        <p data-i18n="ld.cl2Text">Cada barra es una hora, coloreada por lo que costaba la luz (punta, llano, valle). Coste exacto del día y del mes, previsión de factura y desglose por franjas.</p>
+        <a class="ld-link" href="{{ root_path }}/app/consumption" data-i18n="ld.clOpen">Abrir →</a>
+      </div>
+      <a href="{{ root_path }}/app/consumption"><img src="{{ root_path }}/static/images/landing/cloud-consumo-es.png" alt="Consumo" loading="lazy"></a>
+    </section>
+
+    <section class="ld-block">
+      <div class="ld-txt">
+        <h2 data-i18n="ld.cl3Title">Ahorro: cuánto y cuándo</h2>
+        <p data-i18n="ld.cl3Text">Cruza tu consumo con precios, clima y sol: cuánto ahorrarías desplazando la lavadora a horas baratas, qué parte de tu gasto la explica el tiempo y cuál es la mejor franja de mañana.</p>
+        <a class="ld-link" href="{{ root_path }}/app/savings" data-i18n="ld.clOpen">Abrir →</a>
+      </div>
+      <a href="{{ root_path }}/app/savings"><img src="{{ root_path }}/static/images/landing/cloud-ahorro-es.png" alt="Ahorro" loading="lazy"></a>
+    </section>
+
+    <section class="ld-block ld-alt">
+      <div class="ld-txt">
+        <h2 data-i18n="ld.cl4Title">IA: tu día, explicado</h2>
+        <p data-i18n="ld.cl4Text">Una narrativa diaria en lenguaje claro y un chat que responde sobre TU consumo — solo con tus datos agregados, nunca con información personal.</p>
+        <a class="ld-link" href="{{ root_path }}/app/ai" data-i18n="ld.clOpen">Abrir →</a>
+      </div>
+      <a href="{{ root_path }}/app/ai"><img src="{{ root_path }}/static/images/landing/cloud-ia-es.png" alt="IA" loading="lazy"></a>
     </section>
 
     <!-- =========================== PREMIUM ========================== -->
