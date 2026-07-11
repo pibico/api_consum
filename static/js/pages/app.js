@@ -291,6 +291,39 @@
     }).addTo(map).bindPopup(loc.municipality || 'Tu hogar');
   }
 
+  // Weather glyph from the AEMET/OpenMeteo description — inline SVG
+  // (Phosphor style, NO emoji) so a quick glance reads the week.
+  function wxIcon(desc) {
+    var d = (desc || '').toLowerCase();
+    function svg(color, inner) {
+      return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="' + color +
+        '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + inner + '</svg>';
+    }
+    var SUN = '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>';
+    var CLOUD = '<path d="M17.5 19H7a4 4 0 1 1 .6-7.96A5.5 5.5 0 0 1 18 9.5a4.5 4.5 0 0 1-.5 9.5z"/>';
+    var SUNCLOUD = '<circle cx="7" cy="7" r="3"/><path d="M7 1v1.5M1.5 7H3M3.2 3.2l1 1M11 7h-1.5" opacity="0.9"/><path d="M18.5 20H9a3.5 3.5 0 1 1 .5-6.97A5 5 0 0 1 19 11a4 4 0 0 1-.5 9z"/>';
+    if (/tormenta|storm|thunder/.test(d)) {
+      return svg('#c49a18', CLOUD + '<path d="M12 19l-1.5 3M13.5 19l-1 2 2 0-1 2" stroke="#e67e22"/>');
+    }
+    if (/nieve|snow|granizo|hail/.test(d)) {
+      return svg('#6ab4f0', CLOUD + '<path d="M9 21v.01M13 21v.01M11 23v.01M15 22v.01" stroke="#6ab4f0"/>');
+    }
+    if (/lluvia|chubasco|rain|drizzle|shower/.test(d)) {
+      return svg('#2e82c8', CLOUD + '<path d="M9 21l-.7 1.6M13 21l-.7 1.6M16.5 21l-.7 1.6" stroke="#2e82c8"/>');
+    }
+    if (/niebla|bruma|calima|fog|mist|haze/.test(d)) {
+      return svg('#8e96a8', '<path d="M4 9h16M3 13h18M5 17h14"/>');
+    }
+    if (/despejado|clear|sunny|soleado/.test(d)) {
+      return svg('#c49a18', SUN);
+    }
+    if (/poco nuboso|intervalos|partly|parcial/.test(d)) {
+      return svg('#5a6478', SUNCLOUD);
+    }
+    // nuboso / muy nuboso / cubierto / cloudy / overcast — plain cloud
+    return svg('#5a6478', CLOUD);
+  }
+
   function renderWeather() {
     var wx = (env && env.weather) || {};
     var days = wx.days || [];
@@ -301,6 +334,7 @@
     var html = '';
     if (wx.now && wx.now.temperature != null) {
       html += '<div class="pnl-wx-now">' +
+        '<span class="pnl-wx-ico">' + wxIcon(wx.now.description) + '</span>' +
         '<span class="pnl-wx-now-temp">' + fmt(wx.now.temperature, 1) + '°</span>' +
         '<span class="pnl-wx-now-desc">' + (wx.now.description || '') +
         (wx.now.humidity != null ? ' · ' + fmt(wx.now.humidity, 0) + '% ' + __t('app.humidityShort', 'humedad') : '') +
@@ -308,6 +342,7 @@
     }
     html += days.map(function (d, i) {
       return '<div class="pnl-wx-row">' +
+        '<span class="pnl-wx-ico">' + wxIcon(d.description) + '</span>' +
         '<span class="pnl-wx-day">' + dayLabel(d.date, i) + '</span>' +
         '<span class="pnl-wx-desc" title="' + (d.description || '') + '">' + (d.description || '—') + '</span>' +
         '<span class="pnl-wx-temp mono">' + fmt(d.temp_min, 0) + '–' + fmt(d.temp_max, 0) + '°</span>' +
