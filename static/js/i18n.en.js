@@ -45,7 +45,7 @@ window.I18N_EN = {
   'ld.f7T': 'AI that explains it',
   'ld.f7D': 'Daily narrative and chat about your consumption — aggregates only.',
   'ld.f8T': 'Your PLC, from anywhere',
-  'ld.f8D': 'The same box screen, securely accessible remotely (PRO).',
+  'ld.f8D': 'The same box screen, securely remote (PRO) — remote viewing does need the box online.',
   'ld.enter': 'Sign in',
   'ld.enterPanel': 'Go to my home',
   'ld.clTitle': 'And from anywhere: your home in the cloud',

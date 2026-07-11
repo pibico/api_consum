@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "8"  # 8: Mi PLC (local-webui proxy via tunnel)
+ASSET_VERSION = "11"  # 11: PLC single-chrome (global header hidden too)
 
 
 def render_template(template_name: str, **context) -> str:

@@ -69,7 +69,16 @@ async def _authorized_ports(ctx: ConsumContext) -> set[int]:
 async def session(customer: Optional[str] = Query(None),
                   ctx: ConsumContext = Depends(require_tier("pro"))):
     """Resolve the caller's PLC and make sure the proxy path is live.
-    Returns the /plc/<port>/ URL the page's iframe should load."""
+    Returns the /plc/<port>/ URL for the page's iframe, plus the full
+    gateway list (one PLC per household — a user with several households
+    picks theirs in the page selector; `?customer=` selects one)."""
+    slugs = await _slugs(ctx, None)
+    gateways = [
+        {"id": g["id"], "hostname": g["hostname"], "customer": g["customer"],
+         "webui_port": _webui_port(int(g["ssh_port"]))}
+        for g in await consumption.devices_for(slugs)
+        if g.get("ssh_port") and (g.get("device_type") or "gateway") == "gateway"
+    ]
     d = await _gateway(ctx, customer)
     ssh_port = int(d["ssh_port"])
     port = _webui_port(ssh_port)
@@ -79,7 +88,8 @@ async def session(customer: Optional[str] = Query(None),
         online = ok and await _tcp_open(port)
     return {"hostname": d["hostname"], "webui_port": port,
             "url": f"/plc/{port}/", "online": online,
-            "last_seen": d.get("last_seen")}
+            "last_seen": d.get("last_seen"),
+            "gateways": gateways}
 
 
 @router.get("/auth", include_in_schema=False)
