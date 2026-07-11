@@ -7,6 +7,7 @@ narrative cached per scope·day (24 h); /ask rate-limited per org·day.
 """
 from __future__ import annotations
 
+import logging
 import time
 from datetime import date
 from typing import List, Optional
@@ -19,6 +20,7 @@ from app.core.config import settings
 from app.services import ai_client, consumption, exo_client, oe3
 
 router = APIRouter(prefix="/ai", tags=["ai"])
+logger = logging.getLogger("consum.ai.audit")
 
 _narrative_cache: dict = {}    # scope -> (day, text)
 _ask_counter: dict = {}        # scope -> (day, count)
@@ -65,6 +67,19 @@ async def _aggregate_context(slugs: list[str]) -> dict:
     }
 
 
+def _audit_context(scope: str, kind: str, context: dict) -> None:
+    """AUDIT (F6): log exactly what leaves for the LLM, and hard-fail if
+    anything PII-shaped slipped in. The context is aggregates by
+    construction; this is the tripwire if someone extends it carelessly."""
+    import json as _json
+    blob = _json.dumps(context, ensure_ascii=False)
+    if "@" in blob:  # emails are the realistic leak vector here
+        logger.error("AI context REJECTED (PII suspect) scope=%s kind=%s", scope, kind)
+        raise HTTPException(500, detail="AI context failed the PII tripwire")
+    logger.info("AI-AUDIT scope=%s kind=%s bytes=%d context=%s",
+                scope, kind, len(blob), blob)
+
+
 @router.get("/status")
 async def status(ctx: ConsumContext = Depends(require_ai())):
     """Whether AI is usable for this caller (page decides narrative vs upsell)."""
@@ -92,6 +107,7 @@ async def narrative(customer: Optional[str] = Query(None),
 
     import json
     context = await _aggregate_context(slugs)
+    _audit_context(scope, "narrative", context)
     text = await ai_client.llm_chat([
         {"role": "system", "content": _SYSTEM},
         {"role": "user", "content":
@@ -133,6 +149,7 @@ async def ask(question: str = Body(..., embed=True, max_length=500),
 
     import json
     context = await _aggregate_context(slugs)
+    _audit_context(scope, "ask", context)
     messages = [{"role": "system", "content": _SYSTEM +
                  "\n\nContexto agregado del hogar (hoy):\n" +
                  json.dumps(context, ensure_ascii=False)}]
