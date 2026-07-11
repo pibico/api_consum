@@ -44,7 +44,7 @@
   <div class="glass-panel" style="padding:0.75rem 1rem;">
     <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="cons.hourlyChart">Consumo por horas</span>
       <span class="text-muted" id="cons-chart-date" style="font-weight:400;"></span></h4>
-    <canvas id="cons-day-chart" style="width:100%;height:200px;"></canvas>
+    <div id="cons-day-chart" style="width:100%;height:200px;"></div>
     <div style="display:flex;gap:12px;margin-top:6px;font-size:0.7rem;color:var(--color-text-light);">
       <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(231,76,60,0.75);"></span> P1 Punta</span>
       <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(243,156,18,0.75);"></span> P2 Llano</span>
@@ -54,7 +54,7 @@
   <div class="glass-panel" style="padding:0.75rem 1rem;">
     <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="cons.monthChart">Consumo diario del mes</span>
       <span class="text-muted" id="cons-month-label" style="font-weight:400;"></span></h4>
-    <canvas id="cons-month-chart" style="width:100%;height:200px;"></canvas>
+    <div id="cons-month-chart" style="width:100%;height:200px;"></div>
     <div style="display:flex;gap:12px;margin-top:6px;font-size:0.7rem;color:var(--color-text-light);">
       <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(70,130,180,0.75);"></span> kWh</span>
       <span><span style="display:inline-block;width:14px;height:3px;background:#e67e22;vertical-align:middle;"></span> € / día</span>
@@ -101,5 +101,6 @@
   <div class="ev-pager" id="cons-pager-bottom" hidden></div>
 </div>
 
+<script src="{{ root }}/static/js/vendor/echarts.min.js" defer></script>
 <script src="{{ root }}/static/js/pages/consumption.js?v={{ v }}" defer></script>
 {% endblock %}

@@ -33,18 +33,22 @@
     return 'rgba(70,130,180,' + alpha + ')';   // no band (OMIE spot)
   }
 
-  function prep(id, h) {
-    var c = q(id);
-    if (!c || !c.parentElement.clientWidth) return null;
-    var dpr = window.devicePixelRatio || 1;
-    var rect = c.parentElement.getBoundingClientRect();
-    var W = rect.width - 32, H = h || 190;
-    c.width = W * dpr; c.height = H * dpr;
-    c.style.width = W + 'px'; c.style.height = H + 'px';
-    var ctx = c.getContext('2d');
-    ctx.scale(dpr, dpr); ctx.clearRect(0, 0, W, H);
-    return { ctx: ctx, W: W, H: H };
+  // ECharts instances (hover tooltips on every chart) — one per container.
+  var charts = {};
+  function chart(id) {
+    var el = q(id);
+    if (!el || typeof echarts === 'undefined') return null;
+    if (!charts[id]) charts[id] = echarts.init(el);
+    return charts[id];
   }
+  var AXIS = { fontSize: 10, color: 'rgba(44,62,80,0.6)' };
+  var TOOLTIP = {
+    trigger: 'axis',
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderColor: 'rgba(44,81,113,0.2)',
+    textStyle: { fontSize: 12, color: '#22384c' },
+    axisPointer: { type: 'shadow' },
+  };
 
   // ── Context: household selector + tier badge ─────────────────────────
   function loadContext() {
@@ -116,97 +120,113 @@
 
   // ── House chart: hourly kWh bars colored by tariff period ─────────────
   function drawHouseChart() {
-    var cv = prep('pnl-house-chart');
-    if (!cv || !houseData) return;
-    var ctx = cv.ctx, W = cv.W, H = cv.H;
-    var padL = 36, padB = 18, padT = 8;
-    var vals = houseData.values || [];
+    var c = chart('pnl-house-chart');
+    if (!c || !houseData) return;
     var byHour = {};
-    vals.forEach(function (v) { byHour[v.hour] = v; });
-    var max = Math.max(0.05, Math.max.apply(null, vals.map(function (v) { return v.kwh; }).concat([0])));
-    var chartW = W - padL - 8, chartH = H - padT - padB;
-    var bw = chartW / 24;
-    ctx.font = '10px Inter, sans-serif';
-    ctx.fillStyle = 'rgba(44,62,80,0.55)';
-    ctx.textAlign = 'right';
-    ctx.fillText(max.toFixed(1), padL - 3, padT + 8);
-    ctx.fillText('0', padL - 3, H - padB);
-    ctx.textAlign = 'center';
-    for (var h = 0; h < 24; h++) {
-      var v = byHour[h];
-      var x = padL + h * bw;
-      if (v && v.kwh > 0) {
-        var bh = chartH * (v.kwh / max);
-        ctx.fillStyle = periodColor(v.period);
-        ctx.fillRect(x + 1, H - padB - bh, bw - 2, bh);
-      }
-      if (h % 3 === 0) {
-        ctx.fillStyle = 'rgba(44,62,80,0.55)';
-        ctx.fillText(String(h).padStart(2, '0'), x + bw / 2, H - 5);
-      }
-    }
+    (houseData.values || []).forEach(function (v) { byHour[v.hour] = v; });
+    var hours = [];
+    for (var h = 0; h < 24; h++) hours.push(h);
+    c.setOption({
+      grid: { left: 44, right: 8, top: 12, bottom: 22 },
+      tooltip: Object.assign({}, TOOLTIP, {
+        formatter: function (params) {
+          var i = params[0].dataIndex, v = byHour[i];
+          if (!v) return String(i).padStart(2, '0') + ':00 — ' + __t('common.noData', 'Sin datos');
+          return '<b>' + String(i).padStart(2, '0') + ':00–' + String(i + 1).padStart(2, '0') + ':00</b><br>' +
+            fmt(v.kwh, 3) + ' kWh' + (v.period ? ' · ' + v.period : '') +
+            (v.price_eur_kwh != null ? '<br>PVPC ' + v.price_eur_kwh.toFixed(4) + ' €/kWh' : '') +
+            (v.cost_eur != null ? ' · <b>' + v.cost_eur.toFixed(3) + ' €</b>' : '');
+        },
+      }),
+      xAxis: { type: 'category', data: hours.map(function (h) { return String(h).padStart(2, '0'); }),
+               axisLabel: Object.assign({ interval: 2 }, AXIS), axisTick: { show: false } },
+      yAxis: { type: 'value', axisLabel: AXIS, splitLine: { lineStyle: { opacity: 0.25 } } },
+      series: [{
+        type: 'bar', barWidth: '72%',
+        data: hours.map(function (h) {
+          var v = byHour[h];
+          return { value: v ? v.kwh : 0, itemStyle: { color: periodColor(v && v.period) } };
+        }),
+      }],
+    });
   }
 
-  // ── Price chart: PVPC|OMIE 24h curve, current hour highlighted ───────
+  // ── Price chart: PVPC (24 h bands) | OMIE (96 × 15 min spot) ──────────
   function marketPrices(day) {
     return ((env && env[market]) || {})[day] || [];
   }
 
+  function labelOf(p) {
+    // PVPC rows carry {hour}, OMIE rows carry {time: 'HH:MM'}
+    return p.time || (String(p.hour).padStart(2, '0') + ':00');
+  }
+
+  function currentPoint(prices) {
+    var d = new Date();
+    if (!prices.length) return null;
+    if (prices[0].time) {   // OMIE quarter-hour
+      var t = String(d.getHours()).padStart(2, '0') + ':' +
+        String(Math.floor(d.getMinutes() / 15) * 15).padStart(2, '0');
+      return prices.filter(function (p) { return p.time === t; })[0] || null;
+    }
+    var h = d.getHours();
+    return prices.filter(function (p) { return p.hour === h; })[0] || null;
+  }
+
   function drawPvpcChart() {
-    var cv = prep('pnl-pvpc-chart');
-    if (!cv || !env) return;
+    var c = chart('pnl-pvpc-chart');
+    if (!c || !env) return;
     var prices = marketPrices(pvpcDay);
-    var ctx = cv.ctx, W = cv.W, H = cv.H;
     var note = q('pnl-pvpc-note');
     if (!prices.length) {
       note.textContent = __t('common.noData', 'Sin datos');
+      c.clear();
       return;
     }
-    var padL = 44, padB = 18, padT = 8;
-    var vals = prices.map(function (p) { return p.price_eur_kwh; });
-    var pMin = Math.min.apply(null, vals), pMax = Math.max.apply(null, vals);
-    var top = pMax * 1.08 || 0.05;
-    var chartW = W - padL - 8, chartH = H - padT - padB;
-    var bw = chartW / 24;
-    var nowH = new Date().getHours();
     var isToday = pvpcDay === 'today';
-    ctx.font = '10px Inter, sans-serif';
-    ctx.fillStyle = 'rgba(44,62,80,0.55)';
-    ctx.textAlign = 'right';
-    ctx.fillText(pMax.toFixed(2), padL - 3, padT + 8);
-    ctx.fillText('0', padL - 3, H - padB);
-    ctx.textAlign = 'center';
-    var minH = null, maxH = null;
+    var cur = isToday ? currentPoint(prices) : null;
+    var pMin = Infinity, pMax = -Infinity, minL = '', maxL = '';
     prices.forEach(function (p) {
-      if (p.price_eur_kwh === pMin && minH == null) minH = p.hour;
-      if (p.price_eur_kwh === pMax && maxH == null) maxH = p.hour;
-      var x = padL + p.hour * bw;
-      var bh = chartH * (p.price_eur_kwh / top);
-      var current = isToday && p.hour === nowH;
-      ctx.fillStyle = periodColor(p.period, current ? 0.95 : 0.4);
-      ctx.fillRect(x + 1, H - padB - bh, bw - 2, bh);
-      if (current) {
-        ctx.strokeStyle = '#2c5171';
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(x + 1, H - padB - bh, bw - 2, bh);
-      }
-      if (p.hour % 3 === 0) {
-        ctx.fillStyle = 'rgba(44,62,80,0.55)';
-        ctx.fillText(String(p.hour).padStart(2, '0'), x + bw / 2, H - 5);
-      }
+      if (p.price_eur_kwh < pMin) { pMin = p.price_eur_kwh; minL = labelOf(p); }
+      if (p.price_eur_kwh > pMax) { pMax = p.price_eur_kwh; maxL = labelOf(p); }
     });
-    var now = isToday ? prices.filter(function (p) { return p.hour === nowH; })[0] : null;
+    var isOmie = !!prices[0].time;
+    c.clear();   // switching 24↔96 categories: rebuild, don't merge
+    c.setOption({
+      grid: { left: 52, right: 8, top: 12, bottom: 22 },
+      tooltip: Object.assign({}, TOOLTIP, {
+        formatter: function (params) {
+          var p = prices[params[0].dataIndex];
+          return '<b>' + labelOf(p) + '</b> — ' + p.price_eur_kwh.toFixed(4) + ' €/kWh' +
+            (p.period ? ' (' + p.period + ')' : '');
+        },
+      }),
+      xAxis: { type: 'category', data: prices.map(labelOf),
+               axisLabel: Object.assign({ interval: isOmie ? 15 : 2 }, AXIS),
+               axisTick: { show: false } },
+      yAxis: { type: 'value', axisLabel: Object.assign({ formatter: function (v) { return v.toFixed(2); } }, AXIS),
+               splitLine: { lineStyle: { opacity: 0.25 } } },
+      series: [{
+        type: 'bar', barWidth: isOmie ? '85%' : '72%',
+        data: prices.map(function (p) {
+          var current = cur && labelOf(p) === labelOf(cur);
+          return { value: p.price_eur_kwh,
+                   itemStyle: { color: periodColor(p.period, current ? 0.95 : 0.45),
+                                borderColor: current ? '#2c5171' : undefined,
+                                borderWidth: current ? 1.5 : 0 } };
+        }),
+      }],
+    });
     note.innerHTML =
-      (now ? ('<b>' + __t('app.now', 'Ahora') + ' ' + now.price_eur_kwh.toFixed(3) + ' €/kWh' +
-        (now.period ? ' (' + now.period + ')' : '') + '</b> · ') : '') +
-      __t('app.cheapest', 'Mín') + ' ' + String(minH).padStart(2, '0') + 'h ' + pMin.toFixed(3) + ' · ' +
-      __t('app.priciest', 'Máx') + ' ' + String(maxH).padStart(2, '0') + 'h ' + pMax.toFixed(3);
+      (cur ? ('<b>' + __t('app.now', 'Ahora') + ' ' + cur.price_eur_kwh.toFixed(4) + ' €/kWh' +
+        (cur.period ? ' (' + cur.period + ')' : '') + '</b> · ') : '') +
+      __t('app.cheapest', 'Mín') + ' ' + minL + ' ' + pMin.toFixed(4) + ' · ' +
+      __t('app.priciest', 'Máx') + ' ' + maxL + ' ' + pMax.toFixed(4);
   }
 
   function updatePriceKpi() {
     if (!env) return;
-    var nowH = new Date().getHours();
-    var now = marketPrices('today').filter(function (p) { return p.hour === nowH; })[0];
+    var now = currentPoint(marketPrices('today'));
     q('kpi-market').textContent = market.toUpperCase();
     if (now) {
       q('kpi-pvpc').textContent = now.price_eur_kwh.toFixed(3);
@@ -300,24 +320,28 @@
       '</div>' +
       '<div class="sav-explain">' + __t('app.solarExplain', 'Producción estimada para {kwp} kWp orientación sur.')
         .replace('{kwp}', fmt(s.peak_kwp, 1)) + '</div>' + pkTxt;
-    // Mini GHI curve (today)
-    var cv = prep('pnl-solar-chart', 64);
+    // Mini GHI curve (today) — hover shows the exact irradiance per hour
+    var c = chart('pnl-solar-chart');
     var hours = s.hourly_today || [];
-    if (!cv || !hours.length) return;
-    var ctx = cv.ctx, W = cv.W, H = cv.H;
-    var gMax = Math.max.apply(null, hours.map(function (h) { return h.ghi; }).concat([1]));
-    ctx.beginPath();
-    ctx.moveTo(0, H - 1);
-    hours.forEach(function (h) {
-      ctx.lineTo((h.hour + 0.5) / 24 * W, H - 1 - (H - 6) * (h.ghi / gMax));
+    if (!c || !hours.length) return;
+    c.setOption({
+      grid: { left: 4, right: 4, top: 4, bottom: 4 },
+      tooltip: Object.assign({}, TOOLTIP, {
+        axisPointer: { type: 'line' },
+        formatter: function (params) {
+          var h = hours[params[0].dataIndex];
+          return String(h.hour).padStart(2, '0') + ':00 — ' + fmt(h.ghi, 0) + ' W/m²';
+        },
+      }),
+      xAxis: { type: 'category', show: false, data: hours.map(function (h) { return h.hour; }) },
+      yAxis: { type: 'value', show: false },
+      series: [{
+        type: 'line', smooth: true, symbol: 'none',
+        data: hours.map(function (h) { return h.ghi; }),
+        lineStyle: { color: 'rgba(196,154,24,0.85)', width: 1.5 },
+        areaStyle: { color: 'rgba(242,200,78,0.35)' },
+      }],
     });
-    ctx.lineTo(W, H - 1);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(242,200,78,0.35)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(196,154,24,0.8)';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
   }
 
   function renderWindow() {
@@ -377,7 +401,7 @@
   };
 
   window.addEventListener('resize', function () {
-    drawHouseChart(); drawPvpcChart(); renderSolar();
+    Object.keys(charts).forEach(function (id) { charts[id].resize(); });
   });
 
   document.addEventListener('i18n:changed', function () {
@@ -405,7 +429,7 @@
         .catch(function (e) {
           App.showNotification(__t('common.error', 'Error'), e.message, 'danger');
         });
-      setInterval(function () { loadPower().catch(function () {}); }, 15000);  // watts move fastest
+      setInterval(function () { loadPower().catch(function () {}); }, 5000);   // live watts tick
       setInterval(refreshHouse, 60000);    // kWh / € of the day+month
       setInterval(refreshEnv, 300000);     // exogenous environment
     });

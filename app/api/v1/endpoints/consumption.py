@@ -160,16 +160,18 @@ async def environment(customer: Optional[str] = Query(None),
                         "period": r.get("period")})
         return out
 
-    def _omie_hourly(payload):
-        # OMIE rows are quarter-hourly (15-min MTU) → hourly mean; spot has
-        # no tariff bands, so period stays None.
-        agg: dict[int, list] = {}
+    def _omie_points(payload):
+        # OMIE day-ahead is quarter-hourly (15-min MTU) — keep the full 96
+        # points so the chart hover shows the exact quarter price. Spot has
+        # no tariff bands (period stays absent).
+        pts = []
         for r in (payload or {}).get("prices") or []:
-            if r.get("hour") is None:
-                continue
-            agg.setdefault(int(r["hour"]), []).append(_kwh(r))
-        return [{"hour": h, "price_eur_kwh": round(sum(v) / len(v), 5),
-                 "period": None} for h, v in sorted(agg.items())]
+            dl = str(r.get("datetime_local") or "")
+            if len(dl) >= 16:
+                pts.append({"time": dl[11:16],
+                            "price_eur_kwh": round(_kwh(r), 5)})
+        pts.sort(key=lambda p: p["time"])
+        return pts
 
     days = (weather or {}).get("forecast") or []
     now_wx = (obs or {}).get("data") or None
@@ -185,8 +187,8 @@ async def environment(customer: Optional[str] = Query(None),
                      "municipality": (loc or {}).get("municipality")
                      or (days[0].get("municipality") if days else None)},
         "pvpc": {"today": _prices(today), "tomorrow": _prices(tomorrow) or None},
-        "omie": {"today": _omie_hourly(omie_today),
-                 "tomorrow": _omie_hourly(omie_tomorrow) or None},
+        "omie": {"today": _omie_points(omie_today),
+                 "tomorrow": _omie_points(omie_tomorrow) or None},
         "carbon": {"intensity_gco2_kwh": (carbon or {}).get("intensity_gco2_kwh"),
                    "band": (carbon or {}).get("band")},
         "weather": {

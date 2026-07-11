@@ -22,93 +22,83 @@
     return 'rgba(46,204,113,0.75)';
   }
 
-  function prep(id, h) {
-    var c = q(id);
-    if (!c || !c.parentElement.clientWidth) return null;
-    var dpr = window.devicePixelRatio || 1;
-    var rect = c.parentElement.getBoundingClientRect();
-    var W = rect.width - 32, H = h || 200;
-    c.width = W * dpr; c.height = H * dpr;
-    c.style.width = W + 'px'; c.style.height = H + 'px';
-    var ctx = c.getContext('2d');
-    ctx.scale(dpr, dpr); ctx.clearRect(0, 0, W, H);
-    return { ctx: ctx, W: W, H: H };
+  // ECharts instances (hover tooltips) — one per container.
+  var charts = {};
+  function chart(id) {
+    var el = q(id);
+    if (!el || typeof echarts === 'undefined') return null;
+    if (!charts[id]) charts[id] = echarts.init(el);
+    return charts[id];
   }
+  var AXIS = { fontSize: 10, color: 'rgba(44,62,80,0.6)' };
+  var TOOLTIP = {
+    trigger: 'axis',
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderColor: 'rgba(44,81,113,0.2)',
+    textStyle: { fontSize: 12, color: '#22384c' },
+    axisPointer: { type: 'shadow' },
+  };
 
   function drawDayChart() {
-    var cv = prep('cons-day-chart');
-    if (!cv || !day) return;
-    var ctx = cv.ctx, W = cv.W, H = cv.H;
-    var padL = 36, padB = 18, padT = 8;
-    var vals = day.values || [];
+    var c = chart('cons-day-chart');
+    if (!c || !day) return;
     var byHour = {};
-    vals.forEach(function (v) { byHour[v.hour] = v; });
-    var max = Math.max(0.05, Math.max.apply(null, vals.map(function (v) { return v.kwh; })));
-    var chartW = W - padL - 8, chartH = H - padT - padB;
-    var bw = chartW / 24;
-    ctx.font = '10px Inter, sans-serif';
-    ctx.fillStyle = 'rgba(44,62,80,0.55)';
-    ctx.textAlign = 'right';
-    ctx.fillText(max.toFixed(1), padL - 3, padT + 8);
-    ctx.fillText('0', padL - 3, H - padB);
-    ctx.textAlign = 'center';
-    for (var h = 0; h < 24; h++) {
-      var v = byHour[h];
-      var x = padL + h * bw;
-      if (v && v.kwh > 0) {
-        var bh = chartH * (v.kwh / max);
-        ctx.fillStyle = periodColor(v.period);
-        ctx.fillRect(x + 1, H - padB - bh, bw - 2, bh);
-      }
-      if (h % 3 === 0) {
-        ctx.fillStyle = 'rgba(44,62,80,0.55)';
-        ctx.fillText(String(h).padStart(2, '0'), x + bw / 2, H - 5);
-      }
-    }
+    (day.values || []).forEach(function (v) { byHour[v.hour] = v; });
+    var hours = [];
+    for (var h = 0; h < 24; h++) hours.push(h);
+    c.setOption({
+      grid: { left: 44, right: 8, top: 12, bottom: 22 },
+      tooltip: Object.assign({}, TOOLTIP, {
+        formatter: function (params) {
+          var i = params[0].dataIndex, v = byHour[i];
+          if (!v) return String(i).padStart(2, '0') + ':00 — ' + __t('common.noData', 'Sin datos');
+          return '<b>' + String(i).padStart(2, '0') + ':00–' + String(i + 1).padStart(2, '0') + ':00</b><br>' +
+            fmt(v.kwh, 3) + ' kWh' + (v.period ? ' · ' + v.period : '') +
+            (v.price_eur_kwh != null ? '<br>PVPC ' + v.price_eur_kwh.toFixed(4) + ' €/kWh' : '') +
+            (v.cost_eur != null ? ' · <b>' + v.cost_eur.toFixed(3) + ' €</b>' : '');
+        },
+      }),
+      xAxis: { type: 'category', data: hours.map(function (h) { return String(h).padStart(2, '0'); }),
+               axisLabel: Object.assign({ interval: 2 }, AXIS), axisTick: { show: false } },
+      yAxis: { type: 'value', axisLabel: AXIS, splitLine: { lineStyle: { opacity: 0.25 } } },
+      series: [{
+        type: 'bar', barWidth: '72%',
+        data: hours.map(function (h) {
+          var v = byHour[h];
+          return { value: v ? v.kwh : 0, itemStyle: { color: periodColor(v && v.period) } };
+        }),
+      }],
+    });
   }
 
   function drawMonthChart() {
-    var cv = prep('cons-month-chart');
-    if (!cv || !month) return;
-    var ctx = cv.ctx, W = cv.W, H = cv.H;
-    var padL = 36, padR = 34, padB = 18, padT = 8;
+    var c = chart('cons-month-chart');
+    if (!c || !month) return;
     var vals = month.values || [];
-    if (!vals.length) return;
-    var n = vals.length;
-    var maxK = Math.max(0.05, Math.max.apply(null, vals.map(function (v) { return v.kwh; })));
-    var maxC = Math.max(0.05, Math.max.apply(null, vals.map(function (v) { return v.cost_eur || 0; })));
-    var chartW = W - padL - padR, chartH = H - padT - padB;
-    var bw = chartW / Math.max(n, 28);
-    ctx.font = '10px Inter, sans-serif';
-    ctx.fillStyle = 'rgba(44,62,80,0.55)';
-    ctx.textAlign = 'right';
-    ctx.fillText(maxK.toFixed(0), padL - 3, padT + 8);
-    ctx.fillText('0', padL - 3, H - padB);
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#e67e22';
-    ctx.fillText(maxC.toFixed(1) + '€', W - padR + 3, padT + 8);
-    // kWh bars
-    vals.forEach(function (v, i) {
-      var x = padL + i * bw;
-      var bh = chartH * (v.kwh / maxK);
-      ctx.fillStyle = 'rgba(70,130,180,0.75)';
-      ctx.fillRect(x + 1, H - padB - bh, Math.max(bw - 2, 1), bh);
-    });
-    // € line
-    ctx.beginPath();
-    vals.forEach(function (v, i) {
-      var x = padL + i * bw + bw / 2;
-      var y = H - padB - chartH * ((v.cost_eur || 0) / maxC);
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    });
-    ctx.strokeStyle = '#e67e22';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    // x labels (every ~5 days)
-    ctx.fillStyle = 'rgba(44,62,80,0.55)';
-    ctx.textAlign = 'center';
-    vals.forEach(function (v, i) {
-      if (i % 5 === 0) ctx.fillText(v.date.slice(8), padL + i * bw + bw / 2, H - 5);
+    if (!vals.length) { c.clear(); return; }
+    c.setOption({
+      grid: { left: 44, right: 44, top: 12, bottom: 22 },
+      tooltip: Object.assign({}, TOOLTIP, {
+        formatter: function (params) {
+          var v = vals[params[0].dataIndex];
+          return '<b>' + v.date + '</b><br>' + fmt(v.kwh, 2) + ' kWh' +
+            (v.cost_eur != null ? ' · <b>' + v.cost_eur.toFixed(2) + ' €</b>' : '');
+        },
+      }),
+      xAxis: { type: 'category', data: vals.map(function (v) { return v.date.slice(8); }),
+               axisLabel: Object.assign({ interval: 4 }, AXIS), axisTick: { show: false } },
+      yAxis: [
+        { type: 'value', axisLabel: AXIS, splitLine: { lineStyle: { opacity: 0.25 } } },
+        { type: 'value', axisLabel: Object.assign({ formatter: '{value}€', color: '#e67e22' }, AXIS),
+          splitLine: { show: false } },
+      ],
+      series: [
+        { type: 'bar', barWidth: '70%', data: vals.map(function (v) { return v.kwh; }),
+          itemStyle: { color: 'rgba(70,130,180,0.75)' } },
+        { type: 'line', yAxisIndex: 1, symbol: 'circle', symbolSize: 4,
+          data: vals.map(function (v) { return v.cost_eur; }),
+          lineStyle: { color: '#e67e22', width: 2 }, itemStyle: { color: '#e67e22' } },
+      ],
     });
   }
 
@@ -278,7 +268,9 @@
 
   window.ConsPage = { reload: reload };
 
-  window.addEventListener('resize', function () { drawDayChart(); drawMonthChart(); });
+  window.addEventListener('resize', function () {
+    Object.keys(charts).forEach(function (id) { charts[id].resize(); });
+  });
 
   document.addEventListener('DOMContentLoaded', function () {
     window.onAppReady(function () {

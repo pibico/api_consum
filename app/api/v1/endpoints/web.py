@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "13"  # 13: Panel v2 — day nav, PVPC|OMIE, weather-now, 15s power
+ASSET_VERSION = "15"  # 15: ECharts hover tooltips (Panel+Consumo), OMIE 15-min
 
 
 def render_template(template_name: str, **context) -> str:
