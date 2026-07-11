@@ -207,14 +207,15 @@ async def thermal_analysis(slugs: Sequence[str], device: Optional[str] = None,
 # ---------------------------------------------------------------------------
 
 
-async def green_window() -> Dict[str, Any]:
+async def green_window(lat: Optional[float] = None,
+                       lon: Optional[float] = None) -> Dict[str, Any]:
     pvpc = await exo_client.pvpc_day("tomorrow")
     target_day = (date.today() + timedelta(days=1)).isoformat()
     if not pvpc or not pvpc.get("prices"):
         pvpc = await exo_client.pvpc_day("today")
         target_day = date.today().isoformat()
-    solar = await exo_client.solar_forecast(settings.DEFAULT_LAT,
-                                            settings.DEFAULT_LON)
+    solar = await exo_client.solar_forecast(lat or settings.DEFAULT_LAT,
+                                            lon or settings.DEFAULT_LON)
 
     prices: Dict[int, Dict[str, Any]] = {}
     for p in (pvpc or {}).get("prices") or []:

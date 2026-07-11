@@ -249,12 +249,22 @@
     });
   }
 
-  function reload() {
-    device = q('cons-device').value || '';
+  function reloadFast() {
+    // Continuous refresh: the day view (KPIs + hourly chart/table) moves
+    // with live data — 60s cadence, cheap single-day query.
     loadDay().catch(function (e) { App.showNotification(__t('common.error', 'Error'), e.message, 'danger'); });
+  }
+
+  function reloadSlow() {
     loadMonth().catch(function () {});
     loadForecast();
     loadBands();
+  }
+
+  function reload() {
+    device = q('cons-device').value || '';
+    reloadFast();
+    reloadSlow();
   }
 
   function shift(days) {
@@ -280,8 +290,9 @@
       q('cons-today').onclick = function () { q('cons-date').value = today(); reload(); };
       q('cons-export').onclick = exportCsv;
       loadDevices().then(reload).catch(reload);
-      // Auto-refresh cards every 5 min
-      setInterval(reload, 300000);
+      // Continuous refresh: day view 60s; month + PRO cards 5 min
+      setInterval(reloadFast, 60000);
+      setInterval(reloadSlow, 300000);
     });
   });
 })();

@@ -63,6 +63,29 @@ async def solar_forecast(lat: float, lon: float) -> Optional[dict]:
     return await _get(f"/weather/solar-forecast?lat={lat}&lon={lon}", ttl=1800)
 
 
+async def weather_forecast(lat: float, lon: float) -> Optional[dict]:
+    """AEMET daily forecast (7 days) → {forecast: [{date, temp_max, temp_min,
+    description, precipitation_prob, municipality}]} (Panel environment)."""
+    return await _get(f"/weather/forecast?lat={lat}&lon={lon}", ttl=1800)
+
+
+async def weather_observations(lat: float, lon: float) -> Optional[dict]:
+    """Nearest AEMET station now → {data: {temperature, humidity,
+    description, station, …}} (Panel 'ahora' row)."""
+    return await _get(f"/weather/observations?lat={lat}&lon={lon}", ttl=900)
+
+
+async def omie_day(day: str = "today") -> Optional[dict]:
+    """Hourly OMIE day-ahead spot. Rows are quarter-hourly (15-min MTU) —
+    callers aggregate per hour. 'tomorrow' goes through the range endpoint
+    and returns None (400 upstream) until the auction is published."""
+    if day == "today":
+        return await _get("/prices/omie/today")
+    from datetime import date, timedelta
+    d = (date.today() + timedelta(days=1)).isoformat()
+    return await _get(f"/prices/omie?start_date={d}&end_date={d}", ttl=900)
+
+
 async def carbon_current() -> Optional[dict]:
     return await _get("/carbon/current", ttl=300)
 

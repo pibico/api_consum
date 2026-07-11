@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "11"  # 11: PLC single-chrome (global header hidden too)
+ASSET_VERSION = "13"  # 13: Panel v2 — day nav, PVPC|OMIE, weather-now, 15s power
 
 
 def render_template(template_name: str, **context) -> str:

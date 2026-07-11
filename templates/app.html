@@ -8,10 +8,12 @@
 {% endblock %}
 
 {% block content %}
-{# F0/F1 (CNS-F0): product Panel — live KPIs from /consumption/summary,
-   device list from /consumption/devices. F2 adds the charts page. #}
+{# Panel v2: GENERAL household numbers only — the whole-house Medidor General
+   (EM emeter:0/1), never a per-sensor list (that breakdown lives in Consumo
+   and the PLC view) — plus the exogenous environment personalized for the
+   home, assembled server-side from api_exo (/consumption/environment). #}
 
-<div class="kpi-grid-8" id="kpi-grid">
+<div class="kpi-grid-8" id="kpi-grid" style="grid-template-columns:repeat(6,1fr);">
   <div class="glass-panel kpi-card">
     <div class="kpi-label" data-i18n="app.powerNow">Potencia ahora</div>
     <div class="kpi-value" id="kpi-power">—</div>
@@ -25,49 +27,74 @@
   <div class="glass-panel kpi-card">
     <div class="kpi-label" data-i18n="app.costToday">Coste hoy</div>
     <div class="kpi-value" id="kpi-cost-today">—</div>
-    <div class="kpi-sub">€ (aprox.)</div>
+    <div class="kpi-sub">€ <span data-i18n="app.energyOnly">(término energía)</span></div>
   </div>
   <div class="glass-panel kpi-card">
-    <div class="kpi-label" data-i18n="app.kwhWeek">7 días</div>
-    <div class="kpi-value" id="kpi-week">—</div>
-    <div class="kpi-sub">kWh</div>
+    <div class="kpi-label" data-i18n="app.monthNow">Mes en curso</div>
+    <div class="kpi-value" id="kpi-month" style="font-size:1.6rem;">—</div>
+    <div class="kpi-sub" id="kpi-month-cost">—</div>
   </div>
   <div class="glass-panel kpi-card">
-    <div class="kpi-label" data-i18n="app.kwhMonth">30 días</div>
-    <div class="kpi-value" id="kpi-month">—</div>
-    <div class="kpi-sub">kWh</div>
-  </div>
-  <div class="glass-panel kpi-card">
-    <div class="kpi-label" data-i18n="app.pvpcNow">PVPC ahora</div>
+    <div class="kpi-label" data-i18n="app.priceNow">Precio ahora</div>
     <div class="kpi-value" id="kpi-pvpc" style="font-size:1.6rem;">—</div>
-    <div class="kpi-sub">€/kWh · <span id="kpi-period">—</span></div>
+    <div class="kpi-sub">€/kWh · <span id="kpi-market">PVPC</span><span id="kpi-period-wrap"> · <span id="kpi-period">—</span></span></div>
   </div>
   <div class="glass-panel kpi-card">
     <div class="kpi-label" data-i18n="app.carbonNow">CO₂ red</div>
     <div class="kpi-value" id="kpi-carbon" style="font-size:1.6rem;">—</div>
-    <div class="kpi-sub">gCO₂/kWh</div>
-  </div>
-  <div class="glass-panel kpi-card">
-    <div class="kpi-label" data-i18n="app.devices">Dispositivos</div>
-    <div class="kpi-value" id="kpi-devices">—</div>
-    <div class="kpi-sub" id="kpi-devices-online"></div>
+    <div class="kpi-sub">gCO₂/kWh · <span id="kpi-carbon-band">—</span></div>
   </div>
 </div>
 
-<!-- Live per-device power -->
-<div class="glass-panel" style="margin-bottom:1rem;">
-  <div class="filters-bar" style="justify-content:space-between;">
-    <h3 data-i18n="app.liveDevices">Consumo por dispositivo (ahora)</h3>
+<!-- General meter today + PVPC curve, side by side -->
+<div class="wx-2col">
+  <div class="glass-panel" style="padding:0.75rem 1rem;">
+    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span data-i18n="app.houseChart">Tu casa, hora a hora</span>
+      <span style="margin-left:auto;display:flex;gap:4px;align-items:center;">
+        <button class="btn-icon" id="pnl-house-prev" title="Día anterior"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button>
+        <input type="date" id="pnl-house-date" class="pibico-input" style="width:auto;padding:2px 6px;font-size:0.72rem;">
+        <button class="btn-icon" id="pnl-house-next" title="Día siguiente"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button>
+      </span>
+    </h4>
+    <canvas id="pnl-house-chart" style="width:100%;height:190px;"></canvas>
+    <div style="display:flex;gap:12px;margin-top:6px;font-size:0.7rem;color:var(--color-text-light);">
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(231,76,60,0.75);"></span> P1 Punta</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(243,156,18,0.75);"></span> P2 Llano</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(46,204,113,0.75);"></span> P3 Valle</span>
+    </div>
   </div>
-  <div class="table-scroll">
-    <table class="data-table" id="live-table">
-      <thead><tr>
-        <th data-i18n="app.colDevice">Dispositivo</th>
-        <th data-i18n="app.colPower">Potencia (W)</th>
-        <th data-i18n="app.colState">Estado</th>
-      </tr></thead>
-      <tbody id="live-tbody"><tr><td colspan="3" class="text-center"><span class="spinner"></span></td></tr></tbody>
-    </table>
+  <div class="glass-panel" style="padding:0.75rem 1rem;">
+    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;display:flex;align-items:center;gap:8px;">
+      <span data-i18n="app.pvpcChart">El precio de tu luz</span>
+      <span style="margin-left:auto;display:flex;gap:4px;">
+        <button class="btn btn-sm pnl-day-btn active" id="pnl-mkt-pvpc" title="Tarifa regulada (PVPC)">PVPC</button>
+        <button class="btn btn-sm pnl-day-btn" id="pnl-mkt-omie" title="Mercado mayorista (contratos indexados)">OMIE</button>
+        <span style="width:8px;"></span>
+        <button class="btn btn-sm pnl-day-btn active" id="pnl-pvpc-today" data-i18n="app.today">Hoy</button>
+        <button class="btn btn-sm pnl-day-btn" id="pnl-pvpc-tomorrow" data-i18n="app.tomorrow" disabled>Mañana</button>
+      </span>
+    </h4>
+    <canvas id="pnl-pvpc-chart" style="width:100%;height:190px;"></canvas>
+    <div id="pnl-pvpc-note" class="kpi-sub" style="margin-top:6px;font-size:0.72rem;"></div>
+  </div>
+</div>
+
+<!-- Personalized exogenous environment -->
+<div class="panel-3col">
+  <div class="glass-panel" style="padding:0.75rem 1rem;">
+    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="app.weatherTitle">El tiempo en tu casa</span>
+      <span class="text-muted" id="pnl-wx-muni" style="font-weight:400;"></span></h4>
+    <div id="pnl-weather"><span class="spinner"></span></div>
+  </div>
+  <div class="glass-panel" style="padding:0.75rem 1rem;">
+    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;" data-i18n="app.solarTitle">Sol en tu tejado</h4>
+    <div id="pnl-solar"><span class="spinner"></span></div>
+    <canvas id="pnl-solar-chart" style="width:100%;height:64px;margin-top:6px;"></canvas>
+  </div>
+  <div class="glass-panel" style="padding:0.75rem 1rem;">
+    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;" data-i18n="app.windowTitle">Tu mejor momento</h4>
+    <div id="pnl-window"><span class="spinner"></span></div>
   </div>
 </div>
 

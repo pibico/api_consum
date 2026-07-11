@@ -117,6 +117,95 @@ async def devices(customer: Optional[str] = Query(None),
     return {"data": base}
 
 
+@router.get("/environment")
+async def environment(customer: Optional[str] = Query(None),
+                      ctx: ConsumContext = Depends(consum_context)):
+    """Panel v2 — the household's exogenous environment, personalized and
+    assembled server-side from api_exo (the browser never holds the exo key):
+    PVPC curves today/tomorrow, AEMET weather, solar forecast, grid carbon
+    and the OE3 green window. Location: household coords (v1 = defaults;
+    per-customer coords come with the onboarding flow)."""
+    import asyncio
+    from datetime import date as _date
+
+    from app.core.config import settings
+    from app.services import oe3
+
+    slugs = await _slugs(ctx, customer)
+    loc = await consumption.location_for(slugs)
+    lat = loc["lat"] if loc else settings.DEFAULT_LAT
+    lon = loc["lon"] if loc else settings.DEFAULT_LON
+    (today, tomorrow, omie_today, omie_tomorrow, carbon,
+     weather, obs, solar, window) = await asyncio.gather(
+        exo_client.pvpc_day("today"),
+        exo_client.pvpc_day("tomorrow"),
+        exo_client.omie_day("today"),
+        exo_client.omie_day("tomorrow"),
+        exo_client.carbon_current(),
+        exo_client.weather_forecast(lat, lon),
+        exo_client.weather_observations(lat, lon),
+        exo_client.solar_forecast(lat, lon),
+        oe3.green_window(lat, lon),
+    )
+
+    def _kwh(r):
+        return r.get("price_eur_kwh") or ((r.get("price_eur_mwh") or 0) / 1000.0)
+
+    def _prices(payload):
+        out = []
+        for r in (payload or {}).get("prices") or []:
+            if r.get("hour") is None:
+                continue
+            out.append({"hour": int(r["hour"]), "price_eur_kwh": _kwh(r),
+                        "period": r.get("period")})
+        return out
+
+    def _omie_hourly(payload):
+        # OMIE rows are quarter-hourly (15-min MTU) → hourly mean; spot has
+        # no tariff bands, so period stays None.
+        agg: dict[int, list] = {}
+        for r in (payload or {}).get("prices") or []:
+            if r.get("hour") is None:
+                continue
+            agg.setdefault(int(r["hour"]), []).append(_kwh(r))
+        return [{"hour": h, "price_eur_kwh": round(sum(v) / len(v), 5),
+                 "period": None} for h, v in sorted(agg.items())]
+
+    days = (weather or {}).get("forecast") or []
+    now_wx = (obs or {}).get("data") or None
+    tstr = _date.today().isoformat()
+    solar_hours = []
+    for row in (solar or {}).get("hourly") or []:
+        ts = str(row.get("ts") or "")
+        if ts[:10] == tstr:
+            solar_hours.append({"hour": int(ts[11:13]),
+                                "ghi": round(float(row.get("ghi") or 0))})
+    return {
+        "location": {"lat": lat, "lon": lon,
+                     "municipality": (loc or {}).get("municipality")
+                     or (days[0].get("municipality") if days else None)},
+        "pvpc": {"today": _prices(today), "tomorrow": _prices(tomorrow) or None},
+        "omie": {"today": _omie_hourly(omie_today),
+                 "tomorrow": _omie_hourly(omie_tomorrow) or None},
+        "carbon": {"intensity_gco2_kwh": (carbon or {}).get("intensity_gco2_kwh"),
+                   "band": (carbon or {}).get("band")},
+        "weather": {
+            "now": ({k: now_wx.get(k) for k in ("temperature", "feels_like",
+                                                "humidity", "description",
+                                                "station")} if now_wx else None),
+            "days": [{k: d.get(k) for k in ("date", "temp_max", "temp_min",
+                                            "description", "precipitation_prob")}
+                     for d in days[:4]],
+        },
+        "solar": {"today_kwh": (solar or {}).get("today_kwh"),
+                  "tomorrow_kwh": (solar or {}).get("tomorrow_kwh"),
+                  "peak_kwp": ((solar or {}).get("config") or {}).get("peak_kwp"),
+                  "peak_window": (solar or {}).get("peak_window"),
+                  "hourly_today": solar_hours},
+        "window": window,
+    }
+
+
 # ---------------------------------------------------------------------------
 # F2 — day/month views with PVPC cost (kWh_h × PVPC_h)
 # ---------------------------------------------------------------------------

@@ -50,6 +50,28 @@ async def all_slugs() -> List[str]:
             return [r[0] for r in await cur.fetchall()]
 
 
+async def location_for(slugs: Sequence[str]) -> Optional[Dict[str, Any]]:
+    """The household's coords (customers.latitude/longitude, mig 020 —
+    api_edge owns the column; set at onboarding). First slug with coords
+    wins (one home per org in the family model); None → caller defaults."""
+    if not slugs:
+        return None
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT latitude, longitude, municipality FROM customers
+                WHERE slug = ANY(%s) AND latitude IS NOT NULL AND longitude IS NOT NULL
+                ORDER BY slug LIMIT 1
+                """,
+                (list(slugs),),
+            )
+            row = await cur.fetchone()
+    if not row:
+        return None
+    return {"lat": float(row[0]), "lon": float(row[1]), "municipality": row[2]}
+
+
 async def devices_for(slugs: Sequence[str]) -> List[Dict[str, Any]]:
     """Devices (id, hostname, type, customer slug) for the authorized slugs."""
     ids = await _slugs_to_ids(slugs)

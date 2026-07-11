@@ -8,8 +8,14 @@
   'use strict';
 
   var customer = '';   // selected household (its gateway) — '' = first/only
+  var retryTimer = null;
 
   function q(id) { return document.getElementById(id); }
+
+  function scheduleRetry() {
+    clearTimeout(retryTimer);
+    retryTimer = setTimeout(load, 60000);
+  }
 
   function showState(html) {
     q('plc-state').innerHTML = html;
@@ -18,6 +24,7 @@
   }
 
   function load() {
+    clearTimeout(retryTimer);
     showState('<span class="spinner"></span> <span class="text-muted" style="font-size:0.85rem;">' +
       __t('plc.connecting', 'Conectando con tu PLC…') + '</span>');
     App.apiFetch('/plc/session' + (customer ? '?customer=' + encodeURIComponent(customer) : '')).then(function (r) {
@@ -38,6 +45,7 @@
           __t('plc.offlineBody', 'La caja está sin conexión o el túnel se está restableciendo. Tus datos siguen guardándose en casa; vuelve a intentarlo en unos minutos.') + '</p>');
         q('plc-reload').style.display = '';
         q('plc-controls').style.display = 'flex';
+        scheduleRetry();   // auto-reconnect: retry every 60s while offline
         return;
       }
       q('plc-frame').src = r.url;
