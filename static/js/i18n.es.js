@@ -86,5 +86,20 @@ window.I18N_ES = {
   'app.colState': 'Estado',
   'app.active': 'Activo',
   'app.idle': 'Reposo',
-  'app.allHomes': 'Todos mis hogares'
+  'app.allHomes': 'Todos mis hogares',
+
+  /* — Consumo page (CNS-F2) — */
+  'cons.today': 'HOY',
+  'cons.dayKwh': 'Consumo del día',
+  'cons.dayCost': 'Coste del día',
+  'cons.energyOnly': '(término energía)',
+  'cons.avgPrice': 'Precio medio pagado',
+  'cons.monthTotal': 'Mes en curso',
+  'cons.hourlyChart': 'Consumo por horas',
+  'cons.monthChart': 'Consumo diario del mes',
+  'cons.tableTitle': 'Detalle horario',
+  'cons.colHour': 'Hora',
+  'cons.colPeriod': 'Periodo',
+  'cons.colCost': 'Coste €',
+  'cons.wholeHouse': 'Toda la casa'
 };

@@ -86,5 +86,20 @@ window.I18N_EN = {
   'app.colState': 'State',
   'app.active': 'Active',
   'app.idle': 'Idle',
-  'app.allHomes': 'All my homes'
+  'app.allHomes': 'All my homes',
+
+  /* — Consumo page (CNS-F2) — */
+  'cons.today': 'TODAY',
+  'cons.dayKwh': 'Day consumption',
+  'cons.dayCost': 'Day cost',
+  'cons.energyOnly': '(energy term)',
+  'cons.avgPrice': 'Avg. price paid',
+  'cons.monthTotal': 'Current month',
+  'cons.hourlyChart': 'Hourly consumption',
+  'cons.monthChart': 'Daily consumption (month)',
+  'cons.tableTitle': 'Hourly detail',
+  'cons.colHour': 'Hour',
+  'cons.colPeriod': 'Period',
+  'cons.colCost': 'Cost €',
+  'cons.wholeHouse': 'Whole house'
 };

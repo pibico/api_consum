@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "2"  # 2: kpi-grid-8 + layout grids in consum_app.css
+ASSET_VERSION = "3"  # 3: Consumo page (CNS-F2)
 
 
 def render_template(template_name: str, **context) -> str:
@@ -109,7 +109,7 @@ async def consumption_page(request: Request):
     guard = await _require_member_page(request)
     if guard:
         return guard
-    return render_template("app.html")  # placeholder until F2 (consumption.html)
+    return render_template("consumption.html")
 
 
 @router.get("/app/savings", response_class=HTMLResponse)

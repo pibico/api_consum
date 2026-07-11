@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Consumo — CONSUM-IA{% endblock %}
+{% block page_title_key %}nav.consumption{% endblock %}
+{% block page_title %}Consumo{% endblock %}
+{% block topbar_actions %}
+<select id="cons-device" class="pibico-select" style="width:auto;min-width:150px;" onchange="ConsPage.reload()"></select>
+<div class="date-nav" style="display:flex;gap:6px;align-items:center;">
+  <button class="btn-icon" id="cons-prev" title="Día anterior"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button>
+  <input type="date" id="cons-date" class="pibico-input" style="width:auto;">
+  <button class="btn-icon" id="cons-next" title="Día siguiente"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button>
+  <button class="btn btn-sm" id="cons-today" data-i18n="cons.today">HOY</button>
+</div>
+{% endblock %}
+
+{% block content %}
+{# F2: hourly day view (P1/P2/P3 colored bars + hour×hour PVPC cost),
+   monthly view, compact table with Pager. Autorefresh 5 min. #}
+
+<div class="kpi-grid-8" style="grid-template-columns:repeat(4,1fr);">
+  <div class="glass-panel kpi-card">
+    <div class="kpi-label" data-i18n="cons.dayKwh">Consumo del día</div>
+    <div class="kpi-value" id="ck-kwh">—</div>
+    <div class="kpi-sub">kWh</div>
+  </div>
+  <div class="glass-panel kpi-card">
+    <div class="kpi-label" data-i18n="cons.dayCost">Coste del día</div>
+    <div class="kpi-value" id="ck-cost">—</div>
+    <div class="kpi-sub">€ <span data-i18n="cons.energyOnly">(término energía)</span></div>
+  </div>
+  <div class="glass-panel kpi-card">
+    <div class="kpi-label" data-i18n="cons.avgPrice">Precio medio pagado</div>
+    <div class="kpi-value" id="ck-avg" style="font-size:1.6rem;">—</div>
+    <div class="kpi-sub">€/kWh</div>
+  </div>
+  <div class="glass-panel kpi-card">
+    <div class="kpi-label" data-i18n="cons.monthTotal">Mes en curso</div>
+    <div class="kpi-value" id="ck-month" style="font-size:1.6rem;">—</div>
+    <div class="kpi-sub" id="ck-month-cost">—</div>
+  </div>
+</div>
+
+<!-- Hourly chart (P1/P2/P3 colors) + month chart side by side -->
+<div class="wx-2col">
+  <div class="glass-panel" style="padding:0.75rem 1rem;">
+    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="cons.hourlyChart">Consumo por horas</span>
+      <span class="text-muted" id="cons-chart-date" style="font-weight:400;"></span></h4>
+    <canvas id="cons-day-chart" style="width:100%;height:200px;"></canvas>
+    <div style="display:flex;gap:12px;margin-top:6px;font-size:0.7rem;color:var(--color-text-light);">
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(231,76,60,0.75);"></span> P1 Punta</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(243,156,18,0.75);"></span> P2 Llano</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(46,204,113,0.75);"></span> P3 Valle</span>
+    </div>
+  </div>
+  <div class="glass-panel" style="padding:0.75rem 1rem;">
+    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="cons.monthChart">Consumo diario del mes</span>
+      <span class="text-muted" id="cons-month-label" style="font-weight:400;"></span></h4>
+    <canvas id="cons-month-chart" style="width:100%;height:200px;"></canvas>
+    <div style="display:flex;gap:12px;margin-top:6px;font-size:0.7rem;color:var(--color-text-light);">
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(70,130,180,0.75);"></span> kWh</span>
+      <span><span style="display:inline-block;width:14px;height:3px;background:#e67e22;vertical-align:middle;"></span> € / día</span>
+    </div>
+  </div>
+</div>
+
+<!-- Hourly table -->
+<div class="glass-panel">
+  <div class="filters-bar" style="justify-content:space-between;">
+    <h3 data-i18n="cons.tableTitle">Detalle horario</h3>
+  </div>
+  <div class="ev-pager" id="cons-pager-top" hidden></div>
+  <div class="table-scroll">
+    <table class="data-table" id="cons-table">
+      <thead><tr>
+        <th data-i18n="cons.colHour">Hora</th>
+        <th>kWh</th>
+        <th>PVPC €/kWh</th>
+        <th data-i18n="cons.colPeriod">Periodo</th>
+        <th data-i18n="cons.colCost">Coste €</th>
+      </tr></thead>
+      <tbody id="cons-tbody"><tr><td colspan="5" class="text-center"><span class="spinner"></span></td></tr></tbody>
+    </table>
+  </div>
+  <div class="ev-pager" id="cons-pager-bottom" hidden></div>
+</div>
+
+<script src="{{ root }}/static/js/pages/consumption.js?v={{ v }}" defer></script>
+{% endblock %}

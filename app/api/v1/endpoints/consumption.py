@@ -107,3 +107,77 @@ async def devices(customer: Optional[str] = Query(None),
     for d in base:
         d["is_online"] = online.get(d["hostname"])
     return {"data": base}
+
+
+# ---------------------------------------------------------------------------
+# F2 — day/month views with PVPC cost (kWh_h × PVPC_h)
+# ---------------------------------------------------------------------------
+
+@router.get("/day")
+async def day(date: str = Query(..., description="YYYY-MM-DD (local)"),
+              device: Optional[str] = Query(None),
+              customer: Optional[str] = Query(None),
+              ctx: ConsumContext = Depends(consum_context)):
+    """Hourly kWh for one local day joined with that day's PVPC:
+    values[] = {hour, kwh, price_eur_kwh, period, cost_eur}."""
+    slugs = await _slugs(ctx, customer)
+    rows = await consumption.energy_series(slugs, date, date, bucket="hour", device=device)
+    prices = await exo_client.pvpc_map(date, date)
+    values = []
+    total_kwh = total_cost = 0.0
+    for r in rows:
+        ts = r["ts"]
+        if ts[:10] != date:          # bucket edges may spill into neighbours (UTC)
+            continue
+        hour = int(ts[11:13])
+        p = prices.get((date, hour)) or {}
+        price = p.get("price_eur_kwh")
+        cost = round(r["kwh"] * price, 4) if price is not None else None
+        total_kwh += r["kwh"]
+        if cost is not None:
+            total_cost += cost
+        values.append({"hour": hour, "kwh": r["kwh"],
+                       "price_eur_kwh": price, "period": p.get("period"),
+                       "cost_eur": cost})
+    return {"date": date, "values": values,
+            "total_kwh": round(total_kwh, 2),
+            "total_cost_eur": round(total_cost, 2) if values else 0,
+            "avg_price_eur_kwh": round(total_cost / total_kwh, 4) if total_kwh > 0 and total_cost else None}
+
+
+@router.get("/month")
+async def month(month: str = Query(..., pattern=r"^\d{4}-\d{2}$", description="YYYY-MM"),
+                device: Optional[str] = Query(None),
+                customer: Optional[str] = Query(None),
+                ctx: ConsumContext = Depends(consum_context)):
+    """Daily kWh + exact daily cost (Σ hour kWh × hour PVPC) for one month."""
+    import calendar
+    from datetime import date as _date
+    slugs = await _slugs(ctx, customer)
+    y, m = int(month[:4]), int(month[5:7])
+    last = calendar.monthrange(y, m)[1]
+    start, end = f"{month}-01", f"{month}-{last:02d}"
+    today = _date.today().isoformat()
+    if end > today:
+        end = today if today >= start else start
+    hourly = await consumption.energy_series(slugs, start, end, bucket="hour", device=device)
+    prices = await exo_client.pvpc_map(start, end)
+    days: dict[str, dict] = {}
+    for r in hourly:
+        d, h = r["ts"][:10], int(r["ts"][11:13])
+        if d < start or d > end:
+            continue
+        entry = days.setdefault(d, {"date": d, "kwh": 0.0, "cost_eur": 0.0, "priced": False})
+        entry["kwh"] += r["kwh"]
+        p = prices.get((d, h))
+        if p and p.get("price_eur_kwh") is not None:
+            entry["cost_eur"] += r["kwh"] * p["price_eur_kwh"]
+            entry["priced"] = True
+    values = []
+    for d in sorted(days):
+        e = days[d]
+        values.append({"date": d, "kwh": round(e["kwh"], 2),
+                       "cost_eur": round(e["cost_eur"], 2) if e["priced"] else None})
+    return {"month": month, "values": values,
+            "total_kwh": round(sum(v["kwh"] for v in values), 2),
+            "total_cost_eur": round(sum(v["cost_eur"] or 0 for v in values), 2)}

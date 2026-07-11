@@ -61,3 +61,18 @@ async def solar_forecast(lat: float, lon: float) -> Optional[dict]:
 
 async def carbon_current() -> Optional[dict]:
     return await _get("/carbon/current", ttl=300)
+
+
+async def pvpc_map(start: str, end: str) -> dict:
+    """(local_date, hour) → {price_eur_kwh, period} for the range (F2 cost)."""
+    data = await pvpc_range(start, end)
+    out = {}
+    for row in (data or {}).get("prices") or []:
+        dt_local = str(row.get("datetime_local") or "")[:10]
+        h = row.get("hour")
+        if dt_local and h is not None:
+            out[(dt_local, int(h))] = {
+                "price_eur_kwh": row.get("price_eur_kwh") or ((row.get("price_eur_mwh") or 0) / 1000.0),
+                "period": row.get("period"),
+            }
+    return out
