@@ -59,8 +59,20 @@ async def degree_days(lat: float, lon: float, start: str, end: str) -> Optional[
     )
 
 
-async def solar_forecast(lat: float, lon: float) -> Optional[dict]:
-    return await _get(f"/weather/solar-forecast?lat={lat}&lon={lon}", ttl=1800)
+async def solar_forecast(lat: float, lon: float,
+                         peak_kwp: Optional[float] = None,
+                         tilt: Optional[float] = None,
+                         azimuth: Optional[float] = None,
+                         loss: Optional[float] = None) -> Optional[dict]:
+    """PV production forecast. Optional installation params (kWp/tilt/azimuth/
+    loss) override api_exo's defaults so the estimate reflects the real rooftop;
+    omitted params fall back to api_exo (3 kWp, 30° tilt, south, 14% loss)."""
+    qs = f"/weather/solar-forecast?lat={lat}&lon={lon}"
+    for name, val in (("peak_kwp", peak_kwp), ("tilt", tilt),
+                      ("azimuth", azimuth), ("loss", loss)):
+        if val is not None:
+            qs += f"&{name}={val}"
+    return await _get(qs, ttl=1800)
 
 
 async def weather_forecast(lat: float, lon: float) -> Optional[dict]:
@@ -81,6 +93,12 @@ async def weather_observations(lat: float, lon: float) -> Optional[dict]:
     return await _get(f"/weather/observations?lat={lat}&lon={lon}", ttl=900)
 
 
+async def wind_forecast(lat: float, lon: float) -> Optional[dict]:
+    """Hourly wind (Open-Meteo) → {hourly: [{ts, wind_speed_kmh,
+    wind_gusts_kmh, wind_dir}]} (Panel wind/infiltration card)."""
+    return await _get(f"/weather/wind?lat={lat}&lon={lon}&days=2", ttl=1800)
+
+
 async def omie_day(day: str = "today") -> Optional[dict]:
     """Hourly OMIE day-ahead spot. Rows are quarter-hourly (15-min MTU) —
     callers aggregate per hour. 'tomorrow' goes through the range endpoint
@@ -96,16 +114,74 @@ async def carbon_current() -> Optional[dict]:
     return await _get("/carbon/current", ttl=300)
 
 
-async def pvpc_map(start: str, end: str) -> dict:
-    """(local_date, hour) → {price_eur_kwh, period} for the range (F2 cost)."""
+QUARTERS = ("00", "15", "30", "45")
+
+
+def _fill_quarters(out: dict) -> dict:
+    """Normalize a (date, "HH:MM")-keyed map to full quarter resolution.
+
+    Upstream granularity varies (PVPC is hourly today; OMIE's apidatos
+    fallback is hourly; native OMIE is quarter-hourly): any hour that has
+    only its ":00" row gets the other three quarters filled from it — the
+    hourly price IS the legally applicable price of each of its quarters.
+    """
+    for (ds, hhmm) in list(out.keys()):
+        if hhmm[3:] != "00":
+            continue
+        for mm in QUARTERS[1:]:
+            key = (ds, f"{hhmm[:2]}:{mm}")
+            if key not in out:
+                out[key] = out[(ds, hhmm)]
+    return out
+
+
+async def pvpc_qmap(start: str, end: str) -> dict:
+    """(local_date, "HH:MM") → {price_eur_kwh, period} for the range.
+
+    PVPC arrives hourly from api_exo today (ESIOS 1001) — expanded to
+    quarters via _fill_quarters; if ESIOS ever ships native 15-min PVPC the
+    same code passes it through untouched."""
     data = await pvpc_range(start, end)
-    out = {}
+    out: dict = {}
     for row in (data or {}).get("prices") or []:
-        dt_local = str(row.get("datetime_local") or "")[:10]
-        h = row.get("hour")
-        if dt_local and h is not None:
-            out[(dt_local, int(h))] = {
+        dl = str(row.get("datetime_local") or "")
+        if len(dl) >= 16:
+            out[(dl[:10], dl[11:16])] = {
                 "price_eur_kwh": row.get("price_eur_kwh") or ((row.get("price_eur_mwh") or 0) / 1000.0),
                 "period": row.get("period"),
             }
-    return out
+    return _fill_quarters(out)
+
+
+async def omie_qmap(start: str, end: str) -> dict:
+    """(local_date, "HH:MM") → eur_kwh for the range (indexed-contract cost).
+
+    Native quarter-hourly (15-min MTU) rows pass through as-is; hourly
+    responses (apidatos fallback) get quarter-filled. api_exo caps ranges at
+    31 days, so long ranges are fetched in chunks. `status:"no_data"` days
+    (e.g. tomorrow before the auction) simply leave gaps — never a 404.
+    """
+    from datetime import date, timedelta
+    d0, d1 = date.fromisoformat(start), date.fromisoformat(end)
+    out: dict = {}
+    while d0 <= d1:
+        chunk_end = min(d0 + timedelta(days=30), d1)
+        data = await _get(
+            f"/prices/omie?start_date={d0.isoformat()}&end_date={chunk_end.isoformat()}",
+            ttl=3600,
+        )
+        for row in (data or {}).get("prices") or []:
+            dl = str(row.get("datetime_local") or "")
+            if len(dl) >= 16:
+                kwh = row.get("price_eur_kwh") or ((row.get("price_eur_mwh") or 0) / 1000.0)
+                out[(dl[:10], dl[11:16])] = float(kwh)
+        d0 = chunk_end + timedelta(days=1)
+    return _fill_quarters(out)
+
+
+async def tariff_schedule_week(day: str) -> Optional[dict]:
+    """2.0TD band calendar, 7 days starting at `day` (holiday-aware) →
+    {rows: [{datetime_local, weekday, hour, band}]} (168 rows)."""
+    return await _get(
+        f"/tariffs/schedule/week?start_date={day}&access_tariff=2.0TD", ttl=86400
+    )

@@ -14,6 +14,14 @@
   function fmt(n, dec) { return (n == null) ? '—' : Number(n).toLocaleString(undefined, { maximumFractionDigits: dec == null ? 2 : dec }); }
   function hh(h) { return String(h).padStart(2, '0') + ':00'; }
 
+  // Appliance label: PLC-given name (sensors.name) when set, else a clean short
+  // id instead of the raw 'shelly_<mac>' key.
+  function sensorLabel(o) {
+    if (o.name && String(o.name).trim()) return o.name;
+    var m = String(o.id || '').replace(/^shelly[_-]?/i, '');
+    return m.length > 5 ? __t('cons.sensorGeneric', 'Sensor') + ' ··' + m.slice(-4) : (m || o.id);
+  }
+
   function periodColor(p) {
     if (p === 'P1') return 'rgba(231,76,60,0.75)';
     if (p === 'P2') return 'rgba(243,156,18,0.75)';
@@ -180,39 +188,35 @@
     q('sv-window-day').textContent = '· ' + (w.date || '');
   }
 
-  // ── Table ────────────────────────────────────────────────────────────
+  // ── Best hours ───────────────────────────────────────────────────────
+  // Ranked cheapest-first (api_exo "mejores horas" style): the decision a
+  // user actually makes is "when do I run the washer/dishwasher?", so sort by
+  // price ascending and rate with stars instead of a 24-row hourly dump.
+  function priceStars(price, cheapest, priciest) {
+    if (priciest <= cheapest) return '★★★';
+    var t = (price - cheapest) / (priciest - cheapest);   // 0 = cheapest
+    return t < 0.25 ? '★★★' : t < 0.5 ? '★★' : t < 0.75 ? '★' : '';
+  }
   function renderTable() {
     var tbody = q('sav-tbody');
     var w = data.window || {};
     var hours = w.hours || [];
     q('sv-table-day').textContent = w.date || '';
     if (!hours.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">' + __t('common.noData', 'Sin datos') + '</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">' + __t('common.noData', 'Sin datos') + '</td></tr>';
       return;
     }
-    var sorted = hours.slice().sort(function (a, b) { return b.score - a.score; });
-    var top = {};
-    sorted.slice(0, 6).forEach(function (r) { top[r.hour] = true; });
-    var worst = {};
-    sorted.slice(-4).forEach(function (r) { worst[r.hour] = true; });
-    tbody.innerHTML = hours.map(function (r) {
-      var verdict, cls;
-      if (w.best && r.hour >= w.best.start && r.hour < w.best.end) {
-        verdict = __t('sav.vBest', 'Recomendada'); cls = 'background:rgba(46,204,113,0.18);color:#1a5c3a;';
-      } else if (top[r.hour]) {
-        verdict = __t('sav.vGood', 'Buena'); cls = 'background:rgba(46,204,113,0.10);color:#28946a;';
-      } else if (worst[r.hour]) {
-        verdict = __t('sav.vAvoid', 'Evitar'); cls = 'background:rgba(231,76,60,0.12);color:#9e3a4a;';
-      } else {
-        verdict = __t('sav.vNeutral', 'Normal'); cls = 'background:rgba(44,62,80,0.06);color:#5a6478;';
-      }
-      return '<tr>' +
-        '<td class="mono">' + hh(r.hour) + '</td>' +
-        '<td class="mono">' + r.price_eur_kwh.toFixed(4) + '</td>' +
+    var sorted = hours.slice().sort(function (a, b) { return a.price_eur_kwh - b.price_eur_kwh; });
+    var cheapest = sorted[0].price_eur_kwh;
+    var priciest = sorted[sorted.length - 1].price_eur_kwh;
+    tbody.innerHTML = sorted.map(function (r, i) {
+      var inBest = w.best && r.hour >= w.best.start && r.hour < w.best.end;
+      var rowCls = i < 3 ? ' style="background:rgba(46,204,113,0.10);"' : '';
+      return '<tr' + rowCls + '>' +
+        '<td class="mono">' + hh(r.hour) + (inBest ? ' <span title="' + __t('sav.vBest', 'Recomendada') + '">🟢</span>' : '') + '</td>' +
         '<td><span class="badge" style="background:' + periodColor(r.period).replace('0.75', '0.18') + ';color:#333;">' + (r.period || '—') + '</span></td>' +
-        '<td class="mono">' + fmt(r.ghi, 0) + '</td>' +
-        '<td class="mono">' + r.score.toFixed(2) + '</td>' +
-        '<td><span class="badge" style="' + cls + '">' + verdict + '</span></td>' +
+        '<td class="mono">' + r.price_eur_kwh.toFixed(4) + '</td>' +
+        '<td style="color:#e6a817;letter-spacing:1px;">' + priceStars(r.price_eur_kwh, cheapest, priciest) + '</td>' +
         '</tr>';
     }).join('');
   }
@@ -237,7 +241,7 @@
       var sel = q('sav-device');
       var opts = ['<option value="">' + __t('cons.wholeHouse', 'Toda la casa') + '</option>'];
       (r.data || []).forEach(function (o) {
-        opts.push('<option value="' + o.id + '">' + (o.name || o.id) + '</option>');
+        opts.push('<option value="' + o.id + '">' + sensorLabel(o) + '</option>');
       });
       sel.innerHTML = opts.join('');
     });

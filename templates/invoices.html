@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Facturas — CONSUM-IA{% endblock %}
+{% block page_title_key %}nav.invoices{% endblock %}
+{% block page_title %}Facturas{% endblock %}
+{% block topbar_actions %}
+<select id="iv-customer" class="pibico-select" style="width:auto;min-width:150px;display:none;" onchange="IvPage.onCustomerChange()"></select>
+<button class="btn btn-sm btn-primary" id="iv-new-btn" style="display:none;" onclick="IvPage.openForm()" data-i18n="inv.newBtn">Cerrar periodo</button>
+{% endblock %}
+
+{% block content %}
+{# Facturas — closed billing periods. Closing freezes a settlement document
+   (contract snapshot + full breakdown); a closed invoice is immutable (void,
+   never edit) and downloadable as a branded PDF (PRO). #}
+
+<div class="glass-panel">
+  <div class="filters-bar" style="justify-content:space-between;">
+    <h3 data-i18n="inv.listTitle">Facturas cerradas</h3>
+    <span class="text-muted" id="iv-count" style="font-size:0.8rem;"></span>
+  </div>
+  <div class="table-scroll">
+    <table class="data-table" id="iv-table">
+      <thead><tr>
+        <th data-i18n="inv.colPeriod">Periodo</th>
+        <th data-i18n="inv.colDays">Días</th>
+        <th data-i18n="inv.colEnergy">Energía</th>
+        <th data-i18n="inv.colTotal">Total</th>
+        <th data-i18n="inv.colStatus">Estado</th>
+        <th></th>
+      </tr></thead>
+      <tbody id="iv-tbody"><tr><td colspan="6" class="text-center"><span class="spinner"></span></td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Detail panel (right slide panel) -->
+<aside class="slide-panel" id="invoiceDetail" aria-hidden="true">
+  <div class="slide-panel-header">
+    <h2 id="iv-detail-title" data-i18n="inv.detailTitle">Factura</h2>
+    <button type="button" class="panel-close" onclick="IvPage.closeDetail()" aria-label="Cerrar">&times;</button>
+  </div>
+  <div class="slide-panel-body" style="padding:16px 20px;overflow-y:auto;" id="iv-detail-body"></div>
+</aside>
+
+<!-- Close-period form (right slide panel — pibiCo rule: panels, never modals) -->
+<aside class="slide-panel" id="invoicePanel" aria-hidden="true">
+  <div class="slide-panel-header">
+    <h2 data-i18n="inv.formTitle">Cerrar periodo de facturación</h2>
+    <button type="button" class="panel-close" onclick="IvPage.closeForm()" aria-label="Cerrar">&times;</button>
+  </div>
+  <div class="slide-panel-body" style="padding:16px 20px;overflow-y:auto;">
+    <form id="iv-form" onsubmit="return IvPage.save(event)" style="display:flex;flex-direction:column;gap:12px;font-size:0.85rem;">
+      <p class="text-muted" style="margin:0;font-size:0.78rem;" data-i18n="inv.formHelp">
+        Se congela una factura con el desglose completo (energía por periodo, potencia, impuestos) usando el contrato vigente en cada tramo. El periodo debe estar ya cerrado (fin anterior a hoy).</p>
+      <div class="wx-2col" style="gap:8px;">
+        <div>
+          <label data-i18n="inv.fStart">Desde</label>
+          <input type="date" class="pibico-input" id="iv-f-start" required>
+        </div>
+        <div>
+          <label data-i18n="inv.fEnd">Hasta</label>
+          <input type="date" class="pibico-input" id="iv-f-end" required>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button type="button" class="btn btn-sm pnl-day-btn" onclick="IvPage.presetLastMonth()" data-i18n="inv.presetLastMonth">Mes pasado</button>
+      </div>
+      <div id="iv-form-error" class="text-muted" style="color:#c0392b;font-size:0.78rem;"></div>
+      <div style="display:flex;gap:8px;margin-top:4px;">
+        <button type="submit" class="btn btn-primary" id="iv-save-btn" data-i18n="inv.closeBtn">Cerrar factura</button>
+        <button type="button" class="btn" onclick="IvPage.closeForm()" data-i18n="inv.cancelBtn">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</aside>
+
+<script src="{{ root }}/static/js/pages/invoices.js?v={{ v }}" defer></script>
+{% endblock %}

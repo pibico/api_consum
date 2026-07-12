@@ -63,7 +63,9 @@ async def shift_analysis(slugs: Sequence[str], device: Optional[str] = None,
     rows = await consumption.energy_series(slugs, start.isoformat(),
                                            end.isoformat(), bucket="hour",
                                            device=device)
-    prices = await exo_client.pvpc_map(start.isoformat(), end.isoformat())
+    from app.services import pricing
+    prices, _ = await pricing.hourly_price_map_for_slugs(slugs, start.isoformat(),
+                                                         end.isoformat())
     per_day = _daily_hourly(rows)
 
     real_total = optimal_total = 0.0

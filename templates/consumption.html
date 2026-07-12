@@ -42,8 +42,14 @@
 <!-- Hourly chart (P1/P2/P3 colors) + month chart side by side -->
 <div class="wx-2col">
   <div class="glass-panel" style="padding:0.75rem 1rem;">
-    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="cons.hourlyChart">Consumo por horas</span>
-      <span class="text-muted" id="cons-chart-date" style="font-weight:400;"></span></h4>
+    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;display:flex;align-items:center;gap:8px;">
+      <span data-i18n="cons.hourlyChart">Consumo por horas</span>
+      <span class="text-muted" id="cons-chart-date" style="font-weight:400;"></span>
+      <button class="btn btn-sm" id="cons-export" style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;padding:3px 8px;" data-i18n-title="cons.export" title="Exportar CSV">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span class="pro-badge" style="margin:0;">PRO</span>
+      </button>
+    </h4>
     <div id="cons-day-chart" style="width:100%;height:200px;"></div>
     <div style="display:flex;gap:12px;margin-top:6px;font-size:0.7rem;color:var(--color-text-light);">
       <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(231,76,60,0.75);"></span> P1 Punta</span>
@@ -77,28 +83,20 @@
   </div>
 </div>
 
-<!-- Hourly table -->
-<div class="glass-panel">
-  <div class="filters-bar" style="justify-content:space-between;">
-    <h3 data-i18n="cons.tableTitle">Detalle horario</h3>
-    <button class="btn btn-sm" id="cons-export" title="CSV">
-      <span data-i18n="cons.export">Exportar CSV</span> <span class="pro-badge">PRO</span>
-    </button>
+<!-- Live device breakdown (Sankey — from the PLC wiring) + hourly peak demand -->
+<div class="wx-2col">
+  <div class="glass-panel" style="padding:0.75rem 1rem;">
+    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="cons.sankeyTitle">Reparto en vivo por dispositivo</span>
+      <span class="text-muted" id="cons-sankey-total" style="font-weight:400;"></span></h4>
+    <div id="cons-sankey" style="width:100%;height:320px;"></div>
+    <div id="cons-sankey-note" class="text-muted" style="font-size:0.72rem;"></div>
   </div>
-  <div class="ev-pager" id="cons-pager-top" hidden></div>
-  <div class="table-scroll">
-    <table class="data-table" id="cons-table">
-      <thead><tr>
-        <th data-i18n="cons.colHour">Hora</th>
-        <th>kWh</th>
-        <th>PVPC €/kWh</th>
-        <th data-i18n="cons.colPeriod">Periodo</th>
-        <th data-i18n="cons.colCost">Coste €</th>
-      </tr></thead>
-      <tbody id="cons-tbody"><tr><td colspan="5" class="text-center"><span class="spinner"></span></td></tr></tbody>
-    </table>
+  <div class="glass-panel" style="padding:0.75rem 1rem;">
+    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="cons.peakTitle">Potencia máxima por hora</span>
+      <span class="text-muted" id="cons-peak-max" style="font-weight:400;"></span></h4>
+    <div id="cons-peak-chart" style="width:100%;height:320px;"></div>
+    <div class="text-muted" style="font-size:0.68rem;margin-top:4px;" data-i18n="cons.peakHint">Pico de demanda de cada hora — orienta la potencia a contratar (término de potencia 2.0TD).</div>
   </div>
-  <div class="ev-pager" id="cons-pager-bottom" hidden></div>
 </div>
 
 <script src="{{ root }}/static/js/vendor/echarts.min.js" defer></script>

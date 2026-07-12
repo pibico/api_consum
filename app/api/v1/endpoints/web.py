@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "24"  # 24: local-date fix (UTC today between 00-02 CEST) + midnight rollover
+ASSET_VERSION = "41"  # 41: kWp editable por cualquier miembro + orden sol/viento sobre Windy
 
 
 def render_template(template_name: str, **context) -> str:
@@ -118,6 +118,22 @@ async def savings_page(request: Request):
     if guard:
         return guard
     return render_template("savings.html")
+
+
+@router.get("/app/contract", response_class=HTMLResponse)
+async def contract_page(request: Request):
+    guard = await _require_member_page(request)
+    if guard:
+        return guard
+    return render_template("contract.html")
+
+
+@router.get("/app/invoices", response_class=HTMLResponse)
+async def invoices_page(request: Request):
+    guard = await _require_member_page(request)
+    if guard:
+        return guard
+    return render_template("invoices.html")
 
 
 @router.get("/app/ai", response_class=HTMLResponse)

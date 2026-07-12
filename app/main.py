@@ -21,6 +21,8 @@ from fastapi.templating import Jinja2Templates
 
 from app.api.v1.endpoints import auth as auth_endpoints
 from app.api.v1.endpoints import consumption as consumption_endpoints
+from app.api.v1.endpoints import contract as contract_endpoints
+from app.api.v1.endpoints import invoice as invoice_endpoints
 from app.api.v1.endpoints import health
 from app.api.v1.endpoints import ai as ai_endpoints
 from app.api.v1.endpoints import plc as plc_endpoints
@@ -78,6 +80,8 @@ app.include_router(health.router, prefix=settings.API_V1_STR, tags=["core"])
 app.include_router(auth_endpoints.router, prefix=settings.API_V1_STR)
 app.include_router(consumption_endpoints.router, prefix=settings.API_V1_STR)
 app.include_router(savings_endpoints.router, prefix=settings.API_V1_STR)
+app.include_router(contract_endpoints.router, prefix=settings.API_V1_STR)
+app.include_router(invoice_endpoints.router, prefix=settings.API_V1_STR)
 app.include_router(ai_endpoints.router, prefix=settings.API_V1_STR)
 app.include_router(plc_endpoints.router, prefix=settings.API_V1_STR)
 

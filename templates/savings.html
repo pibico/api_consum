@@ -55,23 +55,21 @@
   </div>
 </div>
 
-<!-- Hourly recommendations table -->
+<!-- Best consumption hours — ordered by price (cheapest first), api_exo style -->
 <div class="glass-panel">
   <div class="filters-bar" style="justify-content:space-between;">
-    <h3 data-i18n="sav.tableTitle">Recomendaciones por hora</h3>
+    <h3 data-i18n="sav.bestHoursTitle">Mejores horas de consumo</h3>
     <span class="text-muted" id="sv-table-day" style="font-size:0.8rem;"></span>
   </div>
   <div class="table-scroll">
     <table class="data-table" id="sav-table">
       <thead><tr>
         <th data-i18n="cons.colHour">Hora</th>
-        <th>PVPC €/kWh</th>
         <th data-i18n="cons.colPeriod">Periodo</th>
-        <th data-i18n="sav.colSolar">Sol W/m²</th>
-        <th data-i18n="sav.colScore">Índice</th>
+        <th>PVPC €/kWh</th>
         <th data-i18n="sav.colVerdict">Valoración</th>
       </tr></thead>
-      <tbody id="sav-tbody"><tr><td colspan="6" class="text-center"><span class="spinner"></span></td></tr></tbody>
+      <tbody id="sav-tbody"><tr><td colspan="4" class="text-center"><span class="spinner"></span></td></tr></tbody>
     </table>
   </div>
 </div>

@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Contrato — CONSUM-IA{% endblock %}
+{% block page_title_key %}nav.contract{% endblock %}
+{% block page_title %}Contrato{% endblock %}
+{% block topbar_actions %}
+<select id="ct-customer" class="pibico-select" style="width:auto;min-width:150px;display:none;" onchange="CtPage.onCustomerChange()"></select>
+<button class="btn btn-sm btn-primary" id="ct-new-btn" style="display:none;" onclick="CtPage.openForm()" data-i18n="ct.newBtn">Nuevo contrato</button>
+{% endblock %}
+
+{% block content %}
+{# Entidad contrato — the household's supply contract drives ALL €-costing
+   (Panel/Consumo/Ahorro). No contract → PVPC fallback, clearly labelled. #}
+
+<div class="wx-2col">
+  <!-- Active contract card -->
+  <div class="glass-panel" style="padding:0.9rem 1.1rem;">
+    <h4 style="margin:0 0 0.6rem;font-size:0.85rem;display:flex;align-items:center;gap:8px;">
+      <span data-i18n="ct.activeTitle">Tu contrato vigente</span>
+      <span class="badge" id="ct-type-badge" style="display:none;"></span>
+      <button class="btn btn-sm pnl-day-btn" id="ct-edit-btn" style="margin-left:auto;display:none;" onclick="CtPage.openForm(true)" data-i18n="ct.editBtn">Editar</button>
+    </h4>
+    <div id="ct-active-body"><span class="spinner"></span></div>
+  </div>
+
+  <!-- Bill estimate (PRO) -->
+  <div class="glass-panel" style="padding:0.9rem 1.1rem;">
+    <h4 style="margin:0 0 0.6rem;font-size:0.85rem;display:flex;align-items:center;gap:8px;">
+      <span data-i18n="ct.billTitle">Estimación de factura del mes</span>
+      <span class="badge badge-info" style="font-size:0.62rem;">PRO</span>
+      <input type="month" id="ct-bill-month" class="pibico-input" style="margin-left:auto;width:auto;" onchange="CtPage.loadBill()">
+    </h4>
+    <div id="ct-bill-body"><span class="text-muted" data-i18n="ct.billNoContract">Da de alta tu contrato para estimar la factura completa.</span></div>
+  </div>
+</div>
+
+<!-- History -->
+<div class="glass-panel">
+  <div class="filters-bar" style="justify-content:space-between;">
+    <h3 data-i18n="ct.historyTitle">Histórico de contratos</h3>
+    <span class="text-muted" id="ct-history-count" style="font-size:0.8rem;"></span>
+  </div>
+  <div class="table-scroll">
+    <table class="data-table" id="ct-table">
+      <thead><tr>
+        <th data-i18n="ct.colType">Tipo</th>
+        <th data-i18n="ct.colLabel">Nombre</th>
+        <th data-i18n="ct.colRetailer">Comercializadora</th>
+        <th data-i18n="ct.colFrom">Desde</th>
+        <th data-i18n="ct.colTo">Hasta</th>
+        <th data-i18n="ct.colPrices">Precios energía</th>
+        <th data-i18n="ct.colPower">Potencia</th>
+        <th></th>
+      </tr></thead>
+      <tbody id="ct-tbody"><tr><td colspan="8" class="text-center"><span class="spinner"></span></td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Contract form (right slide panel — pibiCo rule: panels, never modals) -->
+<aside class="slide-panel" id="contractPanel" aria-hidden="true">
+  <div class="slide-panel-header">
+    <h2 id="ct-form-title" data-i18n="ct.formNewTitle">Nuevo contrato</h2>
+    <button type="button" class="panel-close" onclick="CtPage.closeForm()" aria-label="Cerrar">&times;</button>
+  </div>
+  <div class="slide-panel-body" style="padding:16px 20px;overflow-y:auto;">
+    <form id="ct-form" onsubmit="return CtPage.save(event)" style="display:flex;flex-direction:column;gap:10px;font-size:0.85rem;">
+
+      <label style="font-weight:600;" data-i18n="ct.fType">Tipo de contrato</label>
+      <div style="display:flex;gap:6px;">
+        <button type="button" class="btn btn-sm pnl-day-btn" id="ct-t-pvpc" onclick="CtPage.setType('pvpc')">PVPC</button>
+        <button type="button" class="btn btn-sm pnl-day-btn" id="ct-t-fixed" onclick="CtPage.setType('fixed')" data-i18n="ct.tFixed">Precio fijo</button>
+        <button type="button" class="btn btn-sm pnl-day-btn" id="ct-t-indexed" onclick="CtPage.setType('indexed')" data-i18n="ct.tIndexed">Indexado</button>
+      </div>
+      <p class="text-muted" id="ct-type-help" style="margin:0;font-size:0.75rem;"></p>
+
+      <div class="wx-2col" style="gap:8px;">
+        <div>
+          <label data-i18n="ct.fLabel">Nombre</label>
+          <input class="pibico-input" id="ct-f-label" placeholder="Mi tarifa">
+        </div>
+        <div>
+          <label data-i18n="ct.fRetailer">Comercializadora</label>
+          <input class="pibico-input" id="ct-f-retailer" placeholder="—">
+        </div>
+      </div>
+
+      <div class="wx-2col" style="gap:8px;">
+        <div>
+          <label data-i18n="ct.fStart">Inicio</label>
+          <input type="date" class="pibico-input" id="ct-f-start" required>
+        </div>
+        <div>
+          <label data-i18n="ct.fEnd">Fin (vacío = vigente)</label>
+          <input type="date" class="pibico-input" id="ct-f-end">
+        </div>
+      </div>
+
+      <div>
+        <label>CUPS <span class="text-muted" data-i18n="ct.optional">(opcional)</span></label>
+        <input class="pibico-input" id="ct-f-cups" placeholder="ES0000000000000000XX">
+      </div>
+
+      <!-- Fixed prices group -->
+      <fieldset id="ct-g-fixed" style="border:1px solid rgba(0,0,0,0.08);border-radius:8px;padding:8px 10px;display:none;">
+        <legend style="font-size:0.75rem;font-weight:600;" data-i18n="ct.gFixed">Precios por periodo (€/kWh)</legend>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+          <div><label>P1 Punta *</label><input type="number" step="0.000001" min="0" class="pibico-input" id="ct-f-ep1"></div>
+          <div><label>P2 Llano</label><input type="number" step="0.000001" min="0" class="pibico-input" id="ct-f-ep2"></div>
+          <div><label>P3 Valle</label><input type="number" step="0.000001" min="0" class="pibico-input" id="ct-f-ep3"></div>
+        </div>
+        <p class="text-muted" style="margin:4px 0 0;font-size:0.7rem;" data-i18n="ct.fixedHint">Si tu contrato tiene precio único, rellena solo P1.</p>
+      </fieldset>
+
+      <!-- Indexed group -->
+      <fieldset id="ct-g-indexed" style="border:1px solid rgba(0,0,0,0.08);border-radius:8px;padding:8px 10px;display:none;">
+        <legend style="font-size:0.75rem;font-weight:600;" data-i18n="ct.gIndexed">Indexado (OMIE + margen)</legend>
+        <div><label data-i18n="ct.fMargin">Margen comercializador (€/kWh) *</label>
+          <input type="number" step="0.000001" min="0" class="pibico-input" id="ct-f-margin"></div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:6px;">
+          <div><label data-i18n-title="ct.passthruHelp" title="Peajes y cargos por periodo — OMIE no los incluye">Peajes P1</label><input type="number" step="0.000001" min="0" class="pibico-input" id="ct-f-pp1" value="0"></div>
+          <div><label>Peajes P2</label><input type="number" step="0.000001" min="0" class="pibico-input" id="ct-f-pp2" value="0"></div>
+          <div><label>Peajes P3</label><input type="number" step="0.000001" min="0" class="pibico-input" id="ct-f-pp3" value="0"></div>
+        </div>
+      </fieldset>
+
+      <!-- Power + fixed charges + taxes (always visible) -->
+      <fieldset style="border:1px solid rgba(0,0,0,0.08);border-radius:8px;padding:8px 10px;">
+        <legend style="font-size:0.75rem;font-weight:600;" data-i18n="ct.gPower">Potencia contratada (2.0TD)</legend>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;">
+          <div><label>P1 kW</label><input type="number" step="0.001" min="0" max="15" class="pibico-input" id="ct-f-pw1"></div>
+          <div><label>P2 kW</label><input type="number" step="0.001" min="0" max="15" class="pibico-input" id="ct-f-pw2"></div>
+          <div><label>P1 €/kW·día</label><input type="number" step="0.000001" min="0" class="pibico-input" id="ct-f-pwp1"></div>
+          <div><label>P2 €/kW·día</label><input type="number" step="0.000001" min="0" class="pibico-input" id="ct-f-pwp2"></div>
+        </div>
+      </fieldset>
+
+      <fieldset style="border:1px solid rgba(0,0,0,0.08);border-radius:8px;padding:8px 10px;">
+        <legend style="font-size:0.75rem;font-weight:600;" data-i18n="ct.gFixedCharges">Cargos fijos e impuestos</legend>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;">
+          <div><label data-i18n="ct.fRental">Alquiler contador €/mes</label><input type="number" step="0.0001" min="0" class="pibico-input" id="ct-f-rental" value="0.81"></div>
+          <div><label data-i18n="ct.fOther">Otros fijos €/mes</label><input type="number" step="0.0001" min="0" class="pibico-input" id="ct-f-other" value="0"></div>
+          <div><label>IEE %</label><input type="number" step="0.00001" min="0" max="15" class="pibico-input" id="ct-f-iee" value="5.11269"></div>
+          <div><label>IVA %</label><input type="number" step="0.01" min="0" max="21" class="pibico-input" id="ct-f-vat" value="21"></div>
+        </div>
+      </fieldset>
+
+      <div>
+        <label data-i18n="ct.fNotes">Notas</label>
+        <textarea class="pibico-input" id="ct-f-notes" rows="2"></textarea>
+      </div>
+
+      <div id="ct-form-error" class="text-muted" style="color:#c0392b;font-size:0.78rem;"></div>
+
+      <div style="display:flex;gap:8px;margin-top:4px;">
+        <button type="submit" class="btn btn-primary" id="ct-save-btn" data-i18n="ct.saveBtn">Guardar</button>
+        <button type="button" class="btn" onclick="CtPage.closeForm()" data-i18n="ct.cancelBtn">Cancelar</button>
+        <button type="button" class="btn btn-danger" id="ct-delete-btn" style="margin-left:auto;display:none;" onclick="CtPage.remove()" data-i18n="ct.deleteBtn">Eliminar</button>
+      </div>
+    </form>
+  </div>
+</aside>
+
+<script src="{{ root }}/static/js/pages/contract.js?v={{ v }}" defer></script>
+{% endblock %}

@@ -13,12 +13,19 @@
 
   var MKT_STORE = 'consum_market';
   var customer = '';       // '' = all my households
+  var ctx = null;          // /consumption/context payload (role/tier)
   var env = null;          // /consumption/environment payload
   var houseData = null;    // /consumption/day payload for the chart's day
   var houseDate = null;    // chart day (YYYY-MM-DD); KPIs always use today
   var pvpcDay = 'today';   // price chart day toggle
   var market = 'pvpc';     // 'pvpc' | 'omie' (contract-dependent)
-  try { market = localStorage.getItem(MKT_STORE) === 'omie' ? 'omie' : 'pvpc'; } catch (e) {}
+  var marketOverride = false;  // explicit user choice wins over the contract
+  var contractInfo = null;     // /contracts/active payload {contract, price_now}
+  try {
+    var storedMkt = localStorage.getItem(MKT_STORE);
+    marketOverride = storedMkt !== null;
+    market = storedMkt === 'omie' ? 'omie' : 'pvpc';
+  } catch (e) {}
 
   function q(id) { return document.getElementById(id); }
   function fmt(n, dec) { return (n == null) ? '—' : Number(n).toLocaleString(undefined, { maximumFractionDigits: dec == null ? 1 : dec }); }
@@ -30,6 +37,33 @@
       '-' + String(d.getDate()).padStart(2, '0');
   }
   function custQS(sep) { return customer ? ((sep || '?') + 'customer=' + encodeURIComponent(customer)) : ''; }
+
+  // Local fetch for WRITES: unlike App.apiFetch it does NOT log the user out on
+  // 403 (which would happen mid-edit), so a role error surfaces as a message.
+  function cfetch(endpoint, options) {
+    options = options || {};
+    var headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers);
+    var st = App.state || {};
+    if (st.jwt && st.jwt.length >= 20) headers['Authorization'] = 'Bearer ' + st.jwt;
+    else if (st.apiKey && st.apiKey.length >= 20) headers['X-API-Key'] = st.apiKey;
+    return fetch((window.__ROOT__ || '') + '/api/v1' + endpoint,
+      Object.assign({}, options, { headers: headers })).then(function (r) {
+      if (r.status === 401) { App.logout(); return new Promise(function () {}); }
+      return r.json().catch(function () { return {}; }).then(function (body) {
+        if (!r.ok) {
+          var d = body.detail;
+          var msg = (d && (d.message || d)) || ('HTTP ' + r.status);
+          var err = new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+          err.status = r.status; throw err;
+        }
+        return body;
+      });
+    });
+  }
+  function canWrite() {
+    if (!ctx) return false;
+    return ctx.is_superadmin || ['editor', 'admin', 'owner'].indexOf(ctx.role || '') >= 0;
+  }
 
   function periodColor(p, a) {
     var alpha = a == null ? 0.75 : a;
@@ -59,6 +93,7 @@
   // ── Context: household selector + tier badge ─────────────────────────
   function loadContext() {
     return App.apiFetch('/consumption/context').then(function (c) {
+      ctx = c;
       var tb = q('tier-badge');
       if (tb) {
         tb.textContent = (c.tier || 'basic').toUpperCase() + (c.ai_enabled ? ' · IA' : '');
@@ -125,13 +160,31 @@
   }
 
   // ── House chart: hourly kWh bars colored by tariff period ─────────────
+  // Day total (sum of the bars shown): kWh + € so the chart carries its own
+  // bottom line, not just per-hour bars.
+  function updateHouseTotal() {
+    var el = q('pnl-house-total');
+    if (!el || !houseData) return;
+    var kwh = houseData.total_kwh, cost = houseData.total_cost_eur;
+    var parts = [];
+    if (kwh != null) parts.push('<b>' + fmt(kwh, 2) + '</b> kWh');
+    if (cost != null) parts.push('<b>' + fmt(cost, 2) + '</b> €');
+    el.innerHTML = parts.join(' · ');
+  }
+
   function drawHouseChart() {
     var c = chart('pnl-house-chart');
     if (!c || !houseData) return;
+    updateHouseTotal();
+    // Quarter-hourly curve (96 bars) when the API sends it; fall back to the
+    // hourly 24-bar view for older payloads (deploy-order safe).
+    var quarters = houseData.quarters || null;
+    if (quarters && quarters.length) return drawHouseChartQuarter(c, quarters);
     var byHour = {};
     (houseData.values || []).forEach(function (v) { byHour[v.hour] = v; });
     var hours = [];
     for (var h = 0; h < 24; h++) hours.push(h);
+    c.clear();
     c.setOption({
       grid: { left: 44, right: 8, top: 12, bottom: 22 },
       tooltip: Object.assign({}, TOOLTIP, {
@@ -140,7 +193,7 @@
           if (!v) return String(i).padStart(2, '0') + ':00 — ' + __t('common.noData', 'Sin datos');
           return '<b>' + String(i).padStart(2, '0') + ':00–' + String(i + 1).padStart(2, '0') + ':00</b><br>' +
             fmt(v.kwh, 3) + ' kWh' + (v.period ? ' · ' + v.period : '') +
-            (v.price_eur_kwh != null ? '<br>PVPC ' + v.price_eur_kwh.toFixed(4) + ' €/kWh' : '') +
+            (v.price_eur_kwh != null ? '<br>' + v.price_eur_kwh.toFixed(4) + ' €/kWh' : '') +
             (v.cost_eur != null ? ' · <b>' + v.cost_eur.toFixed(3) + ' €</b>' : '');
         },
       }),
@@ -151,6 +204,46 @@
         type: 'bar', barWidth: '72%',
         data: hours.map(function (h) {
           var v = byHour[h];
+          return { value: v ? v.kwh : 0, itemStyle: { color: periodColor(v && v.period) } };
+        }),
+      }],
+    });
+  }
+
+  function drawHouseChartQuarter(c, quarters) {
+    // 96 fixed slots 00:00..23:45 so the axis is stable even with gaps.
+    var byQ = {};
+    quarters.forEach(function (v) { byQ[v.time] = v; });
+    var slots = [];
+    for (var h = 0; h < 24; h++)
+      for (var m = 0; m < 60; m += 15)
+        slots.push(String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0'));
+    var nextLabel = function (t) {
+      var hh = parseInt(t.slice(0, 2), 10), mm = parseInt(t.slice(3), 10) + 15;
+      if (mm >= 60) { mm = 0; hh = (hh + 1) % 24; }
+      return String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
+    };
+    c.clear();   // switching 24↔96 categories: rebuild, don't merge
+    c.setOption({
+      grid: { left: 44, right: 8, top: 12, bottom: 22 },
+      tooltip: Object.assign({}, TOOLTIP, {
+        formatter: function (params) {
+          var t = slots[params[0].dataIndex], v = byQ[t];
+          if (!v) return t + ' — ' + __t('common.noData', 'Sin datos');
+          return '<b>' + t + '–' + nextLabel(t) + '</b><br>' +
+            fmt(v.kwh, 3) + ' kWh' + (v.period ? ' · ' + v.period : '') +
+            (v.price_eur_kwh != null ? '<br>' + v.price_eur_kwh.toFixed(4) + ' €/kWh' : '') +
+            (v.cost_eur != null ? ' · <b>' + v.cost_eur.toFixed(3) + ' €</b>' : '');
+        },
+      }),
+      xAxis: { type: 'category', data: slots,
+               axisLabel: Object.assign({ interval: 7 }, AXIS),   // label every 2 h
+               axisTick: { show: false } },
+      yAxis: { type: 'value', axisLabel: AXIS, splitLine: { lineStyle: { opacity: 0.25 } } },
+      series: [{
+        type: 'bar', barWidth: '85%',
+        data: slots.map(function (t) {
+          var v = byQ[t];
           return { value: v ? v.kwh : 0, itemStyle: { color: periodColor(v && v.period) } };
         }),
       }],
@@ -232,6 +325,17 @@
   }
 
   function updatePriceKpi() {
+    // With a non-PVPC contract, "Precio ahora" is what THIS household pays
+    // right now (fixed period price / OMIE+margin), not the raw market view.
+    var pn = contractInfo && contractInfo.contract && contractInfo.price_now;
+    if (pn && pn.price_eur_kwh != null && pn.source !== 'pvpc') {
+      q('kpi-market').textContent = pn.source === 'fixed'
+        ? __t('app.srcFixed', 'FIJA') : __t('app.srcIndexed', 'INDEX');
+      q('kpi-pvpc').textContent = pn.price_eur_kwh.toFixed(3);
+      q('kpi-period').textContent = pn.period || '—';
+      q('kpi-period-wrap').style.display = pn.period ? '' : 'none';
+      return;
+    }
     if (!env) return;
     var now = currentPoint(marketPrices('today'));
     q('kpi-market').textContent = market.toUpperCase();
@@ -240,6 +344,34 @@
       q('kpi-period').textContent = now.period || '—';
       q('kpi-period-wrap').style.display = now.period ? '' : 'none';
     }
+  }
+
+  function updateHouseSource() {
+    var el = q('house-source');
+    if (!el) return;
+    var c = contractInfo && contractInfo.contract;
+    if (c && c.contract_type === 'fixed') {
+      el.textContent = __t('app.houseSourceFixed', 'Medidor General de tu casa · coste con tu tarifa fija')
+        + (c.retailer ? ' (' + c.retailer + ')' : '');
+    } else if (c && c.contract_type === 'indexed') {
+      el.textContent = __t('app.houseSourceIndexed', 'Medidor General de tu casa · coste indexado OMIE + margen')
+        + (c.retailer ? ' (' + c.retailer + ')' : '');
+    } else {
+      el.textContent = __t('app.houseSource', 'Medidor General de tu casa · coste con PVPC (ESIOS)');
+    }
+  }
+
+  function loadContract() {
+    return App.apiFetch('/contracts/active' + custQS()).then(function (r) {
+      contractInfo = r || null;
+      var c = contractInfo && contractInfo.contract;
+      if (!marketOverride) {
+        market = (c && c.contract_type === 'indexed') ? 'omie' : 'pvpc';
+      }
+      syncPriceButtons();
+      updatePriceKpi();
+      updateHouseSource();
+    }).catch(function () { contractInfo = null; });
   }
 
   function syncPriceButtons() {
@@ -254,6 +386,7 @@
 
   function setMarket(m) {
     market = m;
+    marketOverride = true;
     try { localStorage.setItem(MKT_STORE, m); } catch (e) {}
     syncPriceButtons();
     updatePriceKpi();
@@ -301,6 +434,12 @@
     return '<div class="pnl-src">' + __t('app.source', 'Fuente') + ': ' + txt + '</div>';
   }
   function sources() { return (env && env.sources) || {}; }
+  // Location suffix for source lines — makes it clear WHICH place the data is
+  // for (household municipality, or the default when the home has no coords).
+  function locSuffix() {
+    var m = ((env && env.location) || {}).municipality;
+    return m ? ' · ' + m : '';
+  }
 
   // Weather glyph from the AEMET/OpenMeteo description — inline SVG
   // (Phosphor style, NO emoji) so a quick glance reads the week.
@@ -335,9 +474,18 @@
     return svg('#5a6478', CLOUD);
   }
 
+  // Rain-probability droplet (labels the % so it isn't a mystery number).
+  var DROPLET_SVG = '<svg viewBox="0 0 24 24" width="9" height="9" fill="#2e82c8" stroke="none">' +
+    '<path d="M12 2.5S5.5 10 5.5 15a6.5 6.5 0 0 0 13 0C18.5 10 12 2.5 12 2.5z"/></svg>';
+
   function renderWeather() {
     var wx = (env && env.weather) || {};
     var days = wx.days || [];
+    // Show the household municipality so it's clear the forecast is pinned to
+    // your home's coordinates (not the viewer's browser location).
+    var loc = (env && env.location) || {};
+    var muniEl = q('pnl-wx-muni');
+    if (muniEl) muniEl.textContent = loc.municipality ? '· ' + loc.municipality : '';
     if (!days.length && !wx.now) {
       q('pnl-weather').innerHTML = '<span class="text-muted">' + __t('common.noData', 'Sin datos') + '</span>';
       return;
@@ -351,14 +499,23 @@
         (wx.now.humidity != null ? ' · ' + fmt(wx.now.humidity, 0) + '% ' + __t('app.humidityShort', 'humedad') : '') +
         '</span></div>';
     }
-    // Glance strip: one mini-column per day (icon + rain prob), the detail
-    // lives in the temp chart's hover below (api_exo weather-page parity).
+    // 7-day forecast cards (api_exo representation): every value labelled —
+    // day, icon, high/low temps (red/blue) and rain probability with a droplet
+    // so the % is never a mystery. Trend detail on the temp chart's hover below.
+    var todayStr = (function () { var n = new Date();
+      return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0'); })();
     html += '<div class="pnl-wx-strip">' + days.map(function (d, i) {
-      return '<div class="pnl-wx-cell" title="' + (d.description || '') + '">' +
+      return '<div class="pnl-wx-cell' + (d.date === todayStr ? ' is-today' : '') + '" title="' + (d.description || '') + '">' +
         '<span class="pnl-wx-cell-day">' + dayLabel(d.date, i) + '</span>' +
-        wxIcon(d.description) +
-        '<span class="pnl-wx-cell-rain mono">' +
-        (d.precipitation_prob != null ? fmt(d.precipitation_prob, 0) + '%' : '—') + '</span>' +
+        '<span class="pnl-wx-cell-ico">' + wxIcon(d.description) + '</span>' +
+        '<span class="pnl-wx-cell-temps">' +
+          '<span class="pnl-wx-cell-hi">' + (d.temp_max != null ? Math.round(d.temp_max) + '°' : '—') + '</span>' +
+          (d.temp_min != null ? '<span class="pnl-wx-cell-lo">' + Math.round(d.temp_min) + '°</span>' : '') +
+        '</span>' +
+        (d.precipitation_prob != null
+          ? '<span class="pnl-wx-cell-rain" title="' + __t('app.rainProb', 'probabilidad de lluvia') + '">' +
+            DROPLET_SVG + fmt(d.precipitation_prob, 0) + '%</span>'
+          : '') +
         '</div>';
     }).join('') + '</div>';
     q('pnl-weather').innerHTML = html;
@@ -420,8 +577,46 @@
     }, true);
   }
 
+  // Installed-kWp editor in the solar card header: reflects the household's
+  // stored PV capacity and, on change, persists it and refetches the forecast
+  // so the estimate is scaled to the real installation (not a 3 kWp default).
+  function bindSolarKwp() {
+    var el = q('pnl-solar-kwp');
+    if (!el || el._bound) return;
+    el._bound = true;
+    // Any authenticated household member may set their own installed kWp (it
+    // only scales the estimate) — no role gate, so the input stays editable.
+    cfetch('/consumption/solar-config' + custQS()).then(function (c) {
+      if (c && c.peak_kwp != null && document.activeElement !== el) el.value = c.peak_kwp;
+    }).catch(function () {});
+    el.onchange = function () {
+      var v = parseFloat(el.value);
+      if (isNaN(v) || v < 0 || v > 100) { return; }
+      el.disabled = true;
+      cfetch('/consumption/solar-config', {
+        method: 'PUT',
+        body: JSON.stringify(Object.assign({ peak_kwp: v },
+          customer ? { customer: customer } : {})),
+      }).then(function () {
+        return loadEnvironment();   // refetch solar scaled to the new kWp
+      }).then(function () {
+        App.showNotification(__t('common.saved', 'Guardado'),
+          __t('app.solarKwpSaved', 'Estimación solar actualizada a {kwp} kWp').replace('{kwp}', v), 'success');
+      }).catch(function (e) {
+        App.showNotification(__t('common.error', 'Error'), e.message, 'danger');
+      }).finally(function () { el.disabled = false; });
+    };
+  }
+
   function renderSolar() {
+    bindSolarKwp();
     var s = (env && env.solar) || {};
+    // Keep the input in sync with the effective kWp (e.g. after a reload) when
+    // the user isn't actively editing it.
+    var kwpEl = q('pnl-solar-kwp');
+    if (kwpEl && s.peak_kwp != null && document.activeElement !== kwpEl && !kwpEl.value) {
+      kwpEl.value = fmt(s.peak_kwp, 1);
+    }
     if (s.today_kwh == null) {
       q('pnl-solar').innerHTML = '<span class="text-muted">' + __t('common.noData', 'Sin datos') + '</span>';
       return;
@@ -452,7 +647,7 @@
       '<div class="kpi-sub">' + __t('app.solarExplain', 'estimado para {kwp} kWp orientación sur')
         .replace('{kwp}', fmt(s.peak_kwp, 1)) + '</div>' +
       '</div>' + sunTxt + pkTxt +
-      srcLine(sources().solar || 'Open-Meteo');
+      srcLine((sources().solar || 'Open-Meteo') + locSuffix());
     drawSolarChart(s.hourly || []);
   }
 
@@ -512,25 +707,90 @@
     }, true);
   }
 
-  function renderWindow() {
-    var w = (env && env.window) || {};
-    var best = w.best;
-    if (!best || w.status !== 'ok') {
-      q('pnl-window').innerHTML = '<span class="text-muted">' + __t('common.noData', 'Sin datos') + '</span>';
+  // ── Wind & infiltration (api_exo weather-page parity, in the Panel) ──
+  // Hourly wind/gusts forecast + envelope-infiltration advisory. Above the
+  // threshold (default 40 km/h) heat losses spike in poorly-sealed homes.
+  var windThreshold = parseFloat(localStorage.getItem('consum_wind_threshold') || '40');
+
+  function renderWind() {
+    var thEl = q('pnl-wind-threshold');
+    if (thEl && !thEl._bound) {
+      thEl._bound = true;
+      thEl.value = windThreshold;
+      thEl.oninput = function () {
+        var v = parseFloat(thEl.value);
+        if (!isNaN(v) && v >= 20 && v <= 80) {
+          windThreshold = v;
+          localStorage.setItem('consum_wind_threshold', String(v));
+          renderWind();
+        }
+      };
+    }
+    var wind = (env && env.wind) || {};
+    var hourly = wind.hourly || [];
+    if (!hourly.length) {
+      q('pnl-wind-kpis').innerHTML = '';
+      q('pnl-wind-advisory').innerHTML = '<span class="text-muted">' + __t('common.noData', 'Sin datos') + '</span>';
+      q('pnl-wind-src').innerHTML = '';
+      var c0 = chart('pnl-wind-chart'); if (c0) c0.clear();
       return;
     }
-    var isTomorrow = w.date > today();
-    q('pnl-window').innerHTML =
-      '<div><span class="kpi-value" style="font-size:1.7rem;color:#28946a;">' +
-      String(best.start).padStart(2, '0') + ':00–' + String(best.end).padStart(2, '0') + ':00</span>' +
-      ' <span class="badge badge-ok">' + (isTomorrow ? __t('app.tomorrow', 'Mañana') : __t('app.today', 'Hoy')) + '</span></div>' +
-      '<div class="kpi-sub" style="margin-top:2px;">PVPC ' + __t('app.avgShort', 'medio') + ' ' +
-      best.price_avg.toFixed(4) + ' €/kWh</div>' +
-      '<div class="sav-explain" style="margin-top:6px;">' +
-      __t('app.windowExplain', 'La franja más barata y con más sol: ideal para lavadora, lavavajillas o cargar el coche.') +
-      '</div>' +
-      srcLine('PVPC ' + (sources().pvpc || 'ESIOS') + ' + ' +
-        __t('app.solarShort', 'solar') + ' ' + (sources().solar || 'Open-Meteo'));
+    drawWindChart(hourly, windThreshold);
+    var now = new Date();
+    var todayH = hourly.filter(function (h) { return new Date(h.ts).getDate() === now.getDate(); });
+    var base = todayH.length ? todayH : hourly.slice(0, 24);
+    var peak = base.reduce(function (a, b) { return (b.wind_speed_kmh || 0) > (a.wind_speed_kmh || 0) ? b : a; }, { wind_speed_kmh: 0 });
+    var hoursOver = base.filter(function (h) { return (h.wind_speed_kmh || 0) >= windThreshold; }).length;
+    var peakTs = peak.ts ? new Date(peak.ts) : null;
+    q('pnl-wind-kpis').innerHTML =
+      '<span><b>' + __t('app.peakWind', 'Máx hoy') + '</b> ' +
+        (peak.wind_speed_kmh ? Math.round(peak.wind_speed_kmh) + ' km/h' + (peakTs ? ' · ' + String(peakTs.getHours()).padStart(2, '0') + ':00' : '') : '—') + '</span>' +
+      '<span><b>' + __t('app.hoursOver', 'Horas > umbral') + '</b> ' + hoursOver + ' h</span>' +
+      (peak.wind_gusts_kmh ? '<span><b>' + __t('app.windGust', 'Racha') + '</b> ' + Math.round(peak.wind_gusts_kmh) + ' km/h</span>' : '');
+    var adv = q('pnl-wind-advisory');
+    if (hoursOver > 0) {
+      adv.innerHTML = '⚠ ' + __t('app.windAdvHigh', 'Viento fuerte: más pérdidas por infiltración. Revisa sellos de ventanas y cierra persianas en el lado expuesto.');
+      adv.style.cssText = 'margin-top:6px;font-size:0.74rem;background:rgba(231,76,60,0.1);border-radius:6px;padding:6px 8px;color:#9e3a4a;';
+    } else {
+      adv.innerHTML = '✓ ' + __t('app.windAdvLow', 'Viento en calma: sin pérdidas extra por infiltración en la envolvente.');
+      adv.style.cssText = 'margin-top:6px;font-size:0.74rem;background:rgba(46,204,113,0.08);border-radius:6px;padding:6px 8px;color:#1a5c3a;';
+    }
+    q('pnl-wind-src').innerHTML = srcLine((wind.source || 'Open-Meteo') + locSuffix());
+  }
+
+  function drawWindChart(hourly, threshold) {
+    var c = chart('pnl-wind-chart');
+    if (!c) return;
+    var labels = hourly.map(function (h) { return String(new Date(h.ts).getHours()).padStart(2, '0') + 'h'; });
+    var speed = hourly.map(function (h) { return Math.round(h.wind_speed_kmh || 0); });
+    var gusts = hourly.map(function (h) { return Math.round(h.wind_gusts_kmh || 0); });
+    c.clear();
+    c.setOption({
+      grid: { left: 32, right: 10, top: 14, bottom: 20 },
+      tooltip: Object.assign({}, TOOLTIP, {
+        formatter: function (params) {
+          var i = params[0].dataIndex, d = new Date(hourly[i].ts);
+          return '<b>' + d.toLocaleDateString('es', { weekday: 'short' }) + ' ' +
+            String(d.getHours()).padStart(2, '0') + ':00</b><br>' +
+            __t('app.windSpeed', 'Viento') + ' ' + speed[i] + ' km/h · ' +
+            __t('app.windGust', 'racha') + ' ' + gusts[i] + ' km/h';
+        },
+      }),
+      xAxis: { type: 'category', data: labels,
+               axisLabel: Object.assign({ interval: 5 }, AXIS), axisTick: { show: false } },
+      yAxis: { type: 'value', axisLabel: Object.assign({ formatter: '{value}' }, AXIS),
+               splitLine: { lineStyle: { opacity: 0.25 } } },
+      series: [
+        { type: 'line', data: gusts, symbol: 'none', silent: true, lineStyle: { opacity: 0 },
+          areaStyle: { color: 'rgba(52,152,219,0.10)' }, tooltip: { show: false } },
+        { type: 'line', data: speed, symbol: 'none', smooth: true,
+          lineStyle: { color: '#3498db', width: 2 },
+          markLine: { silent: true, symbol: 'none',
+            lineStyle: { color: '#e74c3c', type: 'dashed' },
+            data: [{ yAxis: threshold,
+                     label: { formatter: threshold + ' km/h', fontSize: 9, color: '#e74c3c' } }] } },
+      ],
+    }, true);
   }
 
   function loadEnvironment() {
@@ -547,7 +807,7 @@
       renderMap();
       renderWeather();
       renderSolar();
-      renderWindow();
+      renderWind();
     });
   }
 
@@ -569,6 +829,7 @@
   }
 
   function refreshEnv() {
+    loadContract();                          // tariff may have been edited
     loadEnvironment().catch(function () {});
   }
 
@@ -585,7 +846,8 @@
   });
 
   document.addEventListener('i18n:changed', function () {
-    drawPvpcChart(); renderWeather(); renderSolar(); renderWindow();
+    drawPvpcChart(); renderWeather(); renderSolar(); renderWind();
+    updatePriceKpi(); updateHouseSource();
   });
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -605,7 +867,7 @@
       q('pnl-mkt-omie').onclick = function () { setMarket('omie'); };
       q('pnl-pvpc-today').onclick = function () { setPvpcDay('today'); };
       q('pnl-pvpc-tomorrow').onclick = function () { setPvpcDay('tomorrow'); };
-      loadContext().then(function () { refreshHouse(); refreshEnv(); })
+      loadContext().then(function () { loadContract(); refreshHouse(); loadEnvironment().catch(function () {}); })
         .catch(function (e) {
           App.showNotification(__t('common.error', 'Error'), e.message, 'danger');
         });

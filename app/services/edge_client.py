@@ -44,6 +44,31 @@ async def devices(customer_slug: str) -> Optional[List[dict]]:
         return None
 
 
+async def topology(customer_slug: str) -> Optional[dict]:
+    """GET api_edge /topology?customer=<slug> — the CM4 wiring tree with live
+    watts. Returns the payload (may be {status:"offline"}) or None if api_edge
+    is unreachable. Short TTL since the watts are live."""
+    key = f"topology:{customer_slug}"
+    now = time.time()
+    hit = _cache.get(key)
+    if hit and now < hit[0]:
+        return hit[1]
+    url = f"{settings.EDGE_BASE_URL.rstrip('/')}/api/v1/topology"
+    try:
+        client = http_client.get_client()
+        r = await client.get(url, params={"customer": customer_slug},
+                             headers={"X-API-Key": settings.EDGE_API_KEY}, timeout=12.0)
+        if r.status_code != 200:
+            logger.warning("api_edge /topology?customer=%s -> %s", customer_slug, r.status_code)
+            return None
+        data = r.json()
+        _cache[key] = (now + 4, data)   # live watts → short cache (5s Sankey refresh)
+        return data
+    except httpx.RequestError as e:
+        logger.error("api_edge /topology unreachable: %s", e)
+        return None
+
+
 async def webui_ensure(webui_port: int) -> bool:
     """Ask api_edge (tunnel owner) to (re)establish the ssh -L forward onto
     the CM4 local-webui. Admin service key — server-side only."""

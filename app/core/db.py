@@ -3,6 +3,9 @@
 Vendored from api_edge, with the tenancy layer removed: exogenous data is NOT
 tenant-scoped (ADR-3, no customer_id), so there is no `tenant_scoped()` GUC path —
 all access goes through `raw_connection()`.
+
+The role is SELECT-only on public.* and has DML on consum.* (its own business
+schema — contracts; migration app/db/migrations/001_consum_schema.sql).
 """
 from __future__ import annotations
 

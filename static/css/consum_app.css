@@ -756,18 +756,27 @@
 .pnl-wx-ico { flex: 0 0 18px; display: flex; align-items: center; }
 .pnl-wx-ico svg { display: block; }
 
-/* 7-day glance strip (icon + rain per day; detail on the chart hover) */
+/* 7-day forecast cards (api_exo style): day · icon · high/low · rain %,
+   all labelled so no value is a mystery. */
 .pnl-wx-strip {
-  display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px;
-  margin-top: 6px; text-align: center;
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;
+  margin-top: 8px; text-align: center;
 }
 .pnl-wx-cell {
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
-  padding: 3px 0; border-radius: 6px;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 6px 2px; border-radius: 9px; background: rgba(70, 130, 180, 0.05);
+  transition: transform .08s ease, background .15s;
 }
-.pnl-wx-cell:hover { background: rgba(70, 130, 180, 0.08); }
-.pnl-wx-cell-day { font-size: 0.66rem; font-weight: 600; color: var(--color-primary-dark, #2c5171); }
-.pnl-wx-cell-rain { font-size: 0.64rem; color: #2e82c8; }
+.pnl-wx-cell:hover { background: rgba(70, 130, 180, 0.12); transform: translateY(-1px); }
+.pnl-wx-cell.is-today { background: rgba(70, 130, 180, 0.14); box-shadow: inset 0 0 0 1.5px rgba(44, 81, 113, 0.4); }
+.pnl-wx-cell-day { font-size: 0.66rem; font-weight: 700; color: var(--color-primary-dark, #2c5171); text-transform: capitalize; }
+.pnl-wx-cell-ico { line-height: 1; margin: 1px 0; }
+.pnl-wx-cell-ico svg { display: block; width: 22px; height: 22px; }
+.pnl-wx-cell-temps { display: flex; gap: 4px; align-items: baseline; }
+.pnl-wx-cell-hi { font-size: 0.82rem; font-weight: 700; color: #e74c3c; font-family: var(--font-mono, 'JetBrains Mono', monospace); }
+.pnl-wx-cell-lo { font-size: 0.7rem; font-weight: 600; color: #3498db; font-family: var(--font-mono, 'JetBrains Mono', monospace); }
+.pnl-wx-cell-rain { font-size: 0.62rem; color: #2e82c8; display: inline-flex; align-items: center; gap: 2px; margin-top: 1px; }
+.pnl-wx-cell-rain svg { width: 9px; height: 9px; }
 .pnl-wx-day { flex: 0 0 52px; font-weight: 600; color: var(--color-primary-dark, #2c5171); }
 .pnl-wx-desc {
   flex: 1; min-width: 0; color: var(--color-text-light, #666);
@@ -785,6 +794,13 @@
   font-size: 1.5rem; font-weight: 700; color: var(--color-primary-dark, #2c5171);
 }
 .pnl-wx-now-desc { font-size: 0.75rem; color: var(--color-text-light, #666); }
+/* Day total shown next to the house-chart title (sum of the bars). */
+.pnl-house-total {
+  font-size: 0.8rem; font-weight: 400; color: var(--color-text-light, #667);
+  padding: 1px 9px; border-radius: 12px; background: rgba(70, 130, 180, 0.1);
+}
+.pnl-house-total b { color: var(--color-primary-dark, #2c5171); font-weight: 700; }
+
 /* Header nav cluster (date picker + arrows) — SAME height as the day/market
    buttons so the toolbar reads as one row. */
 .pnl-hdr-nav { margin-left: auto; display: flex; gap: 4px; align-items: center; }

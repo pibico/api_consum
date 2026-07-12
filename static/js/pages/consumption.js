@@ -10,9 +10,17 @@
   var day = null;        // /consumption/day payload
   var month = null;      // /consumption/month payload
   var device = '';       // '' = whole house (EM)
-  var pager = null;
 
   function q(id) { return document.getElementById(id); }
+
+  // Appliance label: the friendly name set in the PLC (synced to sensors.name)
+  // when present; otherwise a clean short id instead of the raw 'shelly_<mac>'
+  // key (name the appliance in the PLC to replace it).
+  function sensorLabel(o) {
+    if (o.name && String(o.name).trim()) return o.name;
+    var m = String(o.id || '').replace(/^shelly[_-]?/i, '');
+    return m.length > 5 ? __t('cons.sensorGeneric', 'Sensor') + ' ··' + m.slice(-4) : (m || o.id);
+  }
   function fmt(n, dec) { return (n == null) ? '—' : Number(n).toLocaleString(undefined, { maximumFractionDigits: dec == null ? 2 : dec }); }
   function today() {
     // LOCAL calendar date (toISOString() is UTC — wrong between 00:00-02:00 CEST)
@@ -107,32 +115,10 @@
     });
   }
 
-  function renderTable() {
-    var tbody = q('cons-tbody');
-    var vals = (day && day.values) || [];
-    if (!vals.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">' + __t('common.noData', 'Sin datos') + '</td></tr>';
-      return;
-    }
-    if (!pager) {
-      pager = window.Pager.create({
-        containerIds: ['cons-pager-top', 'cons-pager-bottom'],
-        pageSize: 12,
-        onRender: function (slice) {
-          tbody.innerHTML = slice.map(function (v) {
-            return '<tr>' +
-              '<td class="mono">' + String(v.hour).padStart(2, '0') + ':00</td>' +
-              '<td class="mono">' + fmt(v.kwh, 3) + '</td>' +
-              '<td class="mono">' + (v.price_eur_kwh != null ? v.price_eur_kwh.toFixed(4) : '—') + '</td>' +
-              '<td><span class="badge" style="background:' + periodColor(v.period).replace('0.75', '0.18') + ';color:#333;">' + (v.period || '—') + '</span></td>' +
-              '<td class="mono">' + (v.cost_eur != null ? v.cost_eur.toFixed(3) : '—') + '</td>' +
-              '</tr>';
-          }).join('');
-        },
-      });
-    }
-    pager.setItems(vals);
-  }
+  // The hourly detail table was removed (redundant with the chart) — its data
+  // is available via the CSV export button on the chart header. Kept as a
+  // no-op so callers don't need touching.
+  function renderTable() {}
 
   function custQS(sep) { return device ? ((sep || '&') + 'device=' + encodeURIComponent(device)) : ''; }
 
@@ -238,7 +224,7 @@
       var sel = q('cons-device');
       var opts = ['<option value="">' + __t('cons.wholeHouse', 'Toda la casa') + '</option>'];
       (r.data || []).forEach(function (o) {
-        opts.push('<option value="' + o.id + '">' + (o.name || o.id) + '</option>');
+        opts.push('<option value="' + o.id + '">' + sensorLabel(o) + '</option>');
       });
       sel.innerHTML = opts.join('');
     });
@@ -257,6 +243,165 @@
     // Continuous refresh: the day view (KPIs + hourly chart/table) moves
     // with live data — 60s cadence, cheap single-day query.
     loadDay().catch(function (e) { App.showNotification(__t('common.error', 'Error'), e.message, 'danger'); });
+    loadPowerPeak();
+    loadSankey();
+  }
+
+  // ── Peak power per hour (household demand curve) ──────────────────────
+  function loadPowerPeak() {
+    var date = q('cons-date').value || today();
+    return App.apiFetch('/consumption/power-peak?date=' + date + custQS('&')).then(function (r) {
+      drawPeakChart(r);
+      q('cons-peak-max').textContent = r.peak_w
+        ? '· ' + __t('cons.peakMax', 'máx') + ' ' + (r.peak_w / 1000).toFixed(2) + ' kW' : '';
+    }).catch(function () {});
+  }
+  function drawPeakChart(r) {
+    var c = chart('cons-peak-chart');
+    if (!c) return;
+    var byHour = {};
+    (r.values || []).forEach(function (v) { byHour[v.hour] = v.peak_w; });
+    var hours = [];
+    for (var h = 0; h < 24; h++) hours.push(h);
+    c.clear();
+    c.setOption({
+      grid: { left: 40, right: 10, top: 14, bottom: 20 },
+      tooltip: Object.assign({}, TOOLTIP, {
+        formatter: function (params) {
+          var h = params[0].dataIndex, w = byHour[h] || 0;
+          return String(h).padStart(2, '0') + ':00<br><b>' + (w / 1000).toFixed(2) + ' kW</b> · ' + Math.round(w) + ' W';
+        },
+      }),
+      xAxis: { type: 'category', data: hours.map(function (h) { return String(h).padStart(2, '0'); }),
+               axisLabel: Object.assign({ interval: 2 }, AXIS), axisTick: { show: false } },
+      yAxis: { type: 'value', name: 'kW', nameTextStyle: { fontSize: 9, color: 'rgba(44,62,80,0.6)' },
+               axisLabel: Object.assign({ formatter: function (v) { return (v / 1000).toFixed(1); } }, AXIS),
+               splitLine: { lineStyle: { opacity: 0.25 } } },
+      series: [{ type: 'bar', barWidth: '68%',
+                 data: hours.map(function (h) { return byHour[h] || 0; }),
+                 itemStyle: { color: '#4682b4', borderRadius: [3, 3, 0, 0] } }],
+    }, true);
+  }
+
+  // ── Live wiring Sankey (casa → dispositivos, from the PLC topology) ────
+  function loadSankey() {
+    return App.apiFetch('/consumption/topology' + custQS('?')).then(function (r) {
+      if (!r || !r.root) {
+        q('cons-sankey-note').textContent = __t('cons.sankeyOffline', 'Sin conexión con el PLC y sin cableado guardado todavía.');
+        var c0 = chart('cons-sankey'); if (c0) c0.clear();
+        q('cons-sankey-total').textContent = '';
+        return;
+      }
+      drawSankey(r);
+      q('cons-sankey-note').textContent = (r.status === 'offline_fallback')
+        ? __t('cons.sankeyPersisted', 'Sin conexión con el PLC — cableado guardado, potencia del medidor.') : '';
+    }).catch(function () {});
+  }
+
+  // Node palette mirrors the PLC's own wiring Sankey (the reference the user
+  // prefers): mains, compute-base, installation, baseline, ordinary loads.
+  var SK = { mains: '#2c5171', cbase: '#d0a94e', home: '#4682b4',
+             baseline: '#9aa5b1', load: '#6a9bc3' };
+  function wLabel(w) { return w >= 1000 ? (w / 1000).toFixed(2) + ' kW' : Math.round(w) + ' W'; }
+
+  // Live wiring Sankey — a faithful port of the CM4 local-webui's wiring flow:
+  // watts on every node label, and the PLC "net" model (Mains → compute base /
+  // installation → each load → unexplained baseline) with matching colors. When
+  // the PLC is offline we get no net model, so we fall back to a plain
+  // parent→child tree with a "Resto (no medido)" remainder.
+  function drawSankey(tree) {
+    var c = chart('cons-sankey');
+    if (!c) return;
+    var net = tree.net || null;
+    var byId = {}, idName = {}, powerById = {}, links = [], seen = {};
+    function node(id, name, power, color) {
+      if (!byId[id]) {
+        byId[id] = { name: id, itemStyle: { color: color } };
+        idName[id] = name; powerById[id] = power || 0;
+      }
+      return id;
+    }
+    function link(s, t, v) {
+      v = Math.round(v || 0);
+      if (v > 1 && s !== t && !seen[s + '>' + t]) { seen[s + '>' + t] = 1; links.push({ source: s, target: t, value: v }); }
+    }
+    var W = function (n) { return Math.max(0, +(n && n.power) || 0); };
+
+    if (net && net.mains_key) {
+      // PLC net model (same wiring the on-device console shows).
+      var MAINS = node('__mains', __t('cons.sankeyMains', 'Red'), net.raw, SK.mains);
+      var CBASE = node('__cbase', __t('cons.sankeyCompute', 'Base informática'), net.base, SK.cbase);
+      var HOME = node('__home', __t('cons.sankeyHome', 'Instalación'), net.net, SK.home);
+      link(MAINS, CBASE, net.base || 0);
+      link(MAINS, HOME, net.net || 0);
+      (function walk(n, isRoot) {
+        (n.children || []).forEach(function (ch) {
+          var id = node(ch.key, ch.name || ch.key, W(ch), ch.is_base ? SK.cbase : SK.load);
+          var parent = isRoot ? (ch.is_base ? CBASE : HOME)
+                              : node(n.key, n.name || n.key, W(n), SK.load);
+          link(parent, id, W(ch));
+          walk(ch, false);
+        });
+      })(tree.root, true);
+      node('__baseline', __t('cons.sankeyBaseline', 'Base (luces, standby…)'), net.clean, SK.baseline);
+      link(HOME, '__baseline', net.clean || 0);
+    } else {
+      // Offline fallback: persisted wiring, meter power, no net model.
+      (function walk(n, parentId) {
+        if (!n) return;
+        var virtual = n.virtual || n.kind === 'virtual';
+        var cp = parentId;
+        if (!virtual && n.key) {
+          node(n.key, n.name || n.key, W(n), parentId ? SK.load : SK.mains);
+          if (parentId) link(parentId, n.key, W(n));
+          cp = n.key;
+        }
+        (n.children || []).forEach(function (ch) { walk(ch, cp); });
+      })(tree.root, null);
+      var rk = tree.root && tree.root.key;
+      if (rk && byId[rk]) {
+        var childSum = links.filter(function (l) { return l.source === rk; })
+          .reduce(function (s, l) { return s + l.value; }, 0);
+        var resto = W(tree.root) - childSum;
+        if (resto > 8) {
+          node('__resto', __t('cons.sankeyBase', 'Resto (no medido)'), resto, SK.baseline);
+          link(rk, '__resto', resto);
+        }
+      }
+    }
+
+    if (links.length < 1) { c.clear(); q('cons-sankey-total').textContent = ''; return; }
+
+    c.clear();
+    c.setOption({
+      tooltip: {
+        trigger: 'item',
+        formatter: function (p) {
+          if (p.dataType === 'edge')
+            return (idName[p.data.source] || '') + ' → ' + (idName[p.data.target] || '') +
+              '<br><b>' + Math.round(p.data.value) + ' W</b>';
+          var w = powerById[p.name];
+          return (idName[p.name] || p.name) + (w != null ? '<br><b>' + Math.round(w) + ' W</b>' : '');
+        },
+      },
+      series: [{
+        type: 'sankey', left: 4, right: 96, top: 8, bottom: 8,
+        nodeAlign: 'left', nodeGap: 10, nodeWidth: 11,
+        draggable: false, emphasis: { focus: 'adjacency' },
+        label: {
+          fontSize: 10, color: '#22384c',
+          formatter: function (p) {
+            var w = powerById[p.name];
+            return (idName[p.name] || p.name) + (w != null && w >= 1 ? '  ' + wLabel(w) : '');
+          },
+        },
+        lineStyle: { color: 'gradient', opacity: 0.38, curveness: 0.5 },
+        data: Object.keys(byId).map(function (id) { return byId[id]; }),
+        links: links,
+      }],
+    }, true);
+    var totW = (net && net.raw) || W(tree.root);
+    q('cons-sankey-total').textContent = totW ? '· ' + (totW / 1000).toFixed(2) + ' kW' : '';
   }
 
   function reloadSlow() {
@@ -296,9 +441,11 @@
       q('cons-today').onclick = function () { q('cons-date').value = today(); reload(); };
       q('cons-export').onclick = exportCsv;
       loadDevices().then(reload).catch(reload);
-      // Continuous refresh: day view 60s; month + PRO cards 5 min
+      // Continuous refresh: day view 60s; month + PRO cards 5 min; the live
+      // Sankey (current consumption) ticks every 5s for a real-time feel.
       setInterval(reloadFast, 60000);
       setInterval(reloadSlow, 300000);
+      setInterval(loadSankey, 5000);
     });
   });
 })();

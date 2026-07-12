@@ -9,9 +9,12 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
-from app.api.v1.dependencies.rbac import ConsumContext, consum_context, require_tier
-from app.services import consumption, edge_client, exo_client
+from app.api.v1.dependencies.rbac import (ConsumContext, consum_context,
+                                          require_role, require_tier)
+from app.services import consumption, edge_client, exo_client, pricing
+from app.services import contracts as contracts_svc
 
 router = APIRouter(prefix="/consumption", tags=["consumption"])
 
@@ -55,6 +58,22 @@ async def current(customer: Optional[str] = Query(None),
     return await consumption.current_power(await _slugs(ctx, customer))
 
 
+@router.get("/topology")
+async def topology(customer: Optional[str] = Query(None),
+                   ctx: ConsumContext = Depends(consum_context)):
+    """The household's PLC wiring tree with LIVE watts (proxied from the CM4
+    via api_edge). `{status:"offline"}` when the PLC is unreachable — the
+    frontend then falls back to the persisted sensors topology + cloud power."""
+    slugs = await _slugs(ctx, customer)
+    if not slugs:
+        return {"status": "offline", "reason": "no_household"}
+    data = await edge_client.topology(slugs[0])
+    if data and data.get("status") == "ok" and data.get("root"):
+        return data
+    # PLC unreachable → rebuild the tree from the persisted sensors topology.
+    return await consumption.topology_from_sensors(slugs)
+
+
 @router.get("/series")
 async def series(start: str = Query(..., description="YYYY-MM-DD"),
                  end: str = Query(..., description="YYYY-MM-DD (inclusive)"),
@@ -68,6 +87,19 @@ async def series(start: str = Query(..., description="YYYY-MM-DD"),
     return {"bucket": bucket, "values": rows, "total_kwh": round(sum(r["kwh"] for r in rows), 2)}
 
 
+@router.get("/power-peak")
+async def power_peak(date: str = Query(..., description="YYYY-MM-DD (local)"),
+                     device: Optional[str] = Query(None),
+                     customer: Optional[str] = Query(None),
+                     ctx: ConsumContext = Depends(consum_context)):
+    """Peak power (W) reached in each hour of the day — the household demand
+    curve (relevant to the 2.0TD power term)."""
+    slugs = await _slugs(ctx, customer)
+    rows = await consumption.power_peak_hourly(slugs, date, device=device)
+    peak = max((r["peak_w"] for r in rows), default=0)
+    return {"date": date, "values": rows, "peak_w": peak}
+
+
 @router.get("/summary")
 async def summary(customer: Optional[str] = Query(None),
                   ctx: ConsumContext = Depends(consum_context)):
@@ -75,7 +107,8 @@ async def summary(customer: Optional[str] = Query(None),
     slugs = await _slugs(ctx, customer)
     data = await consumption.summary(slugs)
     data.update(await consumption.current_power(slugs) | {})
-    # Price context (best-effort — dashboard shows '—' when api_exo is down)
+    # Price context (best-effort — dashboard shows '—' when api_exo is down).
+    # pvpc_now_* stays for backward compat; price_now_* follows the contract.
     pvpc = await exo_client.pvpc_day("today")
     if pvpc and pvpc.get("prices"):
         from datetime import datetime
@@ -85,6 +118,15 @@ async def summary(customer: Optional[str] = Query(None),
             data["pvpc_now_eur_kwh"] = row.get("price_eur_kwh") or (
                 (row.get("price_eur_mwh") or row.get("price") or 0) / 1000.0)
             data["pvpc_period"] = row.get("period")
+    from datetime import date as _date
+    today = _date.today().isoformat()
+    cid, _cl = await contracts_svc.resolve_for_slugs(slugs, today, today)
+    contract = await contracts_svc.get_active(cid, today) if cid else None
+    now_price = await pricing.price_now(contract)
+    if now_price:
+        data["price_now_eur_kwh"] = now_price["price_eur_kwh"]
+        data["price_period"] = now_price["period"]
+        data["price_source"] = now_price["source"]
     carbon = await exo_client.carbon_current()
     if carbon and carbon.get("intensity_gco2_kwh") is not None:
         data["carbon_gco2_kwh"] = carbon["intensity_gco2_kwh"]
@@ -135,8 +177,11 @@ async def environment(customer: Optional[str] = Query(None),
     loc = await consumption.location_for(slugs)
     lat = loc["lat"] if loc else settings.DEFAULT_LAT
     lon = loc["lon"] if loc else settings.DEFAULT_LON
+    # Rooftop-PV config scales the solar estimate to the real installation
+    # (mig 003); absent → api_exo's 3 kWp default.
+    solar_cfg = await consumption.solar_config_for(slugs) or {}
     (today, tomorrow, omie_today, omie_tomorrow, carbon,
-     weather, obs, solar, sun, window) = await asyncio.gather(
+     weather, obs, solar, sun, window, wind) = await asyncio.gather(
         exo_client.pvpc_day("today"),
         exo_client.pvpc_day("tomorrow"),
         exo_client.omie_day("today"),
@@ -144,9 +189,14 @@ async def environment(customer: Optional[str] = Query(None),
         exo_client.carbon_current(),
         exo_client.weather_forecast(lat, lon),
         exo_client.weather_observations(lat, lon),
-        exo_client.solar_forecast(lat, lon),
+        exo_client.solar_forecast(lat, lon,
+                                  peak_kwp=solar_cfg.get("peak_kwp"),
+                                  tilt=solar_cfg.get("tilt"),
+                                  azimuth=solar_cfg.get("azimuth"),
+                                  loss=solar_cfg.get("loss")),
         exo_client.daylight(lat, lon),
         oe3.green_window(lat, lon),
+        exo_client.wind_forecast(lat, lon),
     )
 
     def _kwh(r):
@@ -161,17 +211,7 @@ async def environment(customer: Optional[str] = Query(None),
                         "period": r.get("period")})
         return out
 
-    def _band(hour: int, weekend: bool) -> str:
-        # 2.0TD calendar (fallback when no PVPC rows to copy from):
-        # weekends/holidays are all-P3; weekdays P1 10-14/18-22,
-        # P2 8-10/14-18/22-24, P3 0-8.
-        if weekend:
-            return "P3"
-        if 10 <= hour < 14 or 18 <= hour < 22:
-            return "P1"
-        if 8 <= hour < 10 or 14 <= hour < 18 or 22 <= hour < 24:
-            return "P2"
-        return "P3"
+    _band = pricing._band   # 2.0TD static calendar (shared fallback)
 
     def _omie_points(payload, pvpc_rows, day_date):
         # OMIE day-ahead is quarter-hourly (15-min MTU) — keep the full 96
@@ -231,6 +271,8 @@ async def environment(customer: Optional[str] = Query(None),
                           "sunset": sun_today.get("sunset"),
                           "daylight_seconds": sun_today.get("daylight_seconds")}},
         "window": window,
+        "wind": {"hourly": (wind or {}).get("hourly") or [],
+                 "source": (wind or {}).get("source") or "Open-Meteo"},
         # Data provenance per card (transparency requirement): pass the
         # upstream `source` fields through instead of hardcoding names.
         "sources": {
@@ -253,28 +295,62 @@ async def day(date: str = Query(..., description="YYYY-MM-DD (local)"),
               device: Optional[str] = Query(None),
               customer: Optional[str] = Query(None),
               ctx: ConsumContext = Depends(consum_context)):
-    """Hourly kWh for one local day joined with that day's PVPC:
-    values[] = {hour, kwh, price_eur_kwh, period, cost_eur}."""
+    """One local day. Settlement (values[]/totals) is HOURLY — the hourly
+    meter delta × hourly quarter-mean price, exactly what the retailer bills
+    and byte-identical to the pre-quarter behavior. The 15-min quarters[] is
+    a DISPLAY curve for the Panel: its shape comes from the real 15-min meter,
+    but each hour's four quarters are rescaled to sum to that hour's exact
+    settlement kWh (a cumulative counter bucketed at 15 min drops the
+    between-bucket energy, so raw quarter deltas would undercount the hour)."""
     slugs = await _slugs(ctx, customer)
-    rows = await consumption.energy_series(slugs, date, date, bucket="hour", device=device)
-    prices = await exo_client.pvpc_map(date, date)
+    hourly = await consumption.energy_series(slugs, date, date, bucket="hour", device=device)
+    quarter = await consumption.energy_series(slugs, date, date, bucket="quarter", device=device)
+    pmap, price_source = await pricing.price_map_for_slugs(slugs, date, date)
+    hmap = pricing.hourly_rollup(pmap)
+
+    # Settlement (hourly) — the source of truth for totals & the retailer bill.
+    kwh_by_hour: dict[int, float] = {}
+    for r in hourly:
+        if r["ts"][:10] != date:      # bucket edges may spill into neighbours (UTC)
+            continue
+        kwh_by_hour[int(r["ts"][11:13])] = r["kwh"]
     values = []
     total_kwh = total_cost = 0.0
-    for r in rows:
-        ts = r["ts"]
-        if ts[:10] != date:          # bucket edges may spill into neighbours (UTC)
-            continue
-        hour = int(ts[11:13])
-        p = prices.get((date, hour)) or {}
+    for hour in sorted(kwh_by_hour):
+        kwh = kwh_by_hour[hour]
+        p = hmap.get((date, hour)) or {}
         price = p.get("price_eur_kwh")
-        cost = round(r["kwh"] * price, 4) if price is not None else None
-        total_kwh += r["kwh"]
+        cost = round(kwh * price, 4) if price is not None else None
+        total_kwh += kwh
         if cost is not None:
             total_cost += cost
-        values.append({"hour": hour, "kwh": r["kwh"],
-                       "price_eur_kwh": price, "period": p.get("period"),
-                       "cost_eur": cost})
-    return {"date": date, "values": values,
+        values.append({"hour": hour, "kwh": kwh,
+                       "price_eur_kwh": round(price, 5) if price is not None else None,
+                       "period": p.get("period"), "cost_eur": cost})
+
+    # Display curve (quarter) — rescale each hour's quarters to the settlement
+    # kWh so the bars sum to the hourly total shown everywhere else.
+    raw_q: dict[int, list] = {}
+    for r in quarter:
+        if r["ts"][:10] != date:
+            continue
+        raw_q.setdefault(int(r["ts"][11:13]), []).append(r)
+    quarters = []
+    for hour in sorted(raw_q):
+        qs = raw_q[hour]
+        raw_sum = sum(x["kwh"] for x in qs)
+        target = kwh_by_hour.get(hour, 0.0)
+        factor = (target / raw_sum) if raw_sum > 0 else 0.0
+        for x in qs:
+            hhmm = x["ts"][11:16]
+            kwh = round(x["kwh"] * factor, 3) if raw_sum > 0 else round(target / len(qs), 3)
+            p = pmap.get((date, hhmm)) or {}
+            price = p.get("price_eur_kwh")
+            quarters.append({"time": hhmm, "kwh": kwh,
+                             "price_eur_kwh": price, "period": p.get("period"),
+                             "cost_eur": round(kwh * price, 4) if price is not None else None})
+    return {"date": date, "values": values, "quarters": quarters,
+            "price_source": price_source,
             "total_kwh": round(total_kwh, 2),
             "total_cost_eur": round(total_cost, 2) if values else 0,
             "avg_price_eur_kwh": round(total_cost / total_kwh, 4) if total_kwh > 0 and total_cost else None}
@@ -285,7 +361,8 @@ async def month(month: str = Query(..., pattern=r"^\d{4}-\d{2}$", description="Y
                 device: Optional[str] = Query(None),
                 customer: Optional[str] = Query(None),
                 ctx: ConsumContext = Depends(consum_context)):
-    """Daily kWh + exact daily cost (Σ hour kWh × hour PVPC) for one month."""
+    """Daily kWh + exact daily cost (Σ hour kWh × hour tariff price — active
+    contract, PVPC fallback) for one month."""
     import calendar
     from datetime import date as _date
     slugs = await _slugs(ctx, customer)
@@ -296,7 +373,7 @@ async def month(month: str = Query(..., pattern=r"^\d{4}-\d{2}$", description="Y
     if end > today:
         end = today if today >= start else start
     hourly = await consumption.energy_series(slugs, start, end, bucket="hour", device=device)
-    prices = await exo_client.pvpc_map(start, end)
+    prices, price_source = await pricing.hourly_price_map_for_slugs(slugs, start, end)
     days: dict[str, dict] = {}
     for r in hourly:
         d, h = r["ts"][:10], int(r["ts"][11:13])
@@ -313,7 +390,7 @@ async def month(month: str = Query(..., pattern=r"^\d{4}-\d{2}$", description="Y
         e = days[d]
         values.append({"date": d, "kwh": round(e["kwh"], 2),
                        "cost_eur": round(e["cost_eur"], 2) if e["priced"] else None})
-    return {"month": month, "values": values,
+    return {"month": month, "values": values, "price_source": price_source,
             "total_kwh": round(sum(v["kwh"] for v in values), 2),
             "total_cost_eur": round(sum(v["cost_eur"] or 0 for v in values), 2)}
 
@@ -323,7 +400,8 @@ async def month(month: str = Query(..., pattern=r"^\d{4}-\d{2}$", description="Y
 # ---------------------------------------------------------------------------
 
 async def _month_hourly_costed(slugs, month: str, device):
-    """Shared helper: the month's hourly rows joined with PVPC (F2 logic)."""
+    """Shared helper: the month's hourly rows joined with the household's
+    tariff at HOURLY SETTLEMENT prices (active contract, PVPC fallback)."""
     import calendar
     from datetime import date as _date
     y, m = int(month[:4]), int(month[5:7])
@@ -333,7 +411,7 @@ async def _month_hourly_costed(slugs, month: str, device):
     if end > today:
         end = today if today >= start else start
     hourly = await consumption.energy_series(slugs, start, end, bucket="hour", device=device)
-    prices = await exo_client.pvpc_map(start, end)
+    prices, price_source = await pricing.hourly_price_map_for_slugs(slugs, start, end)
     rows = []
     for r in hourly:
         d, h = r["ts"][:10], int(r["ts"][11:13])
@@ -343,7 +421,7 @@ async def _month_hourly_costed(slugs, month: str, device):
         rows.append({"date": d, "hour": h, "kwh": r["kwh"],
                      "price_eur_kwh": p.get("price_eur_kwh"),
                      "period": p.get("period")})
-    return rows, last
+    return rows, last, price_source
 
 
 @router.get("/forecast-month")
@@ -356,7 +434,7 @@ async def forecast_month(customer: Optional[str] = Query(None),
     slugs = await _slugs(ctx, customer)
     today = _date.today()
     month = today.strftime("%Y-%m")
-    rows, last_day = await _month_hourly_costed(slugs, month, device)
+    rows, last_day, price_source = await _month_hourly_costed(slugs, month, device)
 
     mtd_kwh = sum(r["kwh"] for r in rows)
     mtd_cost = sum(r["kwh"] * r["price_eur_kwh"] for r in rows
@@ -366,7 +444,7 @@ async def forecast_month(customer: Optional[str] = Query(None),
     ref_end = (today - timedelta(days=1)).isoformat()
     ref = await consumption.energy_series(slugs, ref_start, ref_end,
                                           bucket="hour", device=device)
-    ref_prices = await exo_client.pvpc_map(ref_start, ref_end)
+    ref_prices, _ = await pricing.hourly_price_map_for_slugs(slugs, ref_start, ref_end)
     daily: dict = {}
     for r in ref:
         d, h = r["ts"][:10], int(r["ts"][11:13])
@@ -381,6 +459,7 @@ async def forecast_month(customer: Optional[str] = Query(None),
     remaining = max(last_day - today.day, 0) + 1   # today still accruing
 
     return {"month": month, "day_of_month": today.day, "days_in_month": last_day,
+            "price_source": price_source,
             "mtd_kwh": round(mtd_kwh, 2), "mtd_cost_eur": round(mtd_cost, 2),
             "ref_days": len(days_ref),
             "avg_day_kwh": round(avg_kwh, 2), "avg_day_cost_eur": round(avg_cost, 2),
@@ -395,7 +474,7 @@ async def bands(month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
                 ctx: ConsumContext = Depends(require_tier("pro"))):
     """PRO — kWh and € split by tariff band (P1/P2/P3) for one month."""
     slugs = await _slugs(ctx, customer)
-    rows, _ = await _month_hourly_costed(slugs, month, device)
+    rows, _, price_source = await _month_hourly_costed(slugs, month, device)
     out = {p: {"period": p, "kwh": 0.0, "cost_eur": 0.0} for p in ("P1", "P2", "P3")}
     total_kwh = 0.0
     for r in rows:
@@ -411,7 +490,8 @@ async def bands(month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
         values.append({"period": p, "kwh": round(e["kwh"], 2),
                        "cost_eur": round(e["cost_eur"], 2),
                        "share_pct": round(e["kwh"] / total_kwh * 100, 1) if total_kwh else 0.0})
-    return {"month": month, "values": values, "total_kwh": round(total_kwh, 2)}
+    return {"month": month, "values": values, "price_source": price_source,
+            "total_kwh": round(total_kwh, 2)}
 
 
 @router.get("/export.csv")
@@ -420,7 +500,7 @@ async def export_csv(start: str = Query(..., description="YYYY-MM-DD"),
                      customer: Optional[str] = Query(None),
                      device: Optional[str] = Query(None),
                      ctx: ConsumContext = Depends(require_tier("pro"))):
-    """PRO — hourly CSV: date,hour,kwh,pvpc_eur_kwh,period,cost_eur."""
+    """PRO — hourly CSV: date,hour,kwh,price_eur_kwh,period,cost_eur,source."""
     from datetime import date as _date
     from fastapi.responses import PlainTextResponse
     try:
@@ -431,8 +511,8 @@ async def export_csv(start: str = Query(..., description="YYYY-MM-DD"),
         raise HTTPException(400, detail="range must be 1-92 days")
     slugs = await _slugs(ctx, customer)
     hourly = await consumption.energy_series(slugs, start, end, bucket="hour", device=device)
-    prices = await exo_client.pvpc_map(start, end)
-    lines = ["date,hour,kwh,pvpc_eur_kwh,period,cost_eur"]
+    prices, _ = await pricing.hourly_price_map_for_slugs(slugs, start, end)
+    lines = ["date,hour,kwh,price_eur_kwh,period,cost_eur,source"]
     for r in hourly:
         d, h = r["ts"][:10], int(r["ts"][11:13])
         if d < start or d > end:
@@ -440,7 +520,48 @@ async def export_csv(start: str = Query(..., description="YYYY-MM-DD"),
         p = prices.get((d, h)) or {}
         price = p.get("price_eur_kwh")
         cost = round(r["kwh"] * price, 4) if price is not None else ""
-        lines.append(f"{d},{h},{r['kwh']},{price if price is not None else ''},{p.get('period') or ''},{cost}")
+        lines.append(f"{d},{h},{r['kwh']},{price if price is not None else ''},"
+                     f"{p.get('period') or ''},{cost},{p.get('source') or ''}")
     return PlainTextResponse("\n".join(lines) + "\n", media_type="text/csv",
                              headers={"Content-Disposition":
                                       f"attachment; filename=consumo_{start}_{end}.csv"})
+
+
+# ── Rooftop-PV config (mig 003): the installed kWp that scales the Panel
+#    solar estimate. Read is org-scoped; write needs editor+ of the household.
+class SolarConfigIn(BaseModel):
+    customer: Optional[str] = None
+    peak_kwp: float = Field(..., ge=0, le=100)
+    tilt: Optional[float] = Field(None, ge=0, le=90)
+    azimuth: Optional[float] = Field(None, ge=0, le=360)
+    loss: Optional[float] = Field(None, ge=0, le=50)
+
+
+@router.get("/solar-config")
+async def get_solar_config(customer: Optional[str] = Query(None),
+                           ctx: ConsumContext = Depends(consum_context)):
+    """The household's rooftop-PV config; `peak_kwp` null → api_exo 3 kWp
+    default applies."""
+    slugs = await _slugs(ctx, customer)
+    cfg = await consumption.solar_config_for(slugs)
+    return cfg or {"peak_kwp": None, "tilt": None, "azimuth": None, "loss": None}
+
+
+@router.put("/solar-config")
+async def put_solar_config(body: SolarConfigIn,
+                           ctx: ConsumContext = Depends(consum_context)):
+    """Set the household's installed kWp (+ optional orientation). This is a
+    self-service display preference (it only scales the solar ESTIMATE, not
+    billing), so ANY authenticated household member may set it — not gated to
+    editor like contracts. `check_slug` still confines writes to own households;
+    a peer service key (read-only) is refused."""
+    if ctx.is_service and not ctx.is_superadmin:
+        raise HTTPException(403, detail="read-only service key")
+    slugs = await _slugs(ctx, body.customer)
+    if not slugs:
+        raise HTTPException(400, detail="no household in scope")
+    slug = slugs[0]
+    ctx.check_slug(slug)
+    return await consumption.set_solar_config(
+        slug, body.peak_kwp, tilt=body.tilt, azimuth=body.azimuth,
+        loss=body.loss, updated_by=(ctx.user or {}).get("email"))

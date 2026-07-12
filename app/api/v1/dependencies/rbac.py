@@ -136,6 +136,28 @@ def require_tier(min_tier: str):
     return _dep
 
 
+def require_role(min_role: str):
+    """Endpoint gate: 403 below `min_role` (writes on business entities).
+
+    Superadmin (incl. ADMIN_API_KEY) bypasses; the plain service key (API_KEY)
+    stays read-only — peer services must not mutate contracts.
+    """
+    min_rank = _ROLE_RANK.get(min_role, 2)
+
+    async def _dep(ctx: ConsumContext = Depends(consum_context)) -> ConsumContext:
+        if ctx.is_superadmin:
+            return ctx
+        if ctx.is_service or _ROLE_RANK.get(ctx.role, 0) < min_rank:
+            raise HTTPException(
+                403,
+                detail={"code": "ROLE_REQUIRED", "required": min_role, "current": ctx.role,
+                        "message": f"Esta acción requiere el rol {min_role}."},
+            )
+        return ctx
+
+    return _dep
+
+
 def require_ai():
     """Endpoint gate for AI features: ServiceAccess.ai_enabled must be true."""
     async def _dep(ctx: ConsumContext = Depends(consum_context)) -> ConsumContext:

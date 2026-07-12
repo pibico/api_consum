@@ -20,6 +20,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional, Sequence
 
+from fastapi import HTTPException
+
 from app.core import db
 
 logger = logging.getLogger("consum.consumption")
@@ -70,6 +72,57 @@ async def location_for(slugs: Sequence[str]) -> Optional[Dict[str, Any]]:
     if not row:
         return None
     return {"lat": float(row[0]), "lon": float(row[1]), "municipality": row[2]}
+
+
+async def solar_config_for(slugs: Sequence[str]) -> Optional[Dict[str, Any]]:
+    """The household's rooftop-PV config (consum.solar_config, mig 003) — the
+    installed kWp (+ optional tilt/azimuth/loss) that scales the Panel solar
+    estimate. First slug with a row wins (one home per org). None → the caller
+    lets api_exo apply its 3 kWp default."""
+    ids = await _slugs_to_ids(slugs)
+    if not ids:
+        return None
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                """SELECT peak_kwp, tilt, azimuth, loss FROM consum.solar_config
+                    WHERE customer_id = ANY(%s) ORDER BY customer_id LIMIT 1""",
+                (list(ids.values()),),
+            )
+            row = await cur.fetchone()
+    if not row:
+        return None
+    return {"peak_kwp": float(row[0]),
+            "tilt": float(row[1]) if row[1] is not None else None,
+            "azimuth": float(row[2]) if row[2] is not None else None,
+            "loss": float(row[3]) if row[3] is not None else None}
+
+
+async def set_solar_config(slug: str, peak_kwp: float,
+                           tilt: Optional[float] = None,
+                           azimuth: Optional[float] = None,
+                           loss: Optional[float] = None,
+                           updated_by: Optional[str] = None) -> Dict[str, Any]:
+    """Upsert the household's rooftop-PV config. Only the fields provided are
+    written; tilt/azimuth/loss default to NULL (→ api_exo defaults)."""
+    ids = await _slugs_to_ids([slug])
+    cid = ids.get(slug)
+    if not cid:
+        raise HTTPException(404, detail=f"Hogar desconocido: {slug}")
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                """INSERT INTO consum.solar_config
+                       (customer_id, peak_kwp, tilt, azimuth, loss, updated_by)
+                   VALUES (%s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (customer_id) DO UPDATE SET
+                       peak_kwp = EXCLUDED.peak_kwp,
+                       tilt = EXCLUDED.tilt, azimuth = EXCLUDED.azimuth,
+                       loss = EXCLUDED.loss, updated_by = EXCLUDED.updated_by,
+                       updated_at = now()""",
+                (cid, peak_kwp, tilt, azimuth, loss, updated_by),
+            )
+    return {"peak_kwp": peak_kwp, "tilt": tilt, "azimuth": azimuth, "loss": loss}
 
 
 async def devices_for(slugs: Sequence[str]) -> List[Dict[str, Any]]:
@@ -172,8 +225,8 @@ async def energy_series(
     ids = await _slugs_to_ids(slugs)
     if not ids:
         return []
-    trunc = {"hour": "1 hour", "day": "1 day"}.get(bucket, "1 hour")
-    hours_per_bucket = 24.0 if trunc == "1 day" else 1.0
+    trunc = {"quarter": "15 minutes", "hour": "1 hour", "day": "1 day"}.get(bucket, "1 hour")
+    hours_per_bucket = {"15 minutes": 0.25, "1 hour": 1.0, "1 day": 24.0}[trunc]
     where = ["customer_id::text = ANY(%s)",
              "ts >= %s::timestamptz", "ts < (%s::timestamptz + interval '1 day')"]
     params: List[Any] = [list(ids.values()), start, end]
@@ -219,6 +272,85 @@ async def energy_series(
         {"ts": b.isoformat(), "kwh": round(k, 3)}
         for b, k in sorted(buckets.items())
     ]
+
+
+async def topology_from_sensors(slugs: Sequence[str]) -> Dict[str, Any]:
+    """Offline fallback for the wiring Sankey: rebuild the tree from the
+    persisted `sensors` topology (name/parent/role/kind, synced from the PLC)
+    + live power from Timescale — same shape as the CM4's diagram(), so the
+    frontend renders it identically when the PLC is unreachable."""
+    ids = await _slugs_to_ids(slugs)
+    if not ids:
+        return {"status": "offline", "reason": "no_household"}
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                """SELECT sensor_key, channel, name, parent, role, kind
+                     FROM sensors
+                    WHERE customer_id::text = ANY(%s)
+                      AND (role = 'main' OR parent IS NOT NULL)""",
+                (list(ids.values()),),
+            )
+            rows = await cur.fetchall()
+    if not rows:
+        return {"status": "offline", "reason": "no_topology"}
+    power = await current_power(slugs)
+    pmap: Dict[tuple, float] = {}
+    for d in power.get("devices") or []:
+        for ch, w in (d.get("channels") or {}).items():
+            pmap[(d["device"], ch)] = w
+    nodes: Dict[str, Dict[str, Any]] = {}
+    for sk, ch, name, parent, role, kind in rows:
+        nid = f"{sk}/{ch}"
+        nodes[nid] = {"key": nid, "name": name or nid, "kind": kind or "",
+                      "role": role or "", "online": True,
+                      "power": pmap.get((sk, ch)), "children": []}
+    root = None
+    for sk, ch, name, parent, role, kind in rows:
+        nid = f"{sk}/{ch}"
+        if role == "main":
+            root = nodes[nid]
+    for sk, ch, name, parent, role, kind in rows:
+        nid = f"{sk}/{ch}"
+        if role == "main":
+            continue
+        if parent and parent in nodes:
+            nodes[parent]["children"].append(nodes[nid])
+        elif root is not None:
+            root["children"].append(nodes[nid])
+    return {"status": "offline_fallback", "source": "persisted",
+            "root": root, "unplaced": [], "net": None, "ts": 0}
+
+
+async def power_peak_hourly(slugs: Sequence[str], date: str,
+                            device: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Peak instantaneous power (W) reached in each hour of one local day.
+    Whole-house = MAX over the EM mains channels (the mains dominates, so its
+    peak IS the household demand — no channel summing to avoid double-counting
+    a sub-circuit); a `device` narrows to that plug. Feeds the 'demand per
+    hour' card (relevant to the 2.0TD power term / maxímetro)."""
+    ids = await _slugs_to_ids(slugs)
+    if not ids:
+        return []
+    where = ["variable = 'apower'", "customer_id::text = ANY(%s)",
+             "ts >= %s::timestamptz", "ts < (%s::timestamptz + interval '1 day')"]
+    params: List[Any] = [list(ids.values()), date, date]
+    if device:
+        where.append("device_id = %s")
+        params.append(device)
+    else:
+        where.append(_HOUSE_CHANNEL_SQL)
+    sql = f"""
+        SELECT time_bucket('1 hour', ts) AS h, MAX(value_num) AS peak_w
+        FROM sensor_data WHERE {" AND ".join(where)}
+        GROUP BY h ORDER BY h
+    """
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(sql, params)
+            rows = await cur.fetchall()
+    return [{"hour": r[0].hour, "peak_w": round(float(r[1] or 0), 1)}
+            for r in rows if r[0].date().isoformat() == date]
 
 
 async def summary(slugs: Sequence[str]) -> Dict[str, Any]:

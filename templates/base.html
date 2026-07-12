@@ -294,14 +294,22 @@
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-user" id="sidebar-user" style="display:none"></div>
         <nav class="sidebar-nav">
-          <div class="nav-section" data-i18n="nav.sectionHome">Mi hogar</div>
+          <div class="nav-section" data-i18n="nav.sectionHome">Mi instalación</div>
           <a href="{{ root }}/app" data-i18n-title="nav.panel" title="Panel">
             <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
             <span class="nav-label" data-i18n="nav.panel">Panel</span>
           </a>
+          <a href="{{ root }}/app/contract" data-i18n-title="nav.contract" title="Contrato">
+            <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M11.5 12.5 9 16h4l-2.5 3.5"/></svg></span>
+            <span class="nav-label" data-i18n="nav.contract">Contrato</span>
+          </a>
           <a href="{{ root }}/app/consumption" data-i18n-title="nav.consumption" title="Consumo">
             <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span>
             <span class="nav-label" data-i18n="nav.consumption">Consumo</span>
+          </a>
+          <a href="{{ root }}/app/invoices" data-i18n-title="nav.invoices" title="Facturas">
+            <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1.5L8 22l2-1.5L12 22l2-1.5L16 22l2-1.5L20 22V2l-2 1.5L16 2l-2 1.5L12 2l-2 1.5L8 2 6 3.5 4 2z"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/></svg></span>
+            <span class="nav-label" data-i18n="nav.invoices">Facturas</span>
           </a>
           <a href="{{ root }}/app/savings" data-i18n-title="nav.savings" title="Ahorro">
             <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
@@ -364,7 +372,6 @@
   <div class="panel-backdrop" id="panel-backdrop"></div>
 
   {% include "partials/about_panel.html" %}
-  {% include "partials/account_panel.html" %}
 
   <script>
     window.__ROOT__ = '{{ root }}';
