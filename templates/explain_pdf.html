@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: 'Montserrat'; font-weight: 400;
+    src: url('file://{{ fonts_dir }}/Montserrat-Regular.ttf'); }
+  @font-face { font-family: 'Montserrat'; font-weight: 600;
+    src: url('file://{{ fonts_dir }}/Montserrat-SemiBold.ttf'); }
+  @font-face { font-family: 'Montserrat'; font-weight: 700;
+    src: url('file://{{ fonts_dir }}/Montserrat-Bold.ttf'); }
+  @font-face { font-family: 'Inter'; font-weight: 400;
+    src: url('file://{{ fonts_dir }}/Inter-Regular.ttf'); }
+  @font-face { font-family: 'Inter'; font-weight: 600;
+    src: url('file://{{ fonts_dir }}/Inter-SemiBold.ttf'); }
+
+  @page { size: A4; margin: 12mm 12mm 16mm 12mm; }
+  * { box-sizing: border-box; }
+  body { font-family: 'Inter', sans-serif; color: #1e3a52; font-size: 9.5px;
+         margin: 0; line-height: 1.45; }
+  h1, h2, h3 { font-family: 'Montserrat', sans-serif; margin: 0; }
+
+  .head { display: flex; justify-content: space-between; align-items: center;
+          margin-bottom: 8px; }
+  .head .logo svg { width: 110px; height: auto; }
+  .head .doc { text-align: right; }
+  .head .doc h1 { font-size: 16px; color: #2c5171; }
+  .head .doc .sub { color: #4682b4; font-weight: 600; font-size: 9.5px; }
+
+  /* HERO — big total on brand blue */
+  .hero { background: #2c5171; border-radius: 12px; color: #fff;
+          display: flex; justify-content: space-between; align-items: center;
+          padding: 12px 18px; margin-bottom: 8px; }
+  .hero .tot .k { font-size: 8px; text-transform: uppercase; letter-spacing: 1px;
+                  color: #9fc3e0; font-weight: 600; }
+  .hero .tot .v { font-family: 'Montserrat'; font-size: 30px; font-weight: 700; }
+  .hero .tot .p { font-size: 9px; color: #cfe2f2; margin-top: 1px; }
+  .hero .chips { display: flex; gap: 8px; }
+  .chip { border-radius: 10px; padding: 7px 12px; text-align: center; }
+  .chip .k { font-size: 7px; text-transform: uppercase; letter-spacing: 0.6px;
+             font-weight: 600; opacity: 0.85; }
+  .chip .v { font-family: 'Montserrat'; font-size: 15px; font-weight: 700; margin-top: 1px; }
+  .chip .s { font-size: 7.5px; opacity: 0.85; }
+  .chip.up   { background: #e74c3c; color: #fff; }
+  .chip.down { background: #2ecc71; color: #fff; }
+  .chip.flat { background: #4682b4; color: #fff; }
+  .chip.kwh  { background: #6a9bc3; color: #fff; }
+
+  /* Anomaly band */
+  .anom { border-radius: 10px; padding: 8px 12px; margin-bottom: 8px;
+          display: flex; gap: 10px; align-items: flex-start; page-break-inside: avoid; }
+  .anom .pct { font-family: 'Montserrat'; font-weight: 700; font-size: 18px;
+               min-width: 62px; text-align: center; border-radius: 8px;
+               padding: 6px 6px; color: #fff; }
+  .anom.aviso  { background: #fdf3e0; border: 1.5px solid #f39c12; }
+  .anom.aviso .pct { background: #f39c12; }
+  .anom.alerta { background: #fdeae8; border: 1.5px solid #e74c3c; }
+  .anom.alerta .pct { background: #e74c3c; }
+  .anom.normal { background: #e9f9f0; border: 1.5px solid #2ecc71; }
+  .anom.normal .pct { background: #2ecc71; }
+  .anom .hl { font-family: 'Montserrat'; font-weight: 700; font-size: 10.5px; }
+  .anom ul { margin: 3px 0 0 13px; padding: 0; }
+
+  /* Cost bar — ¿a dónde va tu dinero? */
+  .money { background: #f4f8fb; border-radius: 12px; padding: 9px 12px;
+           margin-bottom: 8px; page-break-inside: avoid; }
+  .money h2 { font-size: 11px; color: #2c5171; margin-bottom: 6px; }
+  .bar { display: flex; height: 20px; border-radius: 10px; overflow: hidden; }
+  .bar div { height: 20px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; }
+  .legend .it { display: flex; align-items: center; gap: 5px; font-size: 8.5px; }
+  .legend .dot { width: 9px; height: 9px; border-radius: 3px; }
+  .legend b { font-family: 'Montserrat'; font-size: 10px; }
+
+  /* Energy per band — colored mini cards */
+  .bands { display: flex; gap: 8px; margin-bottom: 8px; }
+  .band { flex: 1; border-radius: 10px; padding: 7px 10px; color: #fff;
+          page-break-inside: avoid; }
+  .band.p1 { background: #e74c3c; } .band.p2 { background: #f39c12; }
+  .band.p3 { background: #2ecc71; }
+  .band .k { font-size: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
+  .band .v { font-family: 'Montserrat'; font-size: 16px; font-weight: 700; }
+  .band .s { font-size: 8px; opacity: 0.92; }
+
+  /* Concept cards */
+  .blocks { column-count: 2; column-gap: 10px; }
+  .blk { break-inside: avoid; margin-bottom: 8px; border-radius: 10px;
+         padding: 8px 10px 9px 10px; }
+  .blk .bh { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .blk .ic { width: 18px; height: 18px; border-radius: 50%; display: flex;
+             align-items: center; justify-content: center; }
+  .blk .ic svg { width: 11px; height: 11px; }
+  .blk h3 { font-size: 10px; }
+  .blk p { margin: 0; font-size: 9px; }
+  .blk b { font-family: 'Montserrat'; font-size: 10px; }
+
+  .closing { margin-top: 2px; background: #2ecc71; color: #fff; border-radius: 10px;
+             padding: 8px 12px; font-size: 9.5px; page-break-inside: avoid;
+             display: flex; gap: 8px; align-items: center; }
+  .closing b { font-family: 'Montserrat'; }
+  .closing .bulb { min-width: 20px; }
+
+  footer { position: fixed; bottom: -10mm; left: 0; right: 0;
+           font-size: 6.8px; color: #6a9bc3; text-align: center; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<div class="head">
+  <div class="logo">{{ logo_svg | safe }}</div>
+  <div class="doc">
+    <h1>Tu factura, explicada</h1>
+    <div class="sub">{{ retailer or "CONSUM-IA" }} · {{ period }} ({{ days }} días)</div>
+  </div>
+</div>
+
+<div class="hero">
+  <div class="tot">
+    <div class="k">Has pagado</div>
+    <div class="v">{{ total }}</div>
+    <div class="p">del {{ period }}</div>
+  </div>
+  <div class="chips">
+    {% if eur_day %}
+    <div class="chip {{ trend }}">
+      <div class="k">Gasto por día</div>
+      <div class="v">{{ eur_day }}</div>
+      {% if eur_day_ref %}<div class="s">{{ eur_day_ref }}</div>{% endif %}
+    </div>
+    {% endif %}
+    {% if energy_kwh %}
+    <div class="chip kwh">
+      <div class="k">Energía usada</div>
+      <div class="v">{{ energy_kwh }}</div>
+      <div class="s">kWh</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if anomaly %}
+<div class="anom {{ anomaly.level }}">
+  <div class="pct">{{ anomaly.pct }}</div>
+  <div>
+    <div class="hl">{{ anomaly.headline }}</div>
+    {% if anomaly.causes %}<ul>{% for c in anomaly.causes %}<li>{{ c }}</li>{% endfor %}</ul>{% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if money_parts %}
+<div class="money">
+  <h2>¿A dónde va tu dinero?</h2>
+  <div class="bar">
+    {% for p in money_parts %}<div style="width: {{ p.pct }}%; background: {{ p.color }};"></div>{% endfor %}
+  </div>
+  <div class="legend">
+    {% for p in money_parts %}
+    <span class="it"><span class="dot" style="background: {{ p.color }};"></span>{{ p.label }} <b>{{ p.amount }}</b></span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if bands %}
+<div class="bands">
+  {% for b in bands %}
+  <div class="band {{ b.cls }}">
+    <div class="k">{{ b.label }}</div>
+    <div class="v">{{ b.kwh }} kWh</div>
+    {% if b.price %}<div class="s">{{ b.price }} €/kWh</div>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="blocks">
+  {% for b in blocks %}
+  <div class="blk" style="background: {{ b.bg }}; border-left: 3px solid {{ b.color }};">
+    <div class="bh">
+      <div class="ic" style="background: {{ b.color }};">{{ b.icon | safe }}</div>
+      <h3 style="color: {{ b.color }};">{{ b.title }}</h3>
+    </div>
+    <p>{{ b.html | safe }}</p>
+  </div>
+  {% endfor %}
+</div>
+
+{% if closing %}
+<div class="closing">
+  <svg class="bulb" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.4 1 2.3h6c0-.9.4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg>
+  <div>{{ closing | safe }}</div>
+</div>
+{% endif %}
+
+<footer>
+  Explicación generada con IA por CONSUM-IA a partir de los importes de tu factura · si algo no cuadra, consulta el documento original<br>
+  pibiCo Compañía de Inteligencia de Negocio y Control S.L. · consum.pibico.es · generado el {{ generated }}
+</footer>
+
+</body>
+</html>

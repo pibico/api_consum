@@ -10,6 +10,7 @@ import logging
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import psycopg
+from psycopg.types.json import Jsonb
 from fastapi import HTTPException
 
 from app.core import db
@@ -27,9 +28,14 @@ _COLS = (
     "power_p1_kw", "power_p2_kw", "power_p1_eur_kw_day", "power_p2_eur_kw_day",
     "meter_rental_eur_month", "other_fixed_eur_month",
     "electricity_tax_pct", "vat_pct",
-    "notes", "created_by",
+    "components", "notes", "created_by",
 )
 _MUTABLE = tuple(c for c in _COLS if c not in ("customer_id", "created_by"))
+
+
+def _adapt(col: str, val: Any) -> Any:
+    """JSONB columns need psycopg3's Jsonb wrapper (dict → jsonb)."""
+    return Jsonb(val) if col == "components" and val is not None else val
 _SELECT = ("SELECT c.id, cu.slug, " + ", ".join(f"c.{c}" for c in _COLS)
            + ", c.created_at, c.updated_at "
            "FROM consum.contracts c JOIN public.customers cu USING (customer_id)")
@@ -130,7 +136,7 @@ async def create(customer_slug: str, payload: Dict[str, Any],
     if not cid:
         raise HTTPException(404, detail=f"Hogar desconocido: {customer_slug}")
     cols = [c for c in _MUTABLE if payload.get(c) is not None]
-    values = [payload[c] for c in cols]
+    values = [_adapt(c, payload[c]) for c in cols]
     sql = (
         f"INSERT INTO consum.contracts (customer_id, created_by, {', '.join(cols)}) "
         f"VALUES (%s, %s, {', '.join(['%s'] * len(cols))}) RETURNING id"
@@ -161,7 +167,7 @@ async def update(contract_id: int, payload: Dict[str, Any]) -> Dict[str, Any]:
                 await cur.execute(
                     f"UPDATE consum.contracts SET {sets}, updated_at = now() "
                     "WHERE id = %s RETURNING id",
-                    [payload[c] for c in cols] + [contract_id],
+                    [_adapt(c, payload[c]) for c in cols] + [contract_id],
                 )
                 row = await cur.fetchone()
     except psycopg.errors.ExclusionViolation:

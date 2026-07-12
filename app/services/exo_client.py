@@ -59,6 +59,14 @@ async def degree_days(lat: float, lon: float, start: str, end: str) -> Optional[
     )
 
 
+async def tariff_components(access_tariff: str = "2.0TD") -> Optional[dict]:
+    """Regulated indexed-price components from api_exo (SSOT, exogenous.
+    tariff_components): {components: {SA: {bands, unit, source, verified}, …},
+    all_verified}. 1 h TTL — they change by BOE order, not intraday. None →
+    callers fall back to the vendored defaults (tariff_components.py)."""
+    return await _get(f"/tariffs/components?access_tariff={access_tariff}", ttl=3600)
+
+
 async def solar_forecast(lat: float, lon: float,
                          peak_kwp: Optional[float] = None,
                          tilt: Optional[float] = None,

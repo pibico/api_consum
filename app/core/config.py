@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     CHAT_PROVIDER: str = "ollama"
     CHAT_MODEL: str = ""       # e.g. "qwen2.5:14b" / "claude-haiku-4-5" — empty = AI off
     AI_ASK_DAILY_LIMIT: int = 30   # chat questions per org·day (cost control)
+    CONVERT_BASE_URL: str = "https://api.pibico.es/convert"
+    CONVERT_API_KEY: str = ""  # api_convert (PDF→Markdown) key — empty = conversion off
 
     # ── Household default location (OE3 climate cross) — v1 single-site;
     #    per-customer coords come later with the org onboarding flow ──

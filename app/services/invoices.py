@@ -35,7 +35,7 @@ _TOTALS = ("energy_kwh", "energy_eur", "power_eur", "fixed_eur",
 def _row_to_dict(row: Sequence[Any], with_breakdown: bool = True) -> Dict[str, Any]:
     keys = ("id", "customer_id", "period_start", "period_end", "status",
             "settlement", *_TOTALS, "breakdown", "created_by", "created_at",
-            "voided_at", "voided_by")
+            "voided_at", "voided_by", "origin", "pdf_filename")
     out: Dict[str, Any] = {}
     for k, v in zip(keys, row):
         if k in _TOTALS and v is not None:
@@ -52,7 +52,8 @@ def _row_to_dict(row: Sequence[Any], with_breakdown: bool = True) -> Dict[str, A
 
 _SELECT = ("SELECT id, customer_id, period_start, period_end, status, settlement, "
            + ", ".join(_TOTALS)
-           + ", breakdown, created_by, created_at, voided_at, voided_by "
+           + ", breakdown, created_by, created_at, voided_at, voided_by, "
+           "origin, pdf_filename "
            "FROM consum.invoices")
 
 
@@ -218,3 +219,101 @@ async def void(invoice_id: int, voided_by: Optional[str]) -> Dict[str, Any]:
     if not row:
         raise HTTPException(404, detail="Factura no encontrada o ya anulada")
     return await get(invoice_id)
+
+
+async def store_uploaded(customer_slug: str, pdf_bytes: bytes, filename: str,
+                         extracted: Optional[Dict[str, Any]],
+                         created_by: Optional[str],
+                         markdown: Optional[str] = None) -> Dict[str, Any]:
+    """Archive a REAL retailer invoice uploaded by the user (origin='uploaded',
+    status='uploaded' — outside the closed-period exclusion). Stores the PDF
+    inline (pilot scale) + the AI extraction as `breakdown` for the detail
+    view. Period/total come from the extraction when present; a missing period
+    falls back to the upload date so the row is still listable."""
+    ids = await consumption._slugs_to_ids([customer_slug])
+    cid = ids.get(customer_slug)
+    if not cid:
+        raise HTTPException(404, detail=f"Hogar desconocido: {customer_slug}")
+    ex = extracted or {}
+
+    def _d(key: str) -> Optional[str]:
+        v = ex.get(key)
+        if isinstance(v, str) and len(v) == 10:
+            try:
+                date.fromisoformat(v)
+                return v
+            except ValueError:
+                return None
+        return None
+
+    today = date.today().isoformat()
+    start = _d("billing_period_start") or today
+    end = _d("billing_period_end") or start
+    if end < start:
+        start, end = end, start
+    total = ex.get("total_eur")
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                """INSERT INTO consum.invoices
+                     (customer_id, period_start, period_end, status, origin,
+                      total_eur, breakdown, pdf, pdf_filename, created_by)
+                   VALUES (%s, %s, %s, 'uploaded', 'uploaded', %s, %s, %s, %s, %s)
+                   RETURNING id""",
+                (cid, start, end, total if isinstance(total, (int, float)) else 0,
+                 Jsonb({"uploaded": True, "extracted": ex,
+                        "markdown": (markdown or "")[:60000] or None}),
+                 pdf_bytes, filename, created_by),
+            )
+            new_id = (await cur.fetchone())[0]
+    logger.info("uploaded invoice %s stored for %s (%s, %s bytes)",
+                new_id, customer_slug, filename, len(pdf_bytes))
+    return await get(new_id)
+
+
+async def get_pdf(invoice_id: int) -> Optional[Tuple[bytes, str]]:
+    """The stored PDF of an UPLOADED invoice (None for generated ones)."""
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                "SELECT pdf, pdf_filename FROM consum.invoices "
+                "WHERE id = %s AND pdf IS NOT NULL", (invoice_id,))
+            row = await cur.fetchone()
+    return (bytes(row[0]), row[1] or "factura.pdf") if row else None
+
+
+async def previous_closed(customer_id: str, before_start: str) -> Optional[Dict[str, Any]]:
+    """The most recent CLOSED invoice starting before `before_start` for the
+    same customer — feeds the plain-language comparison in /explain."""
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                _SELECT + " WHERE customer_id = %s AND status = 'closed' "
+                "AND period_start < %s ORDER BY period_start DESC LIMIT 1",
+                (customer_id, before_start))
+            row = await cur.fetchone()
+    return _row_to_dict(row) if row else None
+
+
+async def set_uploaded_markdown(invoice_id: int, markdown: str) -> None:
+    """Lazy backfill: persist the converted markdown of an uploaded invoice
+    (rows archived before md persistence existed). Merges into breakdown."""
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                "UPDATE consum.invoices SET breakdown = breakdown || %s "
+                "WHERE id = %s AND origin = 'uploaded'",
+                (Jsonb({"markdown": markdown[:60000]}), invoice_id))
+
+
+async def history_before(customer_id: str, before_start: str,
+                         limit: int = 6) -> List[Dict[str, Any]]:
+    """Recent invoices (closed AND uploaded, newest first) starting before
+    `before_start` — the deterministic baseline for anomaly detection."""
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                _SELECT + " WHERE customer_id = %s AND status != 'void' "
+                "AND period_start < %s ORDER BY period_start DESC LIMIT %s",
+                (customer_id, before_start, limit))
+            return [_row_to_dict(r, with_breakdown=False) for r in await cur.fetchall()]

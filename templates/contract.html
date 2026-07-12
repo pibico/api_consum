@@ -4,6 +4,7 @@
 {% block page_title %}Contrato{% endblock %}
 {% block topbar_actions %}
 <select id="ct-customer" class="pibico-select" style="width:auto;min-width:150px;display:none;" onchange="CtPage.onCustomerChange()"></select>
+<button class="btn btn-sm" id="ct-upload-btn" style="display:none;" onclick="CtPage.openUpload()" data-i18n="ct.uploadBtn">Sube tu contrato</button>
 <button class="btn btn-sm btn-primary" id="ct-new-btn" style="display:none;" onclick="CtPage.openForm()" data-i18n="ct.newBtn">Nuevo contrato</button>
 {% endblock %}
 
@@ -56,6 +57,39 @@
   </div>
 </div>
 
+<!-- Upload + AI-read panel (right slide panel — the "place to give the contract") -->
+<aside class="slide-panel" id="uploadPanel" aria-hidden="true">
+  <div class="slide-panel-header">
+    <h2 data-i18n="ct.uploadTitle">Sube tu contrato</h2>
+    <button type="button" class="panel-close" onclick="CtPage.closeUpload()" aria-label="Cerrar">&times;</button>
+  </div>
+  <div class="slide-panel-body" style="padding:16px 20px;overflow-y:auto;display:flex;flex-direction:column;gap:12px;font-size:0.85rem;">
+    <p class="text-muted" style="margin:0;" data-i18n="ct.upIntro">Sube una foto o el PDF de tu contrato (o de una factura) y lo leemos por ti. Después podrás revisar los datos antes de guardar.</p>
+
+    <div>
+      <label style="font-weight:600;" data-i18n="ct.upFile">Documento (PDF o foto)</label>
+      <input type="file" id="ct-up-file" accept="application/pdf,image/*,.md,.txt" class="pibico-input" style="padding:6px;">
+    </div>
+
+    <label style="display:flex;align-items:center;gap:8px;font-size:0.78rem;color:var(--color-text-light);">
+      <input type="checkbox" id="ct-up-vlm">
+      <span data-i18n="ct.upVlm">Es una foto o un escaneo (lectura más lenta pero mejor)</span>
+    </label>
+
+    <div>
+      <label data-i18n="ct.upOrText">…o pega aquí el texto de tu contrato</label>
+      <textarea id="ct-up-text" rows="5" class="pibico-input" data-i18n-placeholder="ct.upTextPh" placeholder="Pega el texto de la ficha de tarifa o del contrato"></textarea>
+    </div>
+
+    <div id="ct-up-status" style="font-size:0.8rem;min-height:1.1em;"></div>
+
+    <div style="display:flex;gap:8px;">
+      <button type="button" class="btn btn-primary" id="ct-up-read" onclick="CtPage.readContract()" data-i18n="ct.upReadBtn">Leer con IA</button>
+      <button type="button" class="btn" onclick="CtPage.closeUpload()" data-i18n="ct.cancelBtn">Cancelar</button>
+    </div>
+  </div>
+</aside>
+
 <!-- Contract form (right slide panel — pibiCo rule: panels, never modals) -->
 <aside class="slide-panel" id="contractPanel" aria-hidden="true">
   <div class="slide-panel-header">
@@ -64,6 +98,8 @@
   </div>
   <div class="slide-panel-body" style="padding:16px 20px;overflow-y:auto;">
     <form id="ct-form" onsubmit="return CtPage.save(event)" style="display:flex;flex-direction:column;gap:10px;font-size:0.85rem;">
+
+      <div id="ct-review-note" style="display:none;background:rgba(70,130,180,0.10);border:1px solid rgba(70,130,180,0.35);border-radius:8px;padding:8px 10px;font-size:0.78rem;color:#2c5171;"></div>
 
       <label style="font-weight:600;" data-i18n="ct.fType">Tipo de contrato</label>
       <div style="display:flex;gap:6px;">
@@ -111,15 +147,15 @@
         <p class="text-muted" style="margin:4px 0 0;font-size:0.7rem;" data-i18n="ct.fixedHint">Si tu contrato tiene precio único, rellena solo P1.</p>
       </fieldset>
 
-      <!-- Indexed group -->
+      <!-- Indexed group — component matrix (api_exo parity) -->
       <fieldset id="ct-g-indexed" style="border:1px solid rgba(0,0,0,0.08);border-radius:8px;padding:8px 10px;display:none;">
-        <legend style="font-size:0.75rem;font-weight:600;" data-i18n="ct.gIndexed">Indexado (OMIE + margen)</legend>
-        <div><label data-i18n="ct.fMargin">Margen comercializador (€/kWh) *</label>
-          <input type="number" step="0.000001" min="0" class="pibico-input" id="ct-f-margin"></div>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:6px;">
-          <div><label data-i18n-title="ct.passthruHelp" title="Peajes y cargos por periodo — OMIE no los incluye">Peajes P1</label><input type="number" step="0.000001" min="0" class="pibico-input" id="ct-f-pp1" value="0"></div>
-          <div><label>Peajes P2</label><input type="number" step="0.000001" min="0" class="pibico-input" id="ct-f-pp2" value="0"></div>
-          <div><label>Peajes P3</label><input type="number" step="0.000001" min="0" class="pibico-input" id="ct-f-pp3" value="0"></div>
+        <legend style="font-size:0.75rem;font-weight:600;" data-i18n="ct.gIndexed">Precio indexado — componentes</legend>
+        <p class="text-muted" style="margin:0 0 6px;font-size:0.7rem;" data-i18n="ct.compHint">Final = [(PMD + SA + CR + DSV)·(1+PP) + CC]·(1+IM) + ATR + BS. PMD = pool OMIE en vivo. Los regulados (BOE) vienen por defecto; edita sobre todo CC (el margen de tu comercializadora).</p>
+        <div style="overflow-x:auto;">
+          <table id="ct-comp-table" style="width:100%;border-collapse:collapse;font-size:0.72rem;">
+            <thead id="ct-comp-thead"></thead>
+            <tbody id="ct-comp-tbody"></tbody>
+          </table>
         </div>
       </fieldset>
 

@@ -8,15 +8,30 @@
 {% endblock %}
 
 {% block content %}
-{# Facturas — closed billing periods. Closing freezes a settlement document
-   (contract snapshot + full breakdown); a closed invoice is immutable (void,
-   never edit) and downloadable as a branded PDF (PRO). #}
+{# Facturas — THE single user-facing entry point (2026-07-12 design): upload
+   your real invoice → AI reads it → one plain question if needed → the supply
+   contract is created/updated BEHIND THE SCENES (the user never sees the
+   "contract" concept; /app/contract remains the advanced editor). Below, the
+   closed billing periods (generated invoices) as before. #}
+
+<!-- Tu tarifa (plain language) + upload CTA -->
+<div class="glass-panel" style="padding:0.9rem 1.1rem;margin-bottom:1rem;">
+  <h4 style="margin:0 0 0.5rem;font-size:0.85rem;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+    <span data-i18n="inv.tariffTitle">Tu tarifa</span>
+    <span style="margin-left:auto;display:flex;gap:6px;">
+      <button class="btn btn-sm btn-primary" id="iv-upload-btn" onclick="IvPage.openUpload()" data-i18n="inv.uploadBtn">Sube tu factura</button>
+      <button class="btn btn-sm" id="iv-fix-btn" onclick="IvPage.openFix()" data-i18n="inv.fixBtn">Corregir</button>
+    </span>
+  </h4>
+  <div id="iv-tariff-body"><span class="spinner"></span></div>
+</div>
 
 <div class="glass-panel">
   <div class="filters-bar" style="justify-content:space-between;">
     <h3 data-i18n="inv.listTitle">Facturas cerradas</h3>
     <span class="text-muted" id="iv-count" style="font-size:0.8rem;"></span>
   </div>
+  <div id="iv-pager-top"></div>
   <div class="table-scroll">
     <table class="data-table" id="iv-table">
       <thead><tr>
@@ -30,7 +45,148 @@
       <tbody id="iv-tbody"><tr><td colspan="6" class="text-center"><span class="spinner"></span></td></tr></tbody>
     </table>
   </div>
+  <div id="iv-pager-bottom"></div>
 </div>
+
+<!-- Fix-your-tariff panel: the plain-language essentials (no jargon, no page
+     navigation — pibiCo rule). Full editor stays a small operator link. -->
+<aside class="slide-panel" id="tariffFixPanel" aria-hidden="true">
+  <div class="slide-panel-header">
+    <h2 data-i18n="inv.fixTitle">Corregir tu tarifa</h2>
+    <button type="button" class="panel-close" onclick="IvPage.closeFix()" aria-label="Cerrar">&times;</button>
+  </div>
+  <div class="slide-panel-body" style="padding:16px 20px;overflow-y:auto;display:flex;flex-direction:column;gap:12px;font-size:0.85rem;">
+    <div>
+      <label style="font-weight:600;" data-i18n="inv.fxRetailer">Tu compañía de la luz</label>
+      <input class="pibico-input" id="iv-fx-retailer" placeholder="Iberdrola, Endesa, Masnorte…">
+    </div>
+    <div>
+      <label style="font-weight:600;" data-i18n="inv.fxType">¿Cómo pagas la luz?</label>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
+        <button type="button" class="btn iv-fx-type" id="iv-fx-t-fixed" onclick="IvPage.fixType('fixed')" style="text-align:left;" data-i18n="inv.q1Fixed">Pago siempre lo mismo por kWh</button>
+        <button type="button" class="btn iv-fx-type" id="iv-fx-t-indexed" onclick="IvPage.fixType('indexed')" style="text-align:left;" data-i18n="inv.q1Indexed">Varía según el mercado</button>
+        <button type="button" class="btn iv-fx-type" id="iv-fx-t-pvpc" onclick="IvPage.fixType('pvpc')" style="text-align:left;" data-i18n="inv.fxPvpc">Tengo la tarifa regulada (PVPC)</button>
+      </div>
+    </div>
+    <div id="iv-fx-prices" style="display:none;">
+      <label style="font-weight:600;" data-i18n="inv.fxPrices">Lo que pagas por kWh (de tu factura)</label>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px;">
+        <div><label style="font-size:0.72rem;" data-i18n="inv.fxP1">Caro (punta)</label><input type="number" step="0.000001" min="0" class="pibico-input" id="iv-fx-ep1"></div>
+        <div><label style="font-size:0.72rem;" data-i18n="inv.fxP2">Medio (llano)</label><input type="number" step="0.000001" min="0" class="pibico-input" id="iv-fx-ep2"></div>
+        <div><label style="font-size:0.72rem;" data-i18n="inv.fxP3">Barato (valle)</label><input type="number" step="0.000001" min="0" class="pibico-input" id="iv-fx-ep3"></div>
+      </div>
+      <p class="text-muted" style="margin:4px 0 0;font-size:0.7rem;" data-i18n="inv.fxPricesHint">Si tu precio es único, rellena solo el primero.</p>
+    </div>
+    <div>
+      <label style="font-weight:600;" data-i18n="inv.fxPower">Potencia contratada (kW)</label>
+      <input type="number" step="0.1" min="0" max="15" class="pibico-input" id="iv-fx-kw" placeholder="4,6" style="width:120px;">
+      <p class="text-muted" style="margin:4px 0 0;font-size:0.7rem;" data-i18n="inv.fxPowerHint">Viene en tu factura como «potencia contratada».</p>
+    </div>
+    <div id="iv-fx-status" style="font-size:0.8rem;min-height:1.1em;"></div>
+    <div style="display:flex;gap:8px;">
+      <button type="button" class="btn btn-primary" id="iv-fx-save" onclick="IvPage.saveFix()" data-i18n="inv.fxSaveBtn">Guardar</button>
+      <button type="button" class="btn" onclick="IvPage.closeFix()" data-i18n="inv.cancelBtn">Cancelar</button>
+    </div>
+    <p class="text-muted" style="margin:0;font-size:0.7rem;">
+      <a href="{{ root }}/app/contract" style="color:var(--color-text-light);" data-i18n="inv.fxFullEditor">Editor completo (operadores) →</a>
+    </p>
+  </div>
+</aside>
+
+<!-- Upload-your-invoice panel: 3 steps (upload → plain question → confirm) -->
+<aside class="slide-panel" id="uploadInvoicePanel" aria-hidden="true">
+  <div class="slide-panel-header">
+    <h2 data-i18n="inv.upTitle">Sube tu factura</h2>
+    <button type="button" class="panel-close" onclick="IvPage.closeUpload()" aria-label="Cerrar">&times;</button>
+  </div>
+  <div class="slide-panel-body" style="padding:16px 20px;overflow-y:auto;display:flex;flex-direction:column;gap:12px;font-size:0.85rem;">
+
+    <!-- Step 1: choose document -->
+    <div id="iv-up-step1" style="display:flex;flex-direction:column;gap:12px;">
+      <p class="text-muted" style="margin:0;" data-i18n="inv.upIntro">Sube una foto o el PDF de tu última factura de la luz (o de tu contrato, si lo tienes). La leemos por ti y configuramos tus precios — sin que tengas que entender nada.</p>
+      <div>
+        <label style="font-weight:600;" data-i18n="inv.upFile">Documento (PDF o foto)</label>
+        <input type="file" id="iv-up-file" accept="application/pdf,image/*,.md,.txt" class="pibico-input" style="padding:6px;">
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.78rem;color:var(--color-text-light);">
+        <input type="checkbox" id="iv-up-vlm">
+        <span data-i18n="inv.upVlm">Es una foto o un escaneo (lectura más lenta pero mejor)</span>
+      </label>
+      <div id="iv-up-status" style="font-size:0.8rem;min-height:1.1em;"></div>
+      <div style="display:flex;gap:8px;">
+        <button type="button" class="btn btn-primary" id="iv-up-read" onclick="IvPage.readInvoice()" data-i18n="inv.upReadBtn">Leer con IA</button>
+        <button type="button" class="btn" onclick="IvPage.closeUpload()" data-i18n="inv.cancelBtn">Cancelar</button>
+      </div>
+    </div>
+
+    <!-- Step 2: one plain question (only when the doc doesn't settle the type) -->
+    <div id="iv-up-step2" style="display:none;flex-direction:column;gap:12px;">
+      <p style="margin:0;font-weight:600;" data-i18n="inv.q1">Una pregunta: ¿cómo pagas la luz?</p>
+      <button type="button" class="btn" style="text-align:left;padding:0.7rem 1rem;" onclick="IvPage.answerType('fixed')">
+        <strong data-i18n="inv.q1Fixed">Pago siempre lo mismo por kWh</strong><br>
+        <span class="text-muted" style="font-size:0.75rem;" data-i18n="inv.q1FixedSub">Mi precio no cambia de un mes a otro</span>
+      </button>
+      <button type="button" class="btn" style="text-align:left;padding:0.7rem 1rem;" onclick="IvPage.answerType('indexed')">
+        <strong data-i18n="inv.q1Indexed">Varía según el mercado</strong><br>
+        <span class="text-muted" style="font-size:0.75rem;" data-i18n="inv.q1IndexedSub">Cada hora o cada mes pago distinto (indexado)</span>
+      </button>
+      <button type="button" class="btn" style="text-align:left;padding:0.7rem 1rem;" onclick="IvPage.answerType('pvpc')">
+        <strong data-i18n="inv.q1Dunno">No lo sé</strong><br>
+        <span class="text-muted" style="font-size:0.75rem;" data-i18n="inv.q1DunnoSub">Usaremos la tarifa regulada (PVPC) como referencia</span>
+      </button>
+    </div>
+
+    <!-- Step 3: plain confirmation -->
+    <div id="iv-up-step3" style="display:none;flex-direction:column;gap:12px;">
+      <div id="iv-up-summary" style="background:rgba(70,130,180,0.10);border:1px solid rgba(70,130,180,0.35);border-radius:8px;padding:10px 12px;font-size:0.85rem;color:#2c5171;"></div>
+      <div id="iv-up-save-status" style="font-size:0.8rem;min-height:1.1em;"></div>
+      <div style="display:flex;gap:8px;">
+        <button type="button" class="btn btn-primary" id="iv-up-save" onclick="IvPage.saveTariff()" data-i18n="inv.upSaveBtn">Sí, es correcto — guardar</button>
+        <button type="button" class="btn" onclick="IvPage.closeUpload()" data-i18n="inv.cancelBtn">Cancelar</button>
+      </div>
+      <p class="text-muted" style="margin:0;font-size:0.72rem;" data-i18n="inv.upFixNote">Si algo no cuadra, puedes afinarlo en el editor avanzado después de guardar.</p>
+    </div>
+
+  </div>
+</aside>
+
+<!-- "Tu factura, explicada" (InvoiceSkill — plain language, no jargon) -->
+<aside class="slide-panel" id="explainPanel" aria-hidden="true">
+  <div class="slide-panel-header">
+    <h2 data-i18n="inv.explainTitle">Tu factura, explicada</h2>
+    <span style="display:flex;gap:6px;align-items:center;">
+      <button type="button" class="btn btn-sm" id="iv-explain-pdf" onclick="IvPage.explainPdf()" data-i18n-title="inv.explainPdf" title="Ver en PDF (imprimible)" style="display:inline-flex;align-items:center;padding:0.3rem 0.5rem;">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15h6"/><path d="M9 11h6"/></svg>
+      </button>
+      <button type="button" class="panel-close" onclick="IvPage.closeExplain()" aria-label="Cerrar">&times;</button>
+    </span>
+  </div>
+  <div class="slide-panel-body" style="padding:16px 20px;overflow-y:auto;">
+    <div id="iv-explain-anomaly" style="display:none;"></div>
+    <div id="iv-explain-body" style="font-size:0.95rem;"></div>
+    <p class="text-muted" style="margin-top:0.5rem;font-size:0.7rem;" data-i18n="inv.explainNote">Explicación generada con IA a partir de los importes de tu factura. Si algo no cuadra, consulta el documento.</p>
+  </div>
+</aside>
+
+<!-- PDF viewer (slide panel — view in place, download optional) -->
+<aside class="slide-panel" id="pdfViewerPanel" aria-hidden="true">
+  <div class="slide-panel-header">
+    <h2 id="iv-pdf-title" data-i18n="inv.pdfViewerTitle">Factura</h2>
+    <span style="display:flex;gap:6px;align-items:center;">
+      <button type="button" class="btn btn-sm" id="iv-pdf-download" data-i18n-title="inv.pdfDownload" title="Descargar" style="display:inline-flex;align-items:center;padding:0.3rem 0.5rem;">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 21h14"/></svg>
+      </button>
+      <button type="button" class="btn btn-sm" id="iv-pdf-expand" onclick="IvPage.togglePdfExpand()" data-i18n-title="inv.pdfExpand" title="Expandir" style="display:inline-flex;align-items:center;padding:0.3rem 0.5rem;">
+        <svg id="iv-pdf-ic-expand" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+        <svg id="iv-pdf-ic-collapse" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+      </button>
+      <button type="button" class="panel-close" onclick="IvPage.closePdf()" aria-label="Cerrar">&times;</button>
+    </span>
+  </div>
+  <div class="slide-panel-body" style="padding:0;display:flex;">
+    <iframe id="iv-pdf-frame" title="PDF" style="flex:1;width:100%;border:0;min-height:calc(100vh - 120px);background:#525659;"></iframe>
+  </div>
+</aside>
 
 <!-- Detail panel (right slide panel) -->
 <aside class="slide-panel" id="invoiceDetail" aria-hidden="true">

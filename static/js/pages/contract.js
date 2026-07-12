@@ -44,13 +44,14 @@
 
   function custQS(sep) { return customer ? ((sep || '?') + 'customer=' + encodeURIComponent(customer)) : ''; }
   function canWrite() {
-    if (!ctx) return false;
-    if (ctx.is_superadmin) return true;
-    return ['editor', 'admin', 'owner'].indexOf(ctx.role || '') >= 0;
+    // Self-service (decision 2026-07-12): any authenticated household member
+    // manages their own supply contract. Backend confines writes via check_slug.
+    return !!ctx;
   }
   function canDelete() {
-    if (!ctx) return false;
-    return ctx.is_superadmin || ['admin', 'owner'].indexOf(ctx.role || '') >= 0;
+    // Self-service (2026-07-12): a member can remove an incorrect contract of
+    // their own home (backend still confines via check_slug).
+    return canWrite();
   }
 
   var TYPE_LABEL = {
@@ -209,8 +210,78 @@
     }).join('');
   }
 
+  // ── Indexed price components (api_exo parity) ─────────────────────────
+  var COMP_IDS = ['SA', 'CR', 'DSV', 'PP', 'CC', 'IM', 'ATR', 'BS'];
+  var BANDS = ['P1', 'P2', 'P3'];
+  var COMP_UNIT = { SA: '€/kWh', CR: '€/kWh', DSV: '€/kWh', PP: '%', CC: '€/kWh', IM: '%', ATR: '€/kWh', BS: '€/kWh' };
+  var COMP_SRC = { SA: 'BOE', CR: 'BOE', DSV: 'BOE', PP: 'REE', CC: 'contrato', IM: 'ayto', ATR: 'BOE', BS: 'BOE' };
+  function defaultComponents() {
+    return {
+      SA: { P1: 0.0042, P2: 0.0038, P3: 0.0035 }, CR: { P1: 0.0161, P2: 0.0102, P3: 0.0039 },
+      DSV: { P1: 0.0021, P2: 0.0021, P3: 0.0021 }, PP: { P1: 0.03, P2: 0.03, P3: 0.03 },
+      CC: { P1: 0.06, P2: 0.04, P3: 0.03 }, IM: { P1: 0.01051, P2: 0.01051, P3: 0.01051 },
+      ATR: { P1: 0.0275, P2: 0.0167, P3: 0.0010 }, BS: { P1: 0.00378, P2: 0.00378, P3: 0.00378 },
+    };
+  }
+  // Regulated base from api_exo (SSOT) — fetched once; the matrix layers
+  // fallback defaults ← api_exo base ← the contract's own values.
+  var compBase = null;
+  function loadCompBase() {
+    if (compBase) return Promise.resolve(compBase);
+    return cfetch('/contracts/components-base').then(function (r) {
+      compBase = r; return r;
+    }).catch(function () { return null; });
+  }
+  // IVA/IEE defaults for NEW contracts come from the SSOT scalars (they change
+  // by decree: IVA 21↔10↔5%, IEE 5.11↔0.5557%) — fallback to legacy defaults.
+  function taxDefaults() {
+    var c = compBase && compBase.components;
+    var iva = (c && c.IVA && c.IVA.bands && c.IVA.bands.ALL != null) ? c.IVA.bands.ALL * 100 : 21;
+    var iee = (c && c.IEE && c.IEE.bands && c.IEE.bands.ALL != null) ? c.IEE.bands.ALL * 100 : 5.11269;
+    return { vat: Math.round(iva * 100) / 100, iee: Math.round(iee * 100000) / 100000 };
+  }
+  function buildCompMatrix(comps) {
+    var d = defaultComponents();
+    var baseComps = (compBase && compBase.components) || {};
+    COMP_IDS.forEach(function (cid) {
+      var bb = baseComps[cid] && baseComps[cid].bands;
+      if (bb) BANDS.forEach(function (b) {
+        if (bb[b] != null) d[cid][b] = Number(bb[b]);
+      });
+    });
+    if (comps) COMP_IDS.forEach(function (cid) {
+      if (comps[cid]) BANDS.forEach(function (b) {
+        if (comps[cid][b] != null) d[cid][b] = Number(comps[cid][b]);
+      });
+    });
+    var thead = '<tr><th style="text-align:left;padding:3px;">' + __t('ct.compComp', 'Componente') + '</th>';
+    BANDS.forEach(function (b) { thead += '<th style="padding:3px;">' + b + '</th>'; });
+    thead += '<th style="padding:3px;">' + __t('ct.compUnit', 'Ud') + '</th><th style="text-align:left;padding:3px;">' + __t('ct.compSrc', 'Fuente') + '</th></tr>';
+    q('ct-comp-thead').innerHTML = thead;
+    q('ct-comp-tbody').innerHTML = COMP_IDS.map(function (cid) {
+      var cells = BANDS.map(function (b) {
+        var hl = cid === 'CC' ? 'background:rgba(70,130,180,0.10);' : '';
+        return '<td style="padding:2px;' + hl + '"><input type="number" step="0.00001" min="0" ' +
+          'style="width:72px;font-size:0.7rem;padding:1px 3px;border:1px solid rgba(0,0,0,0.15);border-radius:3px;" ' +
+          'data-cid="' + cid + '" data-band="' + b + '" value="' + d[cid][b] + '"></td>';
+      }).join('');
+      return '<tr><td style="padding:2px;font-weight:600;">' + cid + '</td>' + cells +
+        '<td style="padding:2px;">' + COMP_UNIT[cid] + '</td>' +
+        '<td style="padding:2px;color:var(--color-text-light);">' + COMP_SRC[cid] + '</td></tr>';
+    }).join('');
+  }
+  function readCompMatrix() {
+    var out = {};
+    document.querySelectorAll('#ct-comp-tbody input[data-cid]').forEach(function (el) {
+      var cid = el.dataset.cid, b = el.dataset.band;
+      (out[cid] = out[cid] || {})[b] = el.value === '' ? 0 : Number(el.value);
+    });
+    return out;
+  }
+
   // ── Form ─────────────────────────────────────────────────────────────
   var formType = 'pvpc';
+  var formComponents = null;   // components to seed the indexed matrix with
 
   function setType(t) {
     formType = t;
@@ -219,6 +290,10 @@
     });
     q('ct-g-fixed').style.display = t === 'fixed' ? '' : 'none';
     q('ct-g-indexed').style.display = t === 'indexed' ? '' : 'none';
+    if (t === 'indexed') {
+      buildCompMatrix(formComponents);                       // instant (fallback)
+      loadCompBase().then(function () { buildCompMatrix(formComponents); });  // re-seed from api_exo
+    }
     q('ct-type-help').textContent = t === 'pvpc'
       ? __t('ct.helpPvpc', 'Tarifa regulada: el precio horario lo publica ESIOS; no hay nada más que configurar en energía.')
       : t === 'fixed'
@@ -244,24 +319,25 @@
     q('ct-f-ep1').value = c && c.energy_p1_eur_kwh != null ? c.energy_p1_eur_kwh : '';
     q('ct-f-ep2').value = c && c.energy_p2_eur_kwh != null ? c.energy_p2_eur_kwh : '';
     q('ct-f-ep3').value = c && c.energy_p3_eur_kwh != null ? c.energy_p3_eur_kwh : '';
-    q('ct-f-margin').value = c && c.margin_eur_kwh != null ? c.margin_eur_kwh : '';
-    q('ct-f-pp1').value = c ? (c.passthru_p1_eur_kwh || 0) : 0;
-    q('ct-f-pp2').value = c ? (c.passthru_p2_eur_kwh || 0) : 0;
-    q('ct-f-pp3').value = c ? (c.passthru_p3_eur_kwh || 0) : 0;
+    // Indexed components: seed the matrix from the stored components, or — for a
+    // legacy contract — from its single margin as CC.P1. setType() builds it.
+    formComponents = c && c.components ? c.components
+      : (c && c.margin_eur_kwh != null ? { CC: { P1: c.margin_eur_kwh } } : null);
     q('ct-f-pw1').value = c && c.power_p1_kw != null ? c.power_p1_kw : '';
     q('ct-f-pw2').value = c && c.power_p2_kw != null ? c.power_p2_kw : '';
     q('ct-f-pwp1').value = c && c.power_p1_eur_kw_day != null ? c.power_p1_eur_kw_day : '';
     q('ct-f-pwp2').value = c && c.power_p2_eur_kw_day != null ? c.power_p2_eur_kw_day : '';
     q('ct-f-rental').value = c ? c.meter_rental_eur_month : 0.81;
     q('ct-f-other').value = c ? c.other_fixed_eur_month : 0;
-    q('ct-f-iee').value = c ? c.electricity_tax_pct : 5.11269;
-    q('ct-f-vat').value = c ? c.vat_pct : 21;
+    q('ct-f-iee').value = c ? c.electricity_tax_pct : taxDefaults().iee;
+    q('ct-f-vat').value = c ? c.vat_pct : taxDefaults().vat;
     q('ct-f-notes').value = c ? (c.notes || '') : '';
     setType(c ? c.contract_type : 'pvpc');
   }
 
   function openForm(edit, id) {
     q('ct-form-error').textContent = '';
+    q('ct-review-note').style.display = 'none';
     var c = null;
     if (edit) {
       c = id != null
@@ -303,10 +379,9 @@
       p.energy_p2_eur_kwh = num('ct-f-ep2');
       p.energy_p3_eur_kwh = num('ct-f-ep3');
     } else if (formType === 'indexed') {
-      p.margin_eur_kwh = num('ct-f-margin');
-      p.passthru_p1_eur_kwh = num('ct-f-pp1') || 0;
-      p.passthru_p2_eur_kwh = num('ct-f-pp2') || 0;
-      p.passthru_p3_eur_kwh = num('ct-f-pp3') || 0;
+      p.components = readCompMatrix();
+      // margin_eur_kwh kept for back-compat readers = CC punta (P1)
+      p.margin_eur_kwh = (p.components.CC && p.components.CC.P1) || 0;
     }
     return p;
   }
@@ -376,17 +451,126 @@
       ctx = c;
       var sel = q('ct-customer');
       var homes = c.customers || [];
-      if (homes.length > 1) {
-        sel.innerHTML = homes.map(function (s) {
-          return '<option value="' + s + '">' + s + '</option>';
+      // Selector BY PLC (app.js pattern): one entry per enrolled gateway,
+      // labeled with its hostname; value = its customer slug (tenancy key).
+      var gateways = (c.devices || []).filter(function (d) {
+        return (d.device_type || '') === 'gateway' || !d.device_type;
+      });
+      if (gateways.length > 1) {
+        sel.innerHTML = gateways.map(function (d) {
+          return '<option value="' + d.customer + '">' + (d.hostname || d.customer) + '</option>';
         }).join('');
         sel.style.display = '';
-        customer = homes[0];
+        customer = gateways[0].customer;
+      } else if (gateways.length === 1) {
+        customer = gateways[0].customer;
       } else if (homes.length === 1) {
         customer = homes[0];
       }
-      q('ct-new-btn').style.display = canWrite() ? '' : 'none';
+      var showWrite = canWrite() ? '' : 'none';
+      q('ct-new-btn').style.display = showWrite;
+      q('ct-upload-btn').style.display = showWrite;
     });
+  }
+
+  // ── Upload + AI read ("place to give the contract") ──────────────────
+  // Multipart POST — a bare fetch, NOT cfetch (which forces JSON Content-Type
+  // and would break the multipart boundary). Same auth + 401 handling.
+  function upfetch(endpoint, formData) {
+    var headers = {};
+    var st = App.state || {};
+    if (st.jwt && st.jwt.length >= 20) headers['Authorization'] = 'Bearer ' + st.jwt;
+    else if (st.apiKey && st.apiKey.length >= 20) headers['X-API-Key'] = st.apiKey;
+    return fetch((window.__ROOT__ || '') + '/api/v1' + endpoint,
+      { method: 'POST', headers: headers, body: formData }).then(function (r) {
+      if (r.status === 401) { App.logout(); return new Promise(function () {}); }
+      return r.json().catch(function () { return {}; }).then(function (body) {
+        if (!r.ok) {
+          var d = body.detail;
+          var msg = (d && (d.message || d)) || ('HTTP ' + r.status);
+          throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+        }
+        return body;
+      });
+    });
+  }
+  function setUpStatus(msg, kind) {
+    var el = q('ct-up-status');
+    el.textContent = msg || '';
+    el.style.color = kind === 'err' ? '#c0392b' : (kind === 'busy' ? '#2c5171' : '');
+  }
+  function openUpload() {
+    q('ct-up-file').value = '';
+    q('ct-up-text').value = '';
+    q('ct-up-vlm').checked = false;
+    setUpStatus('', '');
+    AppUI.openPanel('uploadPanel');
+  }
+  function closeUpload() { AppUI.closePanel('uploadPanel'); }
+
+  function readContract() {
+    var file = q('ct-up-file').files[0];
+    var text = q('ct-up-text').value.trim();
+    if (!file && !text) {
+      setUpStatus(__t('ct.upNeed', 'Sube un archivo o pega el texto de tu contrato.'), 'err');
+      return;
+    }
+    var fd = new FormData();
+    if (file) fd.append('file', file);
+    if (text) fd.append('text', text);
+    fd.append('use_vlm', q('ct-up-vlm').checked ? 'true' : 'false');
+    q('ct-up-read').disabled = true;
+    setUpStatus(__t('ct.upReading', 'Leyendo tu contrato con IA… puede tardar unos segundos.'), 'busy');
+    upfetch('/contracts/extract', fd).then(function (r) {
+      applyExtracted(r.extracted || {});
+      closeUpload();
+    }).catch(function (e) {
+      setUpStatus(e.message || __t('common.error', 'Error'), 'err');
+    }).finally(function () { q('ct-up-read').disabled = false; });
+  }
+
+  // Prefill the contract form with the AI-extracted fields (same field names as
+  // a contract row) and open it for REVIEW — never auto-saves.
+  function applyExtracted(ex) {
+    editingId = null;
+    var d = new Date();
+    var todayLocal = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') +
+      '-' + String(d.getDate()).padStart(2, '0');
+    fillForm({
+      label: ex.product_name || '',
+      retailer: ex.retailer || '',
+      contract_type: ex.contract_type || 'fixed',
+      start_date: (ex.start_date && /^\d{4}-\d{2}-\d{2}$/.test(ex.start_date)) ? ex.start_date : todayLocal,
+      end_date: '',
+      cups: ex.cups || '',
+      energy_p1_eur_kwh: ex.energy_p1_eur_kwh,
+      energy_p2_eur_kwh: ex.energy_p2_eur_kwh,
+      energy_p3_eur_kwh: ex.energy_p3_eur_kwh,
+      margin_eur_kwh: ex.margin_eur_kwh,
+      components: ex.components || null,
+      power_p1_kw: ex.power_p1_kw != null ? ex.power_p1_kw : null,
+      power_p2_kw: ex.power_p2_kw != null ? ex.power_p2_kw : null,
+      power_p1_eur_kw_day: ex.power_p1_eur_kw_day,
+      power_p2_eur_kw_day: ex.power_p2_eur_kw_day,
+      meter_rental_eur_month: ex.meter_rental_eur_month != null ? ex.meter_rental_eur_month : 0.81,
+      other_fixed_eur_month: 0,
+      electricity_tax_pct: taxDefaults().iee,
+      vat_pct: taxDefaults().vat,
+      notes: ex.notes || '',
+    });
+    q('ct-form-title').textContent = __t('ct.reviewTitle', 'Revisa el contrato leído');
+    q('ct-delete-btn').style.display = 'none';
+    q('ct-form-error').textContent = '';
+    var parts = [];
+    if (ex.retailer) parts.push(ex.retailer);
+    if (ex.product_name) parts.push(ex.product_name);
+    var who = parts.join(' · ') || __t('ct.reviewGeneric', 'tu contrato');
+    var note = q('ct-review-note');
+    note.textContent = __t('ct.reviewNote',
+      'Hemos leído {who}. Revisa los datos y añade tu potencia contratada antes de guardar; corrige lo que falte.')
+      .replace('{who}', who);
+    note.style.display = '';
+    AppUI.openPanel('contractPanel');
   }
 
   window.CtPage = {
@@ -396,6 +580,9 @@
     },
     openForm: openForm,
     closeForm: closeForm,
+    openUpload: openUpload,
+    closeUpload: closeUpload,
+    readContract: readContract,
     setType: setType,
     save: save,
     remove: remove,
@@ -410,6 +597,7 @@
     window.onAppReady(function () {
       var now = new Date();
       q('ct-bill-month').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+      loadCompBase();   // warm the SSOT base so tax/matrix defaults are real
       loadContext().then(loadAll).catch(function (e) {
         App.showNotification(__t('common.error', 'Error'), e.message, 'danger');
       });

@@ -29,6 +29,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from app.services import contracts as contracts_svc
 from app.services import exo_client
+from app.services import tariff_components
 
 logger = logging.getLogger("consum.pricing")
 
@@ -98,9 +99,33 @@ def _fixed_price(contract: Dict[str, Any], period: str) -> Optional[float]:
     return p if p is not None else contract.get("energy_p1_eur_kwh")
 
 
-def _indexed_price(contract: Dict[str, Any], omie_kwh: float, period: str) -> float:
+def _indexed_price(contract: Dict[str, Any], omie_kwh: float, period: str,
+                   exo_base: Optional[Dict[str, Dict[str, float]]] = None) -> float:
+    """Indexed €/kWh for one OMIE slot. With the component matrix
+    (contract['components']) it applies the full formula
+    Final = [(PMD+SA+CR+DSV)·(1+PP)+CC]·(1+IM)+ATR+BS (PMD = this slot's OMIE),
+    layering defaults ← api_exo SSOT base ← contract; otherwise the legacy
+    OMIE + margin + passthru."""
+    comps = contract.get("components")
+    if comps:
+        data = tariff_components.merged(contract.get("access_tariff") or "2.0TD",
+                                        comps, base=exo_base)
+        return tariff_components.final_price_eur_kwh(data, period, omie_kwh)
     passthru = contract.get(f"passthru_{period.lower()}_eur_kwh") or 0.0
     return omie_kwh + (contract.get("margin_eur_kwh") or 0.0) + passthru
+
+
+async def _exo_bases_for(contract_list: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """One api_exo components fetch per access_tariff among the indexed
+    contracts that carry a component matrix (1 h client cache underneath)."""
+    bases: Dict[str, Any] = {}
+    for c in contract_list:
+        if c and c.get("contract_type") == "indexed" and c.get("components"):
+            at = c.get("access_tariff") or "2.0TD"
+            if at not in bases:
+                bases[at] = tariff_components.base_from_exo(
+                    await exo_client.tariff_components(at))
+    return bases
 
 
 def _covering(contracts: List[Dict[str, Any]], ds: str) -> Optional[Dict[str, Any]]:
@@ -135,6 +160,8 @@ async def price_map(contract_list: List[Dict[str, Any]], start: str, end: str) -
     omie = await exo_client.omie_qmap(start, end) if "indexed" in types_needed else {}
     periods = (await period_map(start, end, pvpc=pvpc)
                if types_needed & {"fixed", "indexed"} else {})
+    exo_bases = (await _exo_bases_for(contract_list)
+                 if "indexed" in types_needed else {})
 
     out: dict = {}
     d = d0
@@ -155,7 +182,8 @@ async def price_map(contract_list: List[Dict[str, Any]], start: str, end: str) -
                 elif ctype == "indexed":
                     if key in omie:
                         period = periods.get(key) or _band(h, weekend)
-                        out[key] = {"price_eur_kwh": _indexed_price(c, omie[key], period),
+                        base = exo_bases.get(c.get("access_tariff") or "2.0TD")
+                        out[key] = {"price_eur_kwh": _indexed_price(c, omie[key], period, base),
                                     "period": period, "source": "indexed"}
                 else:  # pvpc-type contract or uncovered day
                     if key in pvpc:
@@ -235,7 +263,9 @@ async def price_now(contract: Optional[Dict[str, Any]]) -> Optional[Dict[str, An
     omie = await exo_client.omie_qmap(today, today)
     if (today, q) not in omie:
         return None
-    return {"price_eur_kwh": _indexed_price(contract, omie[(today, q)], period),
+    bases = await _exo_bases_for([contract])
+    base = bases.get(contract.get("access_tariff") or "2.0TD")
+    return {"price_eur_kwh": _indexed_price(contract, omie[(today, q)], period, base),
             "period": period, "source": "indexed"}
 
 
