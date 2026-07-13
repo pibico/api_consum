@@ -357,21 +357,32 @@ async def catalog_get(cid: int, ctx: ConsumContext = Depends(consum_context)):
     return row
 
 
+# The catalog is a GLOBAL shared reference (all orgs read it) — writes are
+# platform-staff only. require_role("admin") is NOT enough: a household
+# owner/admin satisfies it and could edit every org's catalog.
+def _require_staff(ctx: ConsumContext) -> None:
+    if not ctx.is_superadmin:
+        raise HTTPException(403, detail="Solo el personal de la plataforma puede editar el catálogo")
+
+
 @router.post("/catalog", status_code=201)
 async def catalog_create(body: CatalogIn,
-                         ctx: ConsumContext = Depends(require_role("admin"))):
+                         ctx: ConsumContext = Depends(consum_context)):
+    _require_staff(ctx)
     return await tariff_catalog.create(body.model_dump(), (ctx.user or {}).get("email"))
 
 
 @router.put("/catalog/{cid}")
 async def catalog_update(cid: int, body: CatalogUpdate,
-                         ctx: ConsumContext = Depends(require_role("admin"))):
+                         ctx: ConsumContext = Depends(consum_context)):
+    _require_staff(ctx)
     return await tariff_catalog.update(cid, body.model_dump(exclude_unset=True),
                                        (ctx.user or {}).get("email"))
 
 
 @router.delete("/catalog/{cid}")
 async def catalog_delete(cid: int,
-                         ctx: ConsumContext = Depends(require_role("admin"))):
+                         ctx: ConsumContext = Depends(consum_context)):
+    _require_staff(ctx)
     await tariff_catalog.delete(cid)
     return {"deleted": cid}

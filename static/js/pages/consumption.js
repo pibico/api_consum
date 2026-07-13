@@ -122,20 +122,41 @@
 
   function custQS(sep) { return device ? ((sep || '&') + 'device=' + encodeURIComponent(device)) : ''; }
 
+  // apiFetch clone that only logs out on 401 — App.apiFetch logs out on 403
+  // too, which BOOTS a basic-tier user instead of showing the PRO upsell.
+  function cfetch(endpoint, options) {
+    options = options || {};
+    var headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers);
+    var st = App.state || {};
+    if (st.jwt && st.jwt.length >= 20) headers['Authorization'] = 'Bearer ' + st.jwt;
+    else if (st.apiKey && st.apiKey.length >= 20) headers['X-API-Key'] = st.apiKey;
+    return fetch((window.__ROOT__ || '') + '/api/v1' + endpoint,
+      Object.assign({}, options, { headers: headers })).then(function (r) {
+      if (r.status === 401) { App.logout(); return new Promise(function () {}); }
+      return r.json().catch(function () { return {}; }).then(function (body) {
+        if (!r.ok) {
+          var d = body.detail;
+          var msg = (d && (d.message || d)) || ('HTTP ' + r.status);
+          var err = new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+          err.status = r.status; err.code = d && d.code;
+          throw err;
+        }
+        return body;
+      });
+    });
+  }
+
   // ── PRO cards (F4): forecast + bands; 403 TIER_REQUIRED → upsell ──
   function upsellOf(e) {
-    try {
-      var d = JSON.parse(e.message);
-      if (d.code === 'TIER_REQUIRED') {
-        return '<div class="pro-upsell">' + __t('cons.proUpsell',
-          'Disponible en el plan PRO — predicción de factura, desglose por franjas y exportación.') + '</div>';
-      }
-    } catch (_) {}
+    if (e && e.code === 'TIER_REQUIRED') {
+      return '<div class="pro-upsell">' + __t('cons.proUpsell',
+        'Disponible en el plan PRO — predicción de factura, desglose por franjas y exportación.') + '</div>';
+    }
     return '<span class="text-muted">—</span>';
   }
 
   function loadForecast() {
-    return App.apiFetch('/consumption/forecast-month' + custQS('?')).then(function (r) {
+    return cfetch('/consumption/forecast-month' + custQS('?')).then(function (r) {
       q('cons-forecast').innerHTML =
         '<div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:baseline;">' +
         '<div><div class="kpi-value" style="font-size:1.7rem;color:#e67e22;">' + fmt(r.forecast_cost_eur) + ' €</div>' +
@@ -154,7 +175,7 @@
 
   function loadBands() {
     var m = (q('cons-date').value || today()).slice(0, 7);
-    return App.apiFetch('/consumption/bands?month=' + m + custQS()).then(function (r) {
+    return cfetch('/consumption/bands?month=' + m + custQS()).then(function (r) {
       q('cons-bands-month').textContent = '· ' + m;
       var total = r.total_kwh || 0;
       q('cons-bands').innerHTML = (r.values || []).map(function (v) {

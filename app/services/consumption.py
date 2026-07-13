@@ -354,19 +354,23 @@ async def power_peak_hourly(slugs: Sequence[str], date: str,
 
 
 async def summary(slugs: Sequence[str]) -> Dict[str, Any]:
-    """kWh today / last 7 days / last 30 days (whole house)."""
+    """kWh today / last 7 days / last 30 days (whole house).
+
+    Buckets each day BEFORE the MAX-MIN delta (mirroring energy_series): one
+    GREATEST(MAX-MIN) over a whole week/month window silently undercounts to
+    near-zero when the cumulative counter resets mid-window."""
     ids = await _slugs_to_ids(slugs)
     if not ids:
         return {"today_kwh": 0, "week_kwh": 0, "month_kwh": 0}
     sql = """
         SELECT SUM(kwh) FROM (
-            SELECT device_id, channel,
+            SELECT device_id, channel, time_bucket('1 day', ts) AS bucket,
                    GREATEST(MAX(value_num) - MIN(value_num), 0) / 1000.0 AS kwh
             FROM sensor_data
             WHERE customer_id::text = ANY(%s) AND variable = 'apower_energy'
               AND {house_channel}
               AND ts >= {since_expr}
-            GROUP BY device_id, channel
+            GROUP BY device_id, channel, bucket
         ) sub
     """
     out: Dict[str, Any] = {}

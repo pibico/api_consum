@@ -12,6 +12,30 @@
 
   function q(id) { return document.getElementById(id); }
 
+  // apiFetch clone that only logs out on 401 — App.apiFetch logs out on 403
+  // too, which BOOTS a basic-tier user instead of showing the PRO upsell.
+  function cfetch(endpoint, options) {
+    options = options || {};
+    var headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers);
+    var st = App.state || {};
+    if (st.jwt && st.jwt.length >= 20) headers['Authorization'] = 'Bearer ' + st.jwt;
+    else if (st.apiKey && st.apiKey.length >= 20) headers['X-API-Key'] = st.apiKey;
+    return fetch((window.__ROOT__ || '') + '/api/v1' + endpoint,
+      Object.assign({}, options, { headers: headers })).then(function (r) {
+      if (r.status === 401) { App.logout(); return new Promise(function () {}); }
+      return r.json().catch(function () { return {}; }).then(function (body) {
+        if (!r.ok) {
+          var d = body.detail;
+          var msg = (d && (d.message || d)) || ('HTTP ' + r.status);
+          var err = new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+          err.status = r.status; err.code = d && d.code;
+          throw err;
+        }
+        return body;
+      });
+    });
+  }
+
   function scheduleRetry() {
     clearTimeout(retryTimer);
     retryTimer = setTimeout(load, 60000);
@@ -27,9 +51,9 @@
     clearTimeout(retryTimer);
     showState('<span class="spinner"></span> <span class="text-muted" style="font-size:0.85rem;">' +
       __t('plc.connecting', 'Conectando con tu PLC…') + '</span>');
-    App.apiFetch('/plc/session' + (customer ? '?customer=' + encodeURIComponent(customer) : '')).then(function (r) {
+    cfetch('/plc/session' + (customer ? '?customer=' + encodeURIComponent(customer) : '')).then(function (r) {
       // Multi-PLC: one gateway per household — selector only when >1
-      var gws = r.gateways || [];
+      var gws = (r && r.gateways) || [];
       var sel = q('plc-select');
       if (gws.length > 1 && !sel.options.length) {
         sel.innerHTML = gws.map(function (g) {
@@ -55,7 +79,7 @@
     }).catch(function (e) {
       var detail = {};
       try { detail = JSON.parse(e.message); } catch (_) {}
-      if (detail.code === 'TIER_REQUIRED') {
+      if (e.code === 'TIER_REQUIRED' || detail.code === 'TIER_REQUIRED') {
         showState('<h3 style="margin-top:0;">' + __t('plc.upsellTitle', 'Acceso remoto a tu PLC') + '</h3>' +
           '<p class="sav-explain" style="max-width:520px;margin:0.5rem auto 0;">' +
           __t('plc.upsellBody', 'Ver y manejar la caja de tu casa desde cualquier lugar forma parte del plan PRO.') + '</p>');
