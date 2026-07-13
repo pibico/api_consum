@@ -163,20 +163,6 @@ window.AppUI.confirm = function (message) {
   });
 };
 
-function fmt(n, decimals) {
-  if (n == null) return '—';
-  return Number(n).toLocaleString(undefined, { maximumFractionDigits: decimals || 0 });
-}
-
-function timeAgo(iso) {
-  if (!iso) return '—';
-  var diff = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (diff < 60) return Math.round(diff) + 's ago';
-  if (diff < 3600) return Math.round(diff / 60) + 'm ago';
-  if (diff < 86400) return Math.round(diff / 3600) + 'h ago';
-  return Math.round(diff / 86400) + 'd ago';
-}
-
 /** Init */
 function initApp() {
   // No client-side auth guard: the SERVER gate (superadmin cookie check in
@@ -211,4 +197,4 @@ if (document.readyState === 'loading') {
   initApp();
 }
 
-window.App = { apiFetch, showNotification, fmt, timeAgo, logout, state: AppState };
+window.App = { apiFetch, showNotification, logout, state: AppState };

@@ -23,6 +23,7 @@ on the next fetch — no invalidation problem by construction.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -58,16 +59,19 @@ async def period_map(start: str, end: str,
     all four quarters of an hour share its band."""
     d0, d1 = date.fromisoformat(start), date.fromisoformat(end)
     out: Dict[Tuple[str, str], str] = {}
+    weeks = []
     d = d0
     while d <= d1:
-        wk = await exo_client.tariff_schedule_week(d.isoformat())
+        weeks.append(d.isoformat())
+        d += timedelta(days=7)
+    results = await asyncio.gather(*(exo_client.tariff_schedule_week(w) for w in weeks))
+    for wk in results:
         for row in (wk or {}).get("rows") or []:
             dl = str(row.get("datetime_local") or "")
             band = row.get("band")
             if len(dl) >= 13 and band:
                 for mm in QUARTERS:
                     out[(dl[:10], f"{dl[11:13]}:{mm}")] = band
-        d += timedelta(days=7)
     # Fallbacks for any quarter the schedule didn't cover
     if pvpc is None:
         pvpc = await exo_client.pvpc_qmap(start, end)

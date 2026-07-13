@@ -169,21 +169,29 @@ async def omie_qmap(start: str, end: str) -> dict:
     31 days, so long ranges are fetched in chunks. `status:"no_data"` days
     (e.g. tomorrow before the auction) simply leave gaps — never a 404.
     """
+    import asyncio
     from datetime import date, timedelta
     d0, d1 = date.fromisoformat(start), date.fromisoformat(end)
     out: dict = {}
+    chunks: list = []
     while d0 <= d1:
         chunk_end = min(d0 + timedelta(days=30), d1)
-        data = await _get(
-            f"/prices/omie?start_date={d0.isoformat()}&end_date={chunk_end.isoformat()}",
+        chunks.append((d0, chunk_end))
+        d0 = chunk_end + timedelta(days=1)
+    coros = [
+        _get(
+            f"/prices/omie?start_date={c0.isoformat()}&end_date={c_end.isoformat()}",
             ttl=3600,
         )
+        for (c0, c_end) in chunks
+    ]
+    results = await asyncio.gather(*coros)
+    for data in results:
         for row in (data or {}).get("prices") or []:
             dl = str(row.get("datetime_local") or "")
             if len(dl) >= 16:
                 kwh = row.get("price_eur_kwh") or ((row.get("price_eur_mwh") or 0) / 1000.0)
                 out[(dl[:10], dl[11:16])] = float(kwh)
-        d0 = chunk_end + timedelta(days=1)
     return _fill_quarters(out)
 
 

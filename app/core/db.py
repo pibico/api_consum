@@ -77,14 +77,3 @@ async def raw_connection() -> AsyncIterator[psycopg.AsyncConnection]:
     pool = get_pool()
     async with pool.connection() as con:
         yield con
-
-
-async def ping() -> bool:
-    """Liveness probe — returns True on successful SELECT 1."""
-    try:
-        async with raw_connection() as con:
-            await con.execute("SELECT 1")
-        return True
-    except Exception as exc:
-        logger.error("TS ping failed: %s", exc)
-        return False

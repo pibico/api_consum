@@ -7,6 +7,7 @@ closing needs role editor+, void needs admin+, the PDF is a PRO feature.
 from __future__ import annotations
 
 import asyncio
+from collections import OrderedDict
 from datetime import date as _date
 from typing import Optional
 
@@ -22,6 +23,19 @@ from app.api.v1.endpoints.consumption import _slugs
 from app.services import contracts, invoices
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
+
+
+class _LRUCache(OrderedDict):
+    """Bounded LRU for invoice-derived results. Invoices are immutable once
+    stored, so evicting an old entry only triggers a harmless recompute with
+    identical output — this just caps unbounded process-lifetime growth."""
+    _CAP = 512
+
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        self.move_to_end(key)
+        if len(self) > self._CAP:
+            self.popitem(last=False)
 
 
 class CloseIn(BaseModel):
@@ -44,6 +58,17 @@ async def list_invoices(customer: Optional[str] = Query(None),
     """Invoices in the caller's scope (newest first, no breakdown blob)."""
     slugs = await _slugs(ctx, customer)
     return {"values": await invoices.list_for(slugs)}
+
+
+@router.get("/billing-period")
+async def billing_period(customer: Optional[str] = Query(None),
+                         ctx: ConsumContext = Depends(require_tier("pro"))):
+    """PRO — the OPEN billing period (anchored on the invoice history) costed
+    live + projection to the expected close. The 'factura en curso' KPI."""
+    slugs = await _slugs(ctx, customer, min_tier="pro")
+    if not slugs:
+        raise HTTPException(400, detail="no household in scope")
+    return await invoices.billing_period_live(slugs[0])
 
 
 @router.get("/{invoice_id}")
@@ -114,7 +139,7 @@ async def close(body: CloseIn,
                 ctx: ConsumContext = Depends(require_role("editor"))):
     """Freeze a settlement for [start, end] (editor+). 409 if it overlaps an
     existing closed invoice."""
-    ctx.check_slug(body.customer)
+    ctx.check_slug(body.customer, min_role="editor")
     start, end = body.start.isoformat(), body.end.isoformat()
     cid, _ = await contracts.resolve_for_slugs([body.customer], start, end)
     if not cid:
@@ -130,7 +155,7 @@ async def void(invoice_id: int,
     inv = await invoices.get(invoice_id)
     if not inv:
         raise HTTPException(404, detail="Factura no encontrada")
-    await _check_invoice_scope(ctx, inv)
+    await _check_invoice_scope(ctx, inv, min_role="admin")
     return await invoices.void(invoice_id, (ctx.user or {}).get("email"))
 
 
@@ -144,7 +169,7 @@ async def pdf(invoice_id: int,
     inv = await invoices.get(invoice_id)
     if not inv:
         raise HTTPException(404, detail="Factura no encontrada")
-    await _check_invoice_scope(ctx, inv)
+    await _check_invoice_scope(ctx, inv, min_tier="pro")
     # WeasyPrint is CPU-bound (~1-2 s) — keep it off the event loop.
     data = await asyncio.to_thread(invoice_pdf.render, inv)
     fname = f"factura_{inv['period_start']}_{inv['period_end']}.pdf"
@@ -154,7 +179,7 @@ async def pdf(invoice_id: int,
 
 # "Tu factura, explicada" — InvoiceSkill (phase 2). An invoice is immutable
 # once stored, so the explanation is computed ONCE per process and cached.
-_explain_cache: dict = {}
+_explain_cache: _LRUCache = _LRUCache()
 
 
 @router.get("/{invoice_id}/explain")
@@ -162,9 +187,6 @@ async def explain(invoice_id: int,
                   ctx: ConsumContext = Depends(require_ai())):
     """Plain-language explanation of an invoice (generated or uploaded), with
     a comparison against the previous closed one when it exists."""
-    from app.services.ai import registry
-    from app.services.ai.invoices import facts_for_invoice
-
     inv = await invoices.get(invoice_id)
     if not inv:
         raise HTTPException(404, detail="Factura no encontrada")
@@ -218,7 +240,7 @@ async def _ensure_uploaded_markdown(inv: dict) -> dict:
 # detect_cost_anomaly — the VERDICT is deterministic (computed €/día and
 # kWh/día deviations vs the household's own history); the LLM only phrases it
 # in plain language. Degrades to a template sentence when AI is off.
-_anomaly_cache: dict = {}
+_anomaly_cache: _LRUCache = _LRUCache()
 _ANOM_WARN = 0.25    # |desviación €/día| ≥ 25 % → aviso
 _ANOM_ALERT = 0.50   # ≥ 50 % → alerta
 
@@ -243,8 +265,6 @@ async def anomaly(invoice_id: int,
                   ctx: ConsumContext = Depends(consum_context)):
     """Is this invoice unusually expensive vs the household's own history?
     Deterministic verdict + (if AI enabled) plain-language narrative."""
-    from app.services.ai import registry
-
     inv = await invoices.get(invoice_id)
     if not inv:
         raise HTTPException(404, detail="Factura no encontrada")
@@ -310,7 +330,7 @@ async def _compute_anomaly(ai_enabled: bool, inv: dict) -> dict:
     return out
 
 
-_amounts_cache: dict = {}
+_amounts_cache: _LRUCache = _LRUCache()
 
 
 async def _compute_amounts(inv: dict) -> Optional[dict]:
@@ -341,7 +361,8 @@ async def _compute_amounts(inv: dict) -> Optional[dict]:
             got = await registry.get("invoice").extract_bill_amounts(md)
             if got:
                 out = got.model_dump()
-    _amounts_cache[iid] = out
+    if out is not None:
+        _amounts_cache[iid] = out
     return out
 
 
@@ -368,13 +389,19 @@ async def explain_pdf_route(invoice_id: int,
                     headers={"Content-Disposition": f"inline; filename={fname}"})
 
 
-async def _check_invoice_scope(ctx: ConsumContext, inv: dict) -> None:
+async def _check_invoice_scope(ctx: ConsumContext, inv: dict, *,
+                               min_role: Optional[str] = None,
+                               min_tier: Optional[str] = None) -> None:
     """A superadmin/service passes; a member must own the invoice's household.
-    The invoice stores customer_id — resolve it to a slug the context knows."""
+    The invoice stores customer_id — resolve it to a slug the context knows,
+    then enforce any per-org role/tier requirement on THAT slug (not the caller's
+    flattened global max)."""
     if ctx.is_superadmin or ctx.is_service:
         return
     from app.services import consumption
     slugs = sorted(ctx.customer_slugs)
     ids = await consumption._slugs_to_ids(slugs)
-    if inv["customer_id"] not in set(ids.values()):
+    owner = next((s for s, i in ids.items() if i == inv["customer_id"]), None)
+    if owner is None:
         raise HTTPException(403, detail="Sin acceso a esa factura")
+    ctx.check_slug(owner, min_role=min_role, min_tier=min_tier)

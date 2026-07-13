@@ -235,19 +235,6 @@
       .badge-err { background: rgba(231,76,60,0.15); color: #c0392b; }
       .badge-info { background: rgba(70,130,180,0.15); color: #2c5171; }
 
-      /* Tooltip popup (data-tooltip-key system — see inline script below) */
-      #tooltip-popup {
-        position: fixed; z-index: 2000; max-width: 300px;
-        background: rgba(255,255,255,0.97); backdrop-filter: blur(12px);
-        border: 1px solid rgba(44,81,113,0.18); border-radius: 8px;
-        padding: 0.6rem 0.8rem; font-size: 0.78rem; color: var(--color-text);
-        box-shadow: 0 8px 28px rgba(0,0,0,0.18);
-        opacity: 0; pointer-events: none; transition: opacity 0.12s ease;
-      }
-      #tooltip-popup.visible { opacity: 1; pointer-events: auto; }
-      #tooltip-popup .tt-title { font-weight: 700; color: var(--color-primary-dark); margin-bottom: 3px; }
-      #tooltip-popup .tt-body { line-height: 1.45; }
-
       /* Mobile */
       .sidebar-toggle { display: none; }
       @media (max-width: 768px) {
@@ -413,63 +400,6 @@
       }
       tickClock();
       setInterval(tickClock, 1000);
-
-      /* --- Tooltip system (data-tooltip-key) — exo-specific, kept --- */
-      var tooltip = document.getElementById('tooltip-popup');
-      if (!tooltip) {
-        tooltip = document.createElement('div');
-        tooltip.id = 'tooltip-popup';
-        document.body.appendChild(tooltip);
-      }
-      var activeTrigger = null;
-
-      function showTooltip(trigger) {
-        var key = trigger.getAttribute('data-tooltip-key');
-        if (!key || typeof window.__t !== 'function') return;
-        var title = window.__t(key + '.title', '');
-        var body = window.__t(key + '.body', window.__t(key, ''));
-        tooltip.innerHTML = (title ? '<div class="tt-title">' + title + '</div>' : '') +
-                            '<div class="tt-body">' + body + '</div>';
-        var rect = trigger.getBoundingClientRect();
-        tooltip.classList.add('visible');
-        var tw = tooltip.offsetWidth, th = tooltip.offsetHeight;
-        var left = rect.left + rect.width / 2 - tw / 2;
-        var top = rect.bottom + 8;
-        var vw = window.innerWidth, vh = window.innerHeight;
-        if (left + tw > vw - 10) left = vw - tw - 10;
-        if (left < 10) left = 10;
-        if (top + th > vh - 10) top = rect.top - th - 8;
-        tooltip.style.left = left + 'px';
-        tooltip.style.top = top + 'px';
-        trigger.classList.add('active');
-      }
-      function hideTooltip() {
-        tooltip.classList.remove('visible');
-        if (activeTrigger) activeTrigger.classList.remove('active');
-        activeTrigger = null;
-      }
-
-      function bindTooltips() {
-        document.querySelectorAll('[data-tooltip-key]').forEach(function (el) {
-          if (el._ttBound) return;
-          el._ttBound = true;
-          el.addEventListener('mouseenter', function () { activeTrigger = el; showTooltip(el); });
-          el.addEventListener('mouseleave', function () { if (activeTrigger === el) hideTooltip(); });
-          el.addEventListener('click', function (e) {
-            e.stopPropagation();
-            if (activeTrigger === el && tooltip.classList.contains('visible')) {
-              hideTooltip();
-            } else {
-              activeTrigger = el; showTooltip(el);
-            }
-          });
-        });
-      }
-      bindTooltips();
-      document.addEventListener('click', function (e) {
-        if (activeTrigger && !activeTrigger.contains(e.target) && !tooltip.contains(e.target)) hideTooltip();
-      });
-      window.__rebindTooltips = bindTooltips;
     });
   </script>
   {# Active locale dict BEFORE the engine: the engine registers window.I18N_*
@@ -479,8 +409,6 @@
   <script src="{{ root }}/static/js/i18n.js?v={{ v }}" defer></script>
   <script src="{{ root }}/static/js/api_consum.js?v={{ v }}" defer></script>
   <script src="{{ root }}/static/js/pages/_pagination.js?v={{ v }}" defer></script>
-  <script src="{{ root }}/static/js/icons.js?v={{ v }}" defer></script>
-  <script src="{{ root }}/static/js/pibico-tabs.js?v={{ v }}" defer></script>
   {% block extra_js %}{% endblock %}
 </body>
 </html>

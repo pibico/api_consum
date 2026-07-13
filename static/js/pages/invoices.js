@@ -79,7 +79,7 @@
   function renderRows(rows) {
     var tb = q('iv-tbody');
     if (!rows.length) {
-      tb.innerHTML = '<tr><td colspan="6" class="text-center text-muted">' +
+      tb.innerHTML = '<tr><td colspan="7" class="text-center text-muted">' +
         __t('inv.empty', 'Sin facturas — cierra un periodo para generar la primera.') + '</td></tr>';
       return;
     }
@@ -107,8 +107,13 @@
         if (!voided && canVoid())
           actions += ' <button class="btn btn-sm btn-danger" onclick="IvPage.void(' + iv.id + ')" data-i18n="inv.voidBtn">Anular</button>';
       }
+      // CUPS is 20-22 chars — compact tail in the cell, full value on hover.
+      var cups = iv.cups
+        ? '<span style="font-family:monospace;font-size:0.78rem;" title="' + iv.cups + '">…' + iv.cups.slice(-8) + '</span>'
+        : '<span class="text-muted">—</span>';
       return '<tr' + (voided ? ' style="opacity:0.55;"' : '') + '>' +
         '<td>' + iv.period_start + ' → ' + iv.period_end + '</td>' +
+        '<td>' + cups + '</td>' +
         '<td>' + daysBetween(iv.period_start, iv.period_end) + '</td>' +
         '<td>' + (uploaded && !iv.energy_kwh ? '—' : fmt(iv.energy_kwh, 1) + ' kWh') + '</td>' +
         '<td><b>' + eur(iv.total_eur) + '</b></td>' +
@@ -292,9 +297,31 @@
 
   // ── Load ─────────────────────────────────────────────────────────────────
   function loadAll() {
+    loadBillingPeriod();
     return cfetch('/invoices' + custQS()).then(function (r) { list = r.values || []; })
       .catch(function () { list = []; })
       .then(renderTable);
+  }
+
+  // ── "Factura en curso" KPIs — the OPEN billing period, anchored on the
+  // invoice history (cycle = median bill length) + projection to close.
+  // PRO endpoint: hide the row quietly on 403/basic (cfetch, never logout).
+  function loadBillingPeriod() {
+    var row = q('iv-bp-row');
+    if (!row) return;
+    cfetch('/invoices/billing-period' + custQS()).then(function (bp) {
+      if (!bp || bp.status !== 'ok') { row.style.display = 'none'; return; }
+      row.style.display = '';
+      q('iv-bp-period').textContent = bp.period_start + ' → ~' + bp.expected_end;
+      q('iv-bp-days').textContent = __t('inv.bpDay', 'día {n} de ~{m}')
+        .replace('{n}', bp.days_elapsed).replace('{m}', bp.days_total);
+      q('iv-bp-acc').textContent = eur(bp.total_eur);
+      q('iv-bp-acc-kwh').textContent = fmt(bp.energy_kwh, 1) + ' kWh';
+      q('iv-bp-proj').textContent = bp.projected_eur != null ? '~' + eur(bp.projected_eur) : '—';
+      q('iv-bp-proj-sub').textContent = bp.eur_day != null
+        ? eur(bp.eur_day) + '/' + __t('inv.bpPerDay', 'día') + ' · ' + __t('inv.bpEstimate', 'estimado')
+        : __t('inv.bpTooEarly', 'aún pocos días para estimar');
+    }).catch(function () { row.style.display = 'none'; });
   }
 
   function loadContext() {

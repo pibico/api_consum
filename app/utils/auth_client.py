@@ -43,6 +43,10 @@ LOCAL_API_KEYS: list[str] = []
 # httpOnly cookie name (default: auth_jwt from api_auth)
 COOKIE_NAME: str = "auth_jwt"
 
+# Shared synchronous HTTP client (reuses TCP/TLS connections across cache misses).
+# httpx.Client is thread-safe, so it is safe under FastAPI's threadpool-run sync deps.
+_sync_client = httpx.Client(timeout=httpx.Timeout(5.0, connect=5.0))
+
 
 def configure(
     jwt_secret: str = "",
@@ -164,10 +168,9 @@ def _validate_remote(token: str = "", api_key: str = "") -> Optional[dict]:
         headers["X-API-Key"] = api_key
 
     try:
-        resp = httpx.get(
+        resp = _sync_client.get(
             f"{AUTH_SERVICE_URL}/api/v1/auth/validate",
             headers=headers,
-            timeout=5.0,
         )
         if resp.status_code == 200:
             data = resp.json()
@@ -434,11 +437,10 @@ def require_credits(operation: str, cost: int):
             raise HTTPException(402, f"Insufficient credits: need {cost}, have {user.credits}")
         # Deduct via api_auth
         try:
-            resp = httpx.post(
+            resp = _sync_client.post(
                 f"{AUTH_SERVICE_URL}/api/v1/credits/deduct",
                 json={"amount": cost, "operation": operation, "service": "unknown"},
                 headers={"Authorization": f"Bearer {JWT_AUTH_SECRET}"},
-                timeout=5.0,
             )
             if resp.status_code == 200:
                 user.credits = resp.json().get("credits_remaining", user.credits - cost)

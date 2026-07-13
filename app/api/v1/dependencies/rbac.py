@@ -22,7 +22,7 @@ Tier model (ServiceAccess.plan): basic | pro | enterprise.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Set
+from typing import Dict, List, Optional, Set
 
 from fastapi import Depends, HTTPException, Request
 
@@ -46,14 +46,42 @@ class ConsumContext:
     tier: str = "basic"             # highest plan across the caller's orgs
     ai_enabled: bool = False
     role: str = "viewer"            # highest effective role for api_consum
+    # Per-slug role/tier in the OWNING org — the authoritative basis for
+    # write/pro gates. `role`/`tier` above are the flattened global MAX (a fast
+    # coarse gate) and MUST NOT be trusted for a specific customer: a user who
+    # is owner/pro in org A but member/basic in org B would otherwise escalate
+    # onto org B's slug. Always resolve per-slug when a slug is in play.
+    slug_role: Dict[str, str] = field(default_factory=dict)
+    slug_tier: Dict[str, str] = field(default_factory=dict)
 
-    def check_slug(self, slug: str) -> str:
-        """403 unless the caller may read this customer slug."""
+    def check_slug(self, slug: str, *, min_role: Optional[str] = None,
+                   min_tier: Optional[str] = None) -> str:
+        """403 unless the caller may access this customer slug — and, when
+        `min_role`/`min_tier` are given, unless the caller meets them IN THE ORG
+        THAT OWNS THIS SLUG (not the flattened global max)."""
         if self.is_superadmin or self.is_service:
             return slug
         if slug not in self.customer_slugs:
             raise HTTPException(403, detail=f"customer '{slug}' is not in your organization")
+        if min_role is not None:
+            have = self.slug_role.get(slug, "viewer")
+            if _ROLE_RANK.get(have, 0) < _ROLE_RANK.get(min_role, 99):
+                raise HTTPException(403, detail={
+                    "code": "ROLE_REQUIRED", "required": min_role, "current": have,
+                    "message": f"Esta acción requiere el rol {min_role}."})
+        if min_tier is not None:
+            have = self.slug_tier.get(slug, "basic")
+            if _TIER_RANK.get(have, 0) < _TIER_RANK.get(min_tier, 99):
+                raise HTTPException(403, detail={
+                    "code": "TIER_REQUIRED", "required": min_tier, "current": have,
+                    "message": f"Esta función requiere el plan {min_tier}."})
         return slug
+
+    def tier_for(self, slug: str) -> str:
+        """Effective plan in the org owning `slug` (enterprise for superadmin)."""
+        if self.is_superadmin or self.is_service:
+            return "enterprise"
+        return self.slug_tier.get(slug, "basic")
 
 
 def _bearer_token(request: Request) -> Optional[str]:
@@ -83,6 +111,10 @@ def _build_context(payload: dict) -> ConsumContext:
             slug = (c.get("slug") or "").strip()
             if slug:
                 ctx.customer_slugs.add(slug)
+                # Slugs are globally unique (one org per customer) → last write
+                # wins harmlessly; record this org's role/plan for the slug.
+                ctx.slug_role[slug] = role
+                ctx.slug_tier[slug] = plan
     ctx.tier = [k for k, v in _TIER_RANK.items() if v == best_tier][0]
     ctx.role = [k for k, v in _ROLE_RANK.items() if v == best_role][0]
     ctx.ai_enabled = ai or ctx.is_superadmin

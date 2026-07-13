@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "59"  # 59: explicacion como PDF de marca imprimible (plantilla compacta)
+ASSET_VERSION = "62"  # 62: KPIs factura en curso (billing-period + proyección) + Sankey sin parpadeo
 
 
 def render_template(template_name: str, **context) -> str:

@@ -288,7 +288,7 @@
     return App.apiFetch('/consumption/topology' + custQS('?')).then(function (r) {
       if (!r || !r.root) {
         q('cons-sankey-note').textContent = __t('cons.sankeyOffline', 'Sin conexión con el PLC y sin cableado guardado todavía.');
-        var c0 = chart('cons-sankey'); if (c0) c0.clear();
+        var c0 = chart('cons-sankey'); if (c0) c0.clear(); skSig = '';
         q('cons-sankey-total').textContent = '';
         return;
       }
@@ -303,6 +303,13 @@
   var SK = { mains: '#2c5171', cbase: '#d0a94e', home: '#4682b4',
              baseline: '#9aa5b1', load: '#6a9bc3' };
   function wLabel(w) { return w >= 1000 ? (w / 1000).toFixed(2) + ' kW' : Math.round(w) + ' W'; }
+
+  // Update-in-place state: rebuilding the whole Sankey every refresh (clear +
+  // notMerge) makes it flash and re-layout. While the GRAPH SHAPE (nodes +
+  // links) is unchanged we only merge new values into the existing series —
+  // ECharts animates the widths smoothly. skIdName/skPowerById are module-
+  // scoped so the formatters bound at build time always read the LATEST tick.
+  var skSig = '', skIdName = {}, skPowerById = {};
 
   // Live wiring Sankey — a faithful port of the CM4 local-webui's wiring flow:
   // watts on every node label, and the PLC "net" model (Mains → compute base /
@@ -370,36 +377,48 @@
       }
     }
 
-    if (links.length < 1) { c.clear(); q('cons-sankey-total').textContent = ''; return; }
+    if (links.length < 1) { c.clear(); skSig = ''; q('cons-sankey-total').textContent = ''; return; }
 
-    c.clear();
-    c.setOption({
-      tooltip: {
-        trigger: 'item',
-        formatter: function (p) {
-          if (p.dataType === 'edge')
-            return (idName[p.data.source] || '') + ' → ' + (idName[p.data.target] || '') +
-              '<br><b>' + Math.round(p.data.value) + ' W</b>';
-          var w = powerById[p.name];
-          return (idName[p.name] || p.name) + (w != null ? '<br><b>' + Math.round(w) + ' W</b>' : '');
-        },
-      },
-      series: [{
-        type: 'sankey', left: 4, right: 96, top: 8, bottom: 8,
-        nodeAlign: 'left', nodeGap: 10, nodeWidth: 11,
-        draggable: false, emphasis: { focus: 'adjacency' },
-        label: {
-          fontSize: 10, color: '#22384c',
+    // Publish this tick's names/watts for the (already-bound) formatters.
+    skIdName = idName; skPowerById = powerById;
+    var data = Object.keys(byId).map(function (id) { return byId[id]; });
+    var sig = Object.keys(byId).sort().join('|') + '##' +
+      links.map(function (l) { return l.source + '>' + l.target; }).sort().join('|');
+
+    if (sig === skSig) {
+      // Same wiring → merge values in place: no clear, no re-layout, no flash.
+      c.setOption({ series: [{ data: data, links: links }] });
+    } else {
+      skSig = sig;
+      c.clear();
+      c.setOption({
+        tooltip: {
+          trigger: 'item',
           formatter: function (p) {
-            var w = powerById[p.name];
-            return (idName[p.name] || p.name) + (w != null && w >= 1 ? '  ' + wLabel(w) : '');
+            if (p.dataType === 'edge')
+              return (skIdName[p.data.source] || '') + ' → ' + (skIdName[p.data.target] || '') +
+                '<br><b>' + Math.round(p.data.value) + ' W</b>';
+            var w = skPowerById[p.name];
+            return (skIdName[p.name] || p.name) + (w != null ? '<br><b>' + Math.round(w) + ' W</b>' : '');
           },
         },
-        lineStyle: { color: 'gradient', opacity: 0.38, curveness: 0.5 },
-        data: Object.keys(byId).map(function (id) { return byId[id]; }),
-        links: links,
-      }],
-    }, true);
+        series: [{
+          type: 'sankey', left: 4, right: 96, top: 8, bottom: 8,
+          nodeAlign: 'left', nodeGap: 10, nodeWidth: 11,
+          draggable: false, emphasis: { focus: 'adjacency' },
+          label: {
+            fontSize: 10, color: '#22384c',
+            formatter: function (p) {
+              var w = skPowerById[p.name];
+              return (skIdName[p.name] || p.name) + (w != null && w >= 1 ? '  ' + wLabel(w) : '');
+            },
+          },
+          lineStyle: { color: 'gradient', opacity: 0.38, curveness: 0.5 },
+          data: data,
+          links: links,
+        }],
+      }, true);
+    }
     var totW = (net && net.raw) || W(tree.root);
     q('cons-sankey-total').textContent = totW ? '· ' + (totW / 1000).toFixed(2) + ' kW' : '';
   }
@@ -427,8 +446,12 @@
 
   window.ConsPage = { reload: reload };
 
+  var resizeTO;
   window.addEventListener('resize', function () {
-    Object.keys(charts).forEach(function (id) { charts[id].resize(); });
+    clearTimeout(resizeTO);
+    resizeTO = setTimeout(function () {
+      Object.keys(charts).forEach(function (id) { charts[id].resize(); });
+    }, 120);
   });
 
   document.addEventListener('DOMContentLoaded', function () {

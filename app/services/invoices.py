@@ -34,7 +34,9 @@ _TOTALS = ("energy_kwh", "energy_eur", "power_eur", "fixed_eur",
 
 def _row_to_dict(row: Sequence[Any], with_breakdown: bool = True) -> Dict[str, Any]:
     keys = ("id", "customer_id", "period_start", "period_end", "status",
-            "settlement", *_TOTALS, "breakdown", "created_by", "created_at",
+            "settlement", "cups", *_TOTALS,
+            *(("breakdown",) if with_breakdown else ()),
+            "created_by", "created_at",
             "voided_at", "voided_by", "origin", "pdf_filename")
     out: Dict[str, Any] = {}
     for k, v in zip(keys, row):
@@ -45,16 +47,23 @@ def _row_to_dict(row: Sequence[Any], with_breakdown: bool = True) -> Dict[str, A
         elif k == "customer_id":
             v = str(v)
         out[k] = v
-    if not with_breakdown:
-        out.pop("breakdown", None)
     return out
 
 
-_SELECT = ("SELECT id, customer_id, period_start, period_end, status, settlement, "
+_SELECT = ("SELECT id, customer_id, period_start, period_end, status, settlement, cups, "
            + ", ".join(_TOTALS)
            + ", breakdown, created_by, created_at, voided_at, voided_by, "
            "origin, pdf_filename "
            "FROM consum.invoices")
+
+# Same column order as _SELECT but WITHOUT the heavy `breakdown` JSONB blob —
+# for list/history queries that pop breakdown anyway. Pair with
+# _row_to_dict(..., with_breakdown=False) so the positional keys stay aligned.
+_SELECT_LIGHT = ("SELECT id, customer_id, period_start, period_end, status, settlement, cups, "
+                 + ", ".join(_TOTALS)
+                 + ", created_by, created_at, voided_at, voided_by, "
+                 "origin, pdf_filename "
+                 "FROM consum.invoices")
 
 
 async def list_for(slugs: Sequence[str]) -> List[Dict[str, Any]]:
@@ -65,7 +74,7 @@ async def list_for(slugs: Sequence[str]) -> List[Dict[str, Any]]:
     async with db.raw_connection() as con:
         async with con.cursor() as cur:
             await cur.execute(
-                _SELECT + " WHERE customer_id::text = ANY(%s) "
+                _SELECT_LIGHT + " WHERE customer_id::text = ANY(%s) "
                 "ORDER BY period_start DESC, id DESC",
                 (list(ids.values()),),
             )
@@ -149,10 +158,11 @@ def _segment_days(contracts: List[Dict[str, Any]], start: str, end: str
     return segments
 
 
-async def close_period(customer_id: str, slugs: Sequence[str], start: str,
-                       end: str, created_by: Optional[str]) -> Dict[str, Any]:
-    """Freeze a settlement for [start, end] and persist it. Raises 409 if the
-    period overlaps an existing closed invoice."""
+async def _settle(customer_id: str, slugs: Sequence[str], start: str,
+                  end: str) -> Tuple[List[Dict[str, Any]], Dict[str, float]]:
+    """Cost [start, end]: partition into per-contract segments and price each.
+    Shared by close_period (which freezes the result) and billing_period_live
+    (the live, unfrozen view of the open period)."""
     contracts = await contracts_svc.contracts_covering(customer_id, start, end)
     hourly = await consumption.energy_series(slugs, start, end, bucket="hour")
     kwh_all: Dict[Tuple[str, int], float] = {}
@@ -183,19 +193,31 @@ async def close_period(customer_id: str, slugs: Sequence[str], start: str,
         totals["total_eur"] += s.get("total_eur", 0.0)
         totals["uncosted_kwh"] += s.get("uncosted_kwh", 0.0)
     totals = {k: round(v, 3 if k.endswith("kwh") else 2) for k, v in totals.items()}
+    return segments, totals
+
+
+async def close_period(customer_id: str, slugs: Sequence[str], start: str,
+                       end: str, created_by: Optional[str]) -> Dict[str, Any]:
+    """Freeze a settlement for [start, end] and persist it. Raises 409 if the
+    period overlaps an existing closed invoice."""
+    segments, totals = await _settle(customer_id, slugs, start, end)
 
     breakdown = {"period_start": start, "period_end": end, "settlement": "hourly",
                  "segments": segments, "totals": totals,
                  "generated_at": datetime.now().isoformat()}
+    # Freeze the CUPS that applied at close time: the last contracted
+    # segment's (i.e. the contract covering period_end).
+    cups = next((s["contract"]["cups"] for s in reversed(segments)
+                 if s.get("contract") and s["contract"].get("cups")), None)
     try:
         async with db.raw_connection() as con:
             async with con.cursor() as cur:
                 await cur.execute(
                     "INSERT INTO consum.invoices (customer_id, period_start, period_end, "
-                    "settlement, " + ", ".join(_TOTALS) + ", breakdown, created_by) "
-                    "VALUES (%s, %s, %s, 'hourly', "
+                    "settlement, cups, " + ", ".join(_TOTALS) + ", breakdown, created_by) "
+                    "VALUES (%s, %s, %s, 'hourly', %s, "
                     + ", ".join(["%s"] * len(_TOTALS)) + ", %s, %s) RETURNING id",
-                    [customer_id, start, end, *[totals[k] for k in _TOTALS],
+                    [customer_id, start, end, cups, *[totals[k] for k in _TOTALS],
                      Jsonb(breakdown), created_by],
                 )
                 new_id = (await cur.fetchone())[0]
@@ -252,15 +274,17 @@ async def store_uploaded(customer_slug: str, pdf_bytes: bytes, filename: str,
     if end < start:
         start, end = end, start
     total = ex.get("total_eur")
+    cups = ex.get("cups") if isinstance(ex.get("cups"), str) else None
     async with db.raw_connection() as con:
         async with con.cursor() as cur:
             await cur.execute(
                 """INSERT INTO consum.invoices
-                     (customer_id, period_start, period_end, status, origin,
+                     (customer_id, period_start, period_end, status, origin, cups,
                       total_eur, breakdown, pdf, pdf_filename, created_by)
-                   VALUES (%s, %s, %s, 'uploaded', 'uploaded', %s, %s, %s, %s, %s)
+                   VALUES (%s, %s, %s, 'uploaded', 'uploaded', %s, %s, %s, %s, %s, %s)
                    RETURNING id""",
-                (cid, start, end, total if isinstance(total, (int, float)) else 0,
+                (cid, start, end, cups,
+                 total if isinstance(total, (int, float)) else 0,
                  Jsonb({"uploaded": True, "extracted": ex,
                         "markdown": (markdown or "")[:60000] or None}),
                  pdf_bytes, filename, created_by),
@@ -313,7 +337,81 @@ async def history_before(customer_id: str, before_start: str,
     async with db.raw_connection() as con:
         async with con.cursor() as cur:
             await cur.execute(
-                _SELECT + " WHERE customer_id = %s AND status != 'void' "
+                _SELECT_LIGHT + " WHERE customer_id = %s AND status != 'void' "
                 "AND period_start < %s ORDER BY period_start DESC LIMIT %s",
                 (customer_id, before_start, limit))
             return [_row_to_dict(r, with_breakdown=False) for r in await cur.fetchall()]
+
+
+# ── Current billing period (live, unfrozen) ─────────────────────────────────
+# The Panel/Facturas "factura en curso" KPI: the OPEN period derived from the
+# stored invoice history (anchor = last period_end + 1; cycle = median length
+# of recent bills — real retailer cycles drift, never assume the natural
+# month), costed with the same machinery close_period uses, plus a projection
+# to the expected close. Cached briefly: it re-prices the whole open period.
+_BP_TTL_S = 300
+_bp_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+
+
+async def billing_period_live(customer_slug: str) -> Dict[str, Any]:
+    """The open billing period of one household — status:
+    ok | no_invoices (no history to anchor on) | covered (last bill reaches
+    today). Projection only after 3 elapsed days (too noisy before)."""
+    import time as _time
+    hit = _bp_cache.get(customer_slug)
+    if hit and _time.monotonic() - hit[0] < _BP_TTL_S:
+        return hit[1]
+
+    ids = await consumption._slugs_to_ids([customer_slug])
+    cid = ids.get(customer_slug)
+    if not cid:
+        raise HTTPException(404, detail=f"Hogar desconocido: {customer_slug}")
+
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                "SELECT period_start, period_end FROM consum.invoices "
+                "WHERE customer_id = %s AND status != 'void' "
+                "ORDER BY period_end DESC LIMIT 6", (cid,))
+            hist = await cur.fetchall()
+    if not hist:
+        out = {"status": "no_invoices"}
+        _bp_cache[customer_slug] = (_time.monotonic(), out)
+        return out
+
+    today = date.today()
+    start = hist[0][1] + timedelta(days=1)
+    if start > today:
+        out = {"status": "covered", "until": hist[0][1].isoformat()}
+        _bp_cache[customer_slug] = (_time.monotonic(), out)
+        return out
+
+    lengths = sorted((e - s).days + 1 for s, e in hist)
+    cycle = lengths[len(lengths) // 2]                      # median cycle
+    expected_end = start + timedelta(days=cycle - 1)
+    if expected_end < today:
+        expected_end = today                                # overdue: bill imminent
+    days_total = (expected_end - start).days + 1
+    days_elapsed = (today - start).days + 1
+
+    _, totals = await _settle(str(cid), [customer_slug],
+                              start.isoformat(), today.isoformat())
+    out = {
+        "status": "ok",
+        "period_start": start.isoformat(),
+        "expected_end": expected_end.isoformat(),
+        "cycle_days": cycle,
+        "days_elapsed": days_elapsed,
+        "days_total": days_total,
+        "energy_kwh": totals["energy_kwh"],
+        "total_eur": totals["total_eur"],
+        "based_on": len(hist),
+    }
+    if days_elapsed >= 3 and totals["total_eur"] > 0:
+        eur_day = totals["total_eur"] / days_elapsed
+        out["eur_day"] = round(eur_day, 2)
+        out["projected_eur"] = round(eur_day * days_total, 2)
+        out["projected_kwh"] = round(
+            totals["energy_kwh"] / days_elapsed * days_total, 1)
+    _bp_cache[customer_slug] = (_time.monotonic(), out)
+    return out

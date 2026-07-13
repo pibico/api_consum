@@ -37,13 +37,6 @@ auth_client.configure(
     jwt_secret="",
 )
 
-# Per-service admin gate (api_consum registered in api_auth service_registry).
-require_admin = auth_client.require_service_role("api_consum", "admin")
-
-# Authenticated resolver (JWT via /validate OR service X-API-Key). 401 if none.
-verify_auth = auth_client.get_current_user
-
-
 # ---------------------------------------------------------------------------
 # Short-TTL validate cache — same as api_edge/api_exo core/auth.py.
 # ---------------------------------------------------------------------------
@@ -74,12 +67,6 @@ def _negative_cached(token_hash: str) -> bool:
 
 def _negative_cache_set(token_hash: str) -> None:
     _validate_negative_cache[token_hash] = time.time() + settings.AUTH_VALIDATE_NEGATIVE_CACHE_TTL
-
-
-def clear_validate_cache() -> None:
-    """Test hook — drop both caches."""
-    _validate_cache.clear()
-    _validate_negative_cache.clear()
 
 
 async def _validate_jwt(token: str) -> dict:

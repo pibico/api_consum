@@ -7,8 +7,8 @@ narrative cached per scope·day (24 h); /ask rate-limited per org·day.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
-import time
 from datetime import date
 from typing import List, Optional
 
@@ -38,13 +38,15 @@ _SYSTEM = (
 
 async def _aggregate_context(slugs: list[str]) -> dict:
     """The ONLY payload the LLM sees — aggregates, no raw rows / PII."""
-    summ = await consumption.summary(slugs)
-    power = await consumption.current_power(slugs)
-    shift = await oe3.shift_analysis(slugs)
-    thermal = await oe3.thermal_analysis(slugs)
-    window = await oe3.green_window()
-    pvpc = await exo_client.pvpc_day("today")
-    carbon = await exo_client.carbon_current()
+    summ, power, shift, thermal, window, pvpc, carbon = await asyncio.gather(
+        consumption.summary(slugs),
+        consumption.current_power(slugs),
+        oe3.shift_analysis(slugs),
+        oe3.thermal_analysis(slugs),
+        oe3.green_window(),
+        exo_client.pvpc_day("today"),
+        exo_client.carbon_current(),
+    )
     thermal.pop("series", None)          # keep it aggregate-sized
     window.pop("hours", None)
     return {

@@ -75,3 +75,6 @@ async def llm_chat(messages: List[Dict[str, str]],
     except httpx.RequestError as e:
         logger.error("AIDA unreachable: %s", e)
         return None
+    except (ValueError, KeyError, TypeError, AttributeError) as e:
+        logger.warning("AIDA response parse failed: %s", e)
+        return None

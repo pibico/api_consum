@@ -81,6 +81,30 @@ CREATE INDEX IF NOT EXISTS idx_edge_events_ts ON edge_events(received_ts);
 # table). Ignored once the column exists.
 _MIGRATE = "ALTER TABLE edge_events ADD COLUMN unknown_client INTEGER DEFAULT 0"
 
+# Schema DDL is idempotent but pointless to re-run on every message; ensure it
+# once (guarded by a lock so a first-message race can't double-run it).
+_schema_lock = threading.Lock()
+_schema_ready = False
+
+
+def _ensure_schema() -> None:
+    """Create the table/index and apply the additive migration once."""
+    global _schema_ready
+    with _schema_lock:
+        if _schema_ready:
+            return
+        c = sqlite3.connect(settings.DB_PATH, timeout=10)
+        try:
+            c.executescript(_SCHEMA)
+            try:
+                c.execute(_MIGRATE)
+            except sqlite3.OperationalError:
+                pass   # column already exists
+            c.commit()
+        finally:
+            c.close()
+        _schema_ready = True
+
 
 def _store(topic: str, payload: bytes) -> None:
     parts = topic.split("/")
@@ -101,13 +125,9 @@ def _store(topic: str, payload: bytes) -> None:
             _unknown_log_ts[client] = now
             log.warning("edge event from UNKNOWN client slug %r (topic %s) — "
                         "flagged, broker credential likely shared", client, topic)
+    _ensure_schema()
     c = sqlite3.connect(settings.DB_PATH, timeout=10)
     try:
-        c.executescript(_SCHEMA)
-        try:
-            c.execute(_MIGRATE)
-        except sqlite3.OperationalError:
-            pass   # column already exists
         c.execute(
             "INSERT INTO edge_events (received_ts,topic,client,gateway,ts,kind,"
             "severity,title,mac,ch,value,detail,unknown_client) "
@@ -161,4 +181,5 @@ def start() -> None:
                 log.warning("MQTT loop error: %s — retrying in 30 s", exc)
                 time.sleep(30)
 
+    _ensure_schema()
     threading.Thread(target=_run, daemon=True, name="consum-notify").start()

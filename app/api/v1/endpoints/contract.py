@@ -182,7 +182,7 @@ async def bill_estimate(month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
     """PRO — full-bill estimate for one month under the active contract:
     energy by period + power term + fixed charges + IEE + IVA."""
     import calendar
-    slugs = await _slugs(ctx, customer)
+    slugs = await _slugs(ctx, customer, min_tier="pro")
     y, m = int(month[:4]), int(month[5:7])
     last = calendar.monthrange(y, m)[1]
     start, end = f"{month}-01", f"{month}-{last:02d}"

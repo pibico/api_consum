@@ -358,14 +358,14 @@ async def summary(slugs: Sequence[str]) -> Dict[str, Any]:
     ids = await _slugs_to_ids(slugs)
     if not ids:
         return {"today_kwh": 0, "week_kwh": 0, "month_kwh": 0}
-    sql = f"""
+    sql = """
         SELECT SUM(kwh) FROM (
             SELECT device_id, channel,
                    GREATEST(MAX(value_num) - MIN(value_num), 0) / 1000.0 AS kwh
             FROM sensor_data
             WHERE customer_id::text = ANY(%s) AND variable = 'apower_energy'
-              AND {_HOUSE_CHANNEL_SQL}
-              AND ts >= %s::timestamptz
+              AND {house_channel}
+              AND ts >= {since_expr}
             GROUP BY device_id, channel
         ) sub
     """
@@ -375,12 +375,15 @@ async def summary(slugs: Sequence[str]) -> Dict[str, Any]:
         "week_kwh": "now() - interval '7 days'",
         "month_kwh": "now() - interval '30 days'",
     }
+    id_list = list(ids.values())
     async with db.raw_connection() as con:
         async with con.cursor() as cur:
             for key, since_expr in windows.items():
-                await cur.execute(f"SELECT {since_expr}")
-                since = (await cur.fetchone())[0]
-                await cur.execute(sql, (list(ids.values()), since))
+                await cur.execute(
+                    sql.format(house_channel=_HOUSE_CHANNEL_SQL,
+                               since_expr=since_expr),
+                    (id_list,),
+                )
                 row = await cur.fetchone()
                 out[key] = round(float(row[0] or 0), 2)
     return out

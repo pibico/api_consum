@@ -4,14 +4,12 @@ Actions:
   · extract_tariff_sheet(md)  → ExtractedTariff  (populate the tariff catalog
     from a retailer's published tariff sheet — "recuperar la información de los
     distintos tipos de contrato"). Feed it the Markdown from `convert_client`.
-  · explain_plain(contract)   → str  (jargon-free summary for a 55+, non-digital
-    user; drives the guided-onboarding confirmation step).
 
 Only public/aggregated text goes to AIDA — never the household's raw PII.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 from pydantic import BaseModel, Field
 
@@ -120,15 +118,6 @@ _EXTRACT_SYSTEM = (
     "Responde SOLO con el objeto JSON, sin texto ni ```."
 )
 
-_EXPLAIN_SYSTEM = (
-    "Explica un contrato de luz a una persona mayor que NO entiende de "
-    "electricidad. Español claro, cercano y muy breve (2-3 frases). Nada de "
-    "jerga (no digas P1/P2/P3, peajes, IEE…). Di quién es la compañía, si el "
-    "precio es fijo, variable (PVPC) o indexado, cuánto cuesta la luz "
-    "aproximadamente y la potencia contratada. Termina preguntando si es "
-    "correcto. No inventes datos que no te den."
-)
-
 
 class ContractSkill(Skill):
     name = "contract"
@@ -146,18 +135,3 @@ class ContractSkill(Skill):
         # temperature 0 → determinista (evita que se pierda el margen entre corridas)
         return await self.run_json(prompt, ExtractedTariff, temperature=0.0,
                                    max_tokens=1400)
-
-    async def explain_plain(self, contract: Dict[str, Any]) -> Optional[str]:
-        """Jargon-free, one-paragraph summary of a contract for confirmation."""
-        facts = {
-            "comercializadora": contract.get("retailer"),
-            "tipo": contract.get("contract_type"),
-            "producto": contract.get("label") or contract.get("product_name"),
-            "precio_energia_p1_eur_kwh": contract.get("energy_p1_eur_kwh"),
-            "margen_eur_kwh": contract.get("margin_eur_kwh"),
-            "potencia_p1_kw": contract.get("power_p1_kw"),
-            "potencia_p2_kw": contract.get("power_p2_kw"),
-        }
-        prompt = ("Datos del contrato (no muestres los nombres técnicos):\n" +
-                  "\n".join(f"- {k}: {v}" for k, v in facts.items() if v is not None))
-        return await self.run_text(prompt, system=_EXPLAIN_SYSTEM)

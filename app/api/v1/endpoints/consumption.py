@@ -11,19 +11,28 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.api.v1.dependencies.rbac import (ConsumContext, consum_context,
-                                          require_role, require_tier)
+from app.api.v1.dependencies.rbac import (_TIER_RANK, ConsumContext,
+                                          consum_context, require_tier)
 from app.services import consumption, edge_client, exo_client, pricing
 from app.services import contracts as contracts_svc
 
 router = APIRouter(prefix="/consumption", tags=["consumption"])
 
 
-async def _slugs(ctx: ConsumContext, customer: Optional[str]) -> list[str]:
+async def _slugs(ctx: ConsumContext, customer: Optional[str], *,
+                 min_tier: Optional[str] = None) -> list[str]:
+    """Resolve the caller's in-scope slug(s). When `min_tier` is given, enforce
+    the plan PER-ORG (the require_tier gate only checks the global max, which
+    would leak PRO onto a basic household in another of the user's orgs)."""
     if customer:
-        return [ctx.check_slug(customer)]
+        return [ctx.check_slug(customer, min_tier=min_tier)]
     if ctx.customer_slugs:
-        return sorted(ctx.customer_slugs)
+        slugs = sorted(ctx.customer_slugs)
+        if min_tier is not None and not ctx.is_superadmin:
+            need = _TIER_RANK.get(min_tier, 99)
+            slugs = [s for s in slugs
+                     if _TIER_RANK.get(ctx.slug_tier.get(s, "basic"), 0) >= need]
+        return slugs
     if ctx.is_superadmin:
         # Superadmin browsing without a slug → fleet view (all households);
         # the customer selector in the UI narrows from there.
@@ -150,8 +159,10 @@ async def devices(customer: Optional[str] = Query(None),
     base = await consumption.devices_for(slugs)
     # Enrich with api_edge online flags (best-effort)
     online: dict[str, bool] = {}
-    for slug in slugs:
-        for d in (await edge_client.devices(slug)) or []:
+    import asyncio
+    results = await asyncio.gather(*(edge_client.devices(s) for s in slugs))
+    for res in results:
+        for d in res or []:
             if d.get("hostname"):
                 online[d["hostname"]] = bool(d.get("is_online"))
     for d in base:
@@ -431,7 +442,7 @@ async def forecast_month(customer: Optional[str] = Query(None),
     """PRO — month-end kWh/€ projection: month-to-date + remaining days at
     the recent daily average (last 14 complete days)."""
     from datetime import date as _date, timedelta
-    slugs = await _slugs(ctx, customer)
+    slugs = await _slugs(ctx, customer, min_tier="pro")
     today = _date.today()
     month = today.strftime("%Y-%m")
     rows, last_day, price_source = await _month_hourly_costed(slugs, month, device)
@@ -473,7 +484,7 @@ async def bands(month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
                 device: Optional[str] = Query(None),
                 ctx: ConsumContext = Depends(require_tier("pro"))):
     """PRO — kWh and € split by tariff band (P1/P2/P3) for one month."""
-    slugs = await _slugs(ctx, customer)
+    slugs = await _slugs(ctx, customer, min_tier="pro")
     rows, _, price_source = await _month_hourly_costed(slugs, month, device)
     out = {p: {"period": p, "kwh": 0.0, "cost_eur": 0.0} for p in ("P1", "P2", "P3")}
     total_kwh = 0.0
@@ -509,7 +520,7 @@ async def export_csv(start: str = Query(..., description="YYYY-MM-DD"),
         raise HTTPException(400, detail="invalid date format")
     if (d1 - d0).days > 92 or d1 < d0:
         raise HTTPException(400, detail="range must be 1-92 days")
-    slugs = await _slugs(ctx, customer)
+    slugs = await _slugs(ctx, customer, min_tier="pro")
     hourly = await consumption.energy_series(slugs, start, end, bucket="hour", device=device)
     prices, _ = await pricing.hourly_price_map_for_slugs(slugs, start, end)
     lines = ["date,hour,kwh,price_eur_kwh,period,cost_eur,source"]

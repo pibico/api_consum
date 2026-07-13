@@ -26,6 +26,25 @@
   <div id="iv-tariff-body"><span class="spinner"></span></div>
 </div>
 
+<!-- Factura en curso — open billing period + projection (PRO; hidden otherwise) -->
+<div class="kpi-grid-8" id="iv-bp-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:1rem;display:none;">
+  <div class="glass-panel kpi-card">
+    <div class="kpi-label" data-i18n="inv.bpPeriod">Periodo en curso</div>
+    <div class="kpi-value" id="iv-bp-period" style="font-size:1.15rem;">—</div>
+    <div class="kpi-sub" id="iv-bp-days">—</div>
+  </div>
+  <div class="glass-panel kpi-card">
+    <div class="kpi-label" data-i18n="inv.bpAccrued">Acumulado</div>
+    <div class="kpi-value" id="iv-bp-acc">—</div>
+    <div class="kpi-sub" id="iv-bp-acc-kwh">—</div>
+  </div>
+  <div class="glass-panel kpi-card">
+    <div class="kpi-label" data-i18n="inv.bpProjected">Estimado a cierre</div>
+    <div class="kpi-value" id="iv-bp-proj">—</div>
+    <div class="kpi-sub" id="iv-bp-proj-sub">—</div>
+  </div>
+</div>
+
 <div class="glass-panel">
   <div class="filters-bar" style="justify-content:space-between;">
     <h3 data-i18n="inv.listTitle">Facturas cerradas</h3>
@@ -36,13 +55,14 @@
     <table class="data-table" id="iv-table">
       <thead><tr>
         <th data-i18n="inv.colPeriod">Periodo</th>
+        <th data-i18n="inv.colCups">CUPS</th>
         <th data-i18n="inv.colDays">Días</th>
         <th data-i18n="inv.colEnergy">Energía</th>
         <th data-i18n="inv.colTotal">Total</th>
         <th data-i18n="inv.colStatus">Estado</th>
         <th></th>
       </tr></thead>
-      <tbody id="iv-tbody"><tr><td colspan="6" class="text-center"><span class="spinner"></span></td></tr></tbody>
+      <tbody id="iv-tbody"><tr><td colspan="7" class="text-center"><span class="spinner"></span></td></tr></tbody>
     </table>
   </div>
   <div id="iv-pager-bottom"></div>

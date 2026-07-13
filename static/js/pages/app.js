@@ -60,11 +60,6 @@
       });
     });
   }
-  function canWrite() {
-    if (!ctx) return false;
-    return ctx.is_superadmin || ['editor', 'admin', 'owner'].indexOf(ctx.role || '') >= 0;
-  }
-
   function periodColor(p, a) {
     var alpha = a == null ? 0.75 : a;
     if (p === 'P1') return 'rgba(231,76,60,' + alpha + ')';
@@ -793,6 +788,24 @@
     }, true);
   }
 
+  // "Factura en curso" KPI — projected € of the OPEN billing period (derived
+  // from the invoice history by /invoices/billing-period, PRO). Hidden until
+  // data arrives; on show, the grid widens to 7 tracks. cfetch: a 403 (basic
+  // tier) must hide the card, never log the user out.
+  function loadBillingKpi() {
+    cfetch('/invoices/billing-period' + custQS()).then(function (bp) {
+      if (!bp || bp.status !== 'ok') return;
+      var v = bp.projected_eur != null ? '~' + bp.projected_eur.toFixed(2) + ' €'
+                                       : bp.total_eur.toFixed(2) + ' €';
+      q('kpi-bill').textContent = v;
+      q('kpi-bill-sub').textContent = __t('app.billDay', 'día {n} de ~{m}')
+        .replace('{n}', bp.days_elapsed).replace('{m}', bp.days_total) +
+        (bp.projected_eur != null ? ' · ' + __t('app.billEstimate', 'estimado') : '');
+      q('kpi-bill-card').style.display = '';
+      q('kpi-grid').style.gridTemplateColumns = 'repeat(7,1fr)';
+    }).catch(function () {});
+  }
+
   function loadEnvironment() {
     return App.apiFetch('/consumption/environment' + custQS()).then(function (r) {
       env = r;
@@ -841,8 +854,12 @@
     },
   };
 
+  var _resizeTimer;
   window.addEventListener('resize', function () {
-    Object.keys(charts).forEach(function (id) { charts[id].resize(); });
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(function () {
+      Object.keys(charts).forEach(function (id) { charts[id].resize(); });
+    }, 120);
   });
 
   document.addEventListener('i18n:changed', function () {
@@ -867,7 +884,7 @@
       q('pnl-mkt-omie').onclick = function () { setMarket('omie'); };
       q('pnl-pvpc-today').onclick = function () { setPvpcDay('today'); };
       q('pnl-pvpc-tomorrow').onclick = function () { setPvpcDay('tomorrow'); };
-      loadContext().then(function () { loadContract(); refreshHouse(); loadEnvironment().catch(function () {}); })
+      loadContext().then(function () { loadContract(); refreshHouse(); loadBillingKpi(); loadEnvironment().catch(function () {}); })
         .catch(function (e) {
           App.showNotification(__t('common.error', 'Error'), e.message, 'danger');
         });

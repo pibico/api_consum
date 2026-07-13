@@ -44,7 +44,7 @@ async def _tcp_open(port: int, timeout: float = 2.0) -> bool:
 
 async def _gateway(ctx: ConsumContext, customer: Optional[str]) -> Dict[str, Any]:
     """The caller's gateway device row (one gateway per household)."""
-    slugs = await _slugs(ctx, customer)
+    slugs = await _slugs(ctx, customer, min_tier="pro")
     for d in await consumption.devices_for(slugs):
         if (d.get("device_type") or "gateway") == "gateway" and d.get("ssh_port"):
             return d
@@ -57,7 +57,7 @@ def _webui_port(ssh_port: int) -> int:
 
 async def _authorized_ports(ctx: ConsumContext) -> set[int]:
     """Every webui_port the caller may reach (their gateways)."""
-    slugs = await _slugs(ctx, None)
+    slugs = await _slugs(ctx, None, min_tier="pro")
     return {
         _webui_port(d["ssh_port"])
         for d in await consumption.devices_for(slugs)
@@ -72,7 +72,7 @@ async def session(customer: Optional[str] = Query(None),
     Returns the /plc/<port>/ URL for the page's iframe, plus the full
     gateway list (one PLC per household — a user with several households
     picks theirs in the page selector; `?customer=` selects one)."""
-    slugs = await _slugs(ctx, None)
+    slugs = await _slugs(ctx, None, min_tier="pro")
     gateways = [
         {"id": g["id"], "hostname": g["hostname"], "customer": g["customer"],
          "webui_port": _webui_port(int(g["ssh_port"]))}
