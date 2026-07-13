@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Dict, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.services.ai.base import Skill
 
@@ -54,6 +54,17 @@ class ExtractedTariff(BaseModel):
     total_eur: Optional[float] = Field(None, ge=0, lt=100000)
     confidence: Optional[float] = Field(None, ge=0, le=1)
     notes: Optional[str] = None
+
+    @field_validator("notes", mode="before")
+    @classmethod
+    def _notes_to_text(cls, v):
+        """Models sometimes return notes as a list/dict of structured extras
+        (per-period CC, itemized ATR…) instead of prose — keep the data as a
+        JSON string rather than failing the whole extraction."""
+        if v is None or isinstance(v, str):
+            return v
+        import json
+        return json.dumps(v, ensure_ascii=False)
 
 
 _EXTRACT_SYSTEM = (
