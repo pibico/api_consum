@@ -152,6 +152,22 @@ _AMOUNTS_SYSTEM = (
 )
 
 
+_QA_SYSTEM = (
+    "Eres el asistente de CONSUM-IA. Respondes UNA duda concreta de una "
+    "persona mayor sobre su factura de la luz, con calidez y SIN jerga.\n"
+    "REGLAS DURAS: responde SOLO sobre esta factura, la electricidad del "
+    "hogar o su tarifa; si la pregunta no va de eso, dilo amablemente en una "
+    "frase y no respondas otra cosa. Nada de siglas ni jerga (jamás P1/P2/P3, "
+    "IEE, ATR, término de energía…): di 'horas caras/normales/baratas', 'el "
+    "fijo de la potencia', 'los peajes', 'los impuestos'. NO inventes cifras "
+    "— usa SOLO los datos que te doy; si no tengo el dato, dilo y explica el "
+    "concepto. Euros con coma decimal y símbolo €.\n"
+    "FORMATO: 2 a 6 frases cortas de texto corrido; puedes marcar los "
+    "importes clave entre ** **. PROHIBIDO listas, tablas, «|», «---», "
+    "encabezados o cualquier otro Markdown."
+)
+
+
 class AnomalyNarrative(BaseModel):
     """Plain-language wrapper around DETERMINISTIC anomaly signals — the LLM
     only phrases what the numbers already say; it never decides the verdict."""
@@ -187,6 +203,21 @@ class InvoiceSkill(Skill):
             "de los campos; lo que no tenga dato, explícalo como concepto sin "
             "cifras):\n" + "\n".join(lines),
             temperature=0.3, max_tokens=950)
+
+    async def answer_billing_question(self, question: str,
+                                      facts: Dict[str, Any]) -> Optional[str]:
+        """One plain-language answer to the user's question about THIS invoice,
+        grounded on its aggregated facts (or None: AI off/unavailable)."""
+        question = (question or "").strip()[:300]
+        if not question:
+            return None
+        lines = [f"- {k}: {v}" for k, v in facts.items() if v is not None]
+        return await self.run_text(
+            "Datos de la factura (no muestres los nombres técnicos de los "
+            "campos):\n" + "\n".join(lines) +
+            "\n\nPregunta del usuario: " + question +
+            "\n\nRespóndela en llano.",
+            system=_QA_SYSTEM, temperature=0.3, max_tokens=450)
 
     async def extract_bill_amounts(self, markdown: str) -> Optional[BillAmounts]:
         """Bill markdown → structured line-item amounts (deterministic, t=0)."""

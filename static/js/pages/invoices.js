@@ -667,6 +667,8 @@
     var body = q('iv-explain-body');
     var anomEl = q('iv-explain-anomaly');
     anomEl.style.display = 'none';
+    var askLog = q('iv-ask-log');           // Q&A belongs to ONE invoice —
+    if (askLog) askLog.innerHTML = '';      // reset when another one opens
     body.innerHTML = '<span class="spinner"></span> <span class="text-muted">' +
       __t('inv.explaining', 'Leyendo tu factura y preparando la explicación…') + '</span>';
     AppUI.openPanel('explainPanel');
@@ -702,6 +704,31 @@
   }
   function closeExplain() { AppUI.closePanel('explainPanel'); }
 
+  // Q&A en llano sobre LA factura abierta en el panel Explicar.
+  function ask() {
+    var inp = q('iv-ask-input'), log = q('iv-ask-log'), btn = q('iv-ask-send');
+    var question = (inp.value || '').trim();
+    if (_explainId == null || question.length < 3) return;
+    inp.value = '';
+    var item = document.createElement('div');
+    item.style.cssText = 'margin-bottom:0.7rem;font-size:0.88rem;';
+    item.innerHTML = '<div style="font-weight:600;margin-bottom:2px;">' + esc(question) + '</div>' +
+      '<div class="iv-ask-a"><span class="spinner"></span></div>';
+    log.appendChild(item);
+    item.scrollIntoView({ block: 'nearest' });
+    btn.disabled = true;
+    cfetch('/invoices/' + _explainId + '/ask', {
+      method: 'POST', body: JSON.stringify({ question: question }),
+    }).then(function (r) {
+      item.querySelector('.iv-ask-a').innerHTML =
+        '<div style="background:rgba(70,130,180,0.08);border-left:3px solid #4682b4;border-radius:0 8px 8px 0;padding:8px 10px;line-height:1.5;">' +
+        mdLite(r.answer || '').replace(/\n/g, '<br>') + '</div>';
+    }).catch(function (e) {
+      item.querySelector('.iv-ask-a').innerHTML =
+        '<span class="text-muted">' + esc(e.message || __t('common.error', 'Error')) + '</span>';
+    }).finally(function () { btn.disabled = false; inp.focus(); });
+  }
+
   // Branded printable one-pager of the explanation → the PDF viewer panel.
   function explainPdf() {
     if (_explainId == null) return;
@@ -730,6 +757,7 @@
     openFix: openFix, closeFix: closeFix, fixType: fixType, saveFix: saveFix,
     closePdf: closePdf, togglePdfExpand: togglePdfExpand,
     explain: explain, closeExplain: closeExplain, explainPdf: explainPdf,
+    ask: ask,
   };
 
   document.addEventListener('i18n:changed', renderTable);

@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "64"  # 64: catálogo de tarifas conectado — resolve en la subida (sin pregunta de tipo si hay match)
+ASSET_VERSION = "65"  # 65: Q&A en llano sobre la factura (answer_billing_question) en el panel Explicar
 
 
 def render_template(template_name: str, **context) -> str:

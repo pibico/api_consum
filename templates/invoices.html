@@ -184,6 +184,17 @@
   <div class="slide-panel-body" style="padding:16px 20px;overflow-y:auto;">
     <div id="iv-explain-anomaly" style="display:none;"></div>
     <div id="iv-explain-body" style="font-size:0.95rem;"></div>
+    <!-- Q&A en llano sobre ESTA factura (answer_billing_question) -->
+    <div style="margin-top:1rem;padding-top:0.8rem;border-top:1px solid rgba(44,81,113,0.15);">
+      <div style="font-weight:600;font-size:0.85rem;margin-bottom:0.5rem;" data-i18n="inv.askTitle">¿Tienes una duda sobre esta factura?</div>
+      <div id="iv-ask-log"></div>
+      <div style="display:flex;gap:6px;">
+        <input type="text" id="iv-ask-input" class="pibico-input" maxlength="300" style="flex:1;"
+               onkeydown="if(event.key==='Enter')IvPage.ask()"
+               data-i18n-placeholder="inv.askPlaceholder" placeholder="Escribe tu pregunta en tus palabras…">
+        <button class="btn btn-sm btn-primary" id="iv-ask-send" onclick="IvPage.ask()" data-i18n="inv.askSend">Preguntar</button>
+      </div>
+    </div>
     <p class="text-muted" style="margin-top:0.5rem;font-size:0.7rem;" data-i18n="inv.explainNote">Explicación generada con IA a partir de los importes de tu factura. Si algo no cuadra, consulta el documento.</p>
   </div>
 </aside>

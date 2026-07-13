@@ -197,6 +197,40 @@ async def explain(invoice_id: int,
     return {"explanation": text, "cached": False}
 
 
+class AskIn(BaseModel):
+    question: str
+
+    @model_validator(mode="after")
+    def _check(self):
+        q = (self.question or "").strip()
+        if not (3 <= len(q) <= 300):
+            raise ValueError("la pregunta debe tener entre 3 y 300 caracteres")
+        self.question = q
+        return self
+
+
+@router.post("/{invoice_id}/ask")
+async def ask(invoice_id: int, body: AskIn,
+              ctx: ConsumContext = Depends(require_ai())):
+    """Plain-language Q&A about ONE invoice — grounded on its own facts and
+    stored bill text, same footing as /explain. Not cached (questions vary)."""
+    inv = await invoices.get(invoice_id)
+    if not inv:
+        raise HTTPException(404, detail="Factura no encontrada")
+    await _check_invoice_scope(ctx, inv)
+    from app.services.ai import registry
+    from app.services.ai.invoices import facts_for_invoice
+    inv = await _ensure_uploaded_markdown(inv)
+    prev = await invoices.previous_closed(inv["customer_id"], inv["period_start"])
+    if prev and prev.get("id") == invoice_id:
+        prev = None
+    facts = facts_for_invoice(inv, prev)
+    answer = await registry.get("invoice").answer_billing_question(body.question, facts)
+    if not answer:
+        raise HTTPException(503, detail="La IA no está disponible ahora mismo.")
+    return {"answer": answer}
+
+
 async def _compute_explanation(inv: dict) -> str:
     """Generate (and cache) the plain-language explanation for an invoice."""
     from app.services.ai import registry
