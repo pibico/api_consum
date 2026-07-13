@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "87"  # 87: playground de extracción de facturas (superadmin only)
+ASSET_VERSION = "88"  # 88: sin border-left en cards (desglose €/kWh + respuesta QASSET_VERSION = "87"  # 87: playground de extracción de facturas (superadmin only)A factura)
 
 
 def render_template(template_name: str, **context) -> str:

@@ -959,7 +959,7 @@
       }).join('');
       leg.innerHTML = parts.map(function (p) {
         return '<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:8px;' +
-          'background:' + p.color + '17;border-left:3px solid ' + p.color + ';margin-bottom:5px;font-size:0.85rem;">' +
+          'background:' + p.color + '17;margin-bottom:5px;font-size:0.85rem;">' +
           '<span style="width:10px;height:10px;border-radius:3px;background:' + p.color + ';flex:none;"></span>' +
           '<span>' + esc(p.label) + '</span>' +
           '<b style="margin-left:auto;">' + eur(p.v) + '</b>' +
@@ -989,7 +989,7 @@
       method: 'POST', body: JSON.stringify({ question: question }),
     }).then(function (r) {
       item.querySelector('.iv-ask-a').innerHTML =
-        '<div style="background:rgba(70,130,180,0.08);border-left:3px solid #4682b4;border-radius:0 8px 8px 0;padding:8px 10px;line-height:1.5;">' +
+        '<div style="background:rgba(70,130,180,0.08);border-radius:8px;padding:8px 10px;line-height:1.5;">' +
         mdLite(r.answer || '').replace(/\n/g, '<br>') + '</div>';
     }).catch(function (e) {
       item.querySelector('.iv-ask-a').innerHTML =
