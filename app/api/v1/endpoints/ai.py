@@ -17,7 +17,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
-from app.api.v1.dependencies.rbac import ConsumContext, require_ai
+from app.api.v1.dependencies.rbac import ConsumContext, consum_context, require_ai
 from app.api.v1.endpoints.consumption import _slugs
 from app.core.config import settings
 from app.services import ai_client, consumption, exo_client, oe3
@@ -303,3 +303,35 @@ async def chat_today(customer: Optional[str] = Query(None),
     scope = "|".join(sorted(slugs))
     turns = await ai_usage.chat_get(scope, (ctx.user or {}).get("email"))
     return {"turns": turns}
+
+
+@router.get("/usage/summary")
+async def ai_usage_summary(month: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}$"),
+                           ctx: ConsumContext = Depends(consum_context)):
+    """Monthly token-ledger rollup. Superadmin/service → all scopes; org
+    members → only scopes containing their own households. Consumed by the
+    api_auth credits views."""
+    from app.services import ai_usage
+    slugs = None if ctx.is_superadmin else sorted(ctx.customer_slugs)
+    if slugs == []:
+        raise HTTPException(404, detail="no household in scope")
+    return {"month": month, "cap": settings.AI_MONTHLY_TOKEN_CAP,
+            "rows": await ai_usage.usage_summary(slugs, month)}
+
+
+@router.get("/usage/log")
+async def ai_usage_log(day: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+                       customer: Optional[str] = Query(None),
+                       limit: int = Query(200, le=500),
+                       ctx: ConsumContext = Depends(consum_context)):
+    """Conversation log (admin views). Superadmin/service → any/all orgs;
+    org members → only their own households."""
+    from app.services import ai_usage
+    if ctx.is_superadmin:
+        slugs = [customer] if customer else None
+    else:
+        slugs = [ctx.check_slug(customer)] if customer \
+            else sorted(ctx.customer_slugs)
+        if not slugs:
+            raise HTTPException(404, detail="no household in scope")
+    return {"turns": await ai_usage.chat_log(slugs, day, limit)}

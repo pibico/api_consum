@@ -316,6 +316,13 @@
             <span class="nav-label" data-i18n="nav.plc">Mi PLC</span>
           </a>
           <div class="nav-section" data-i18n="nav.sectionSystem">Sistema</div>
+          {# Superadmin-only: shown by api_consum.js once /consumption/context
+             confirms is_superadmin — hidden by default so ordinary members never see it. #}
+          <a href="{{ root }}/app/playground" id="nav-playground" style="display:none;"
+             data-i18n-title="nav.playground" title="Playground de extracción">
+            <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6L4 20a1.5 1.5 0 0 0 1.4 2h13.2a1.5 1.5 0 0 0 1.4-2L15 8V2"/><path d="M9 2h6"/><path d="M8.5 15h7"/></svg></span>
+            <span class="nav-label" data-i18n="nav.playground">Playground</span>
+          </a>
           <a href="{{ root }}/api/docs" target="_blank" data-i18n-title="nav.apiDocs" title="API Docs">
             <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span>
             <span class="nav-label" data-i18n="nav.apiDocs">API Docs</span>

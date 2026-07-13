@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "86"  # 86: meta de inferencia bajo el bubble (modelo, hora, tiempo, tokens, tok/s)
+ASSET_VERSION = "87"  # 87: playground de extracción de facturas (superadmin only)
 
 
 def render_template(template_name: str, **context) -> str:
@@ -78,6 +78,29 @@ async def _require_member_page(request: Request) -> Optional[RedirectResponse]:
         if "api_consum" in (org.get("services") or []):
             return None
     return RedirectResponse(url=LANDING_URL, status_code=303)
+
+
+async def _require_superadmin_page(request: Request) -> Optional[RedirectResponse]:
+    """Server-side gate for SUPERADMIN-ONLY pages (e.g. the extraction
+    playground) — unlike `_require_member_page`, an ordinary org member with
+    api_consum access is NOT enough here; only a superadmin (or the
+    ADMIN_API_KEY query-param escape hatch) may pass."""
+    api_key = request.query_params.get("api_key")
+    if api_key and settings.ADMIN_API_KEY and api_key == settings.ADMIN_API_KEY:
+        return None
+
+    token = request.cookies.get("auth_jwt")
+    if not token:
+        return RedirectResponse(url=LOGIN_URL, status_code=303)
+
+    try:
+        user = await _validate_jwt(token)
+    except HTTPException:
+        return RedirectResponse(url=LOGIN_URL, status_code=303)
+
+    if user.get("is_superadmin"):
+        return None
+    return RedirectResponse(url=APP_URL, status_code=303)
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -150,6 +173,17 @@ async def plc_page(request: Request):
     if guard:
         return guard
     return render_template("plc.html")
+
+
+@router.get("/app/playground", response_class=HTMLResponse)
+async def playground_page(request: Request):
+    """Playground de extracción de facturas — SOLO superadmin. Sirve para
+    probar/afinar la lectura de facturas de distintas comercializadoras; el
+    endpoint que consume (`POST /playground/extract`) no persiste nada."""
+    guard = await _require_superadmin_page(request)
+    if guard:
+        return guard
+    return render_template("playground.html")
 
 
 @router.get("/guia", response_class=HTMLResponse)

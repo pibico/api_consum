@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Playground de extracción — CONSUM-IA{% endblock %}
+{% block page_title_key %}nav.playground{% endblock %}
+{% block page_title %}Playground de extracción{% endblock %}
+{% block topbar_actions %}
+<button class="btn btn-sm" id="pg-reset-btn" onclick="PgPage.reset()" data-i18n="pg.resetBtn">Probar otra</button>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .pg-layout { display: grid; grid-template-columns: 1fr 280px; gap: 1rem; align-items: start; }
+  @media (max-width: 900px) { .pg-layout { grid-template-columns: 1fr; } }
+  .pg-field-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  .pg-field-table td { padding: 0.3rem 0.2rem; border-bottom: 1px solid rgba(0,0,0,0.06); vertical-align: top; }
+  .pg-field-table td:first-child { color: var(--color-text-light); width: 55%; }
+  .pg-field-table td.pg-null { color: rgba(0,0,0,0.35); font-style: italic; }
+  .pg-conf-badge { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 12px; font-size: 0.72rem; font-weight: 600; }
+  .pg-conf-hi { background: rgba(46,204,113,0.18); color: #1e8449; }
+  .pg-conf-mid { background: rgba(243,156,18,0.18); color: #b9770e; }
+  .pg-conf-lo { background: rgba(231,76,60,0.18); color: #a93226; }
+  .pg-conf-na { background: rgba(0,0,0,0.06); color: var(--color-text-light); }
+  .pg-hist-item {
+    display: block; width: 100%; text-align: left; background: transparent;
+    border: 1px solid transparent; border-radius: 6px; padding: 6px 8px;
+    margin-bottom: 4px; cursor: pointer; font-size: 0.78rem; color: var(--color-text);
+  }
+  .pg-hist-item:hover { background: rgba(70,130,180,0.08); }
+  .pg-hist-item.active { background: rgba(70,130,180,0.14); border-color: rgba(70,130,180,0.3); }
+  .pg-hist-item small { display: block; color: var(--color-text-light); }
+</style>
+{% endblock %}
+
+{% block content %}
+{# Playground de extracción — SOLO superadmin. Prueba la lectura de facturas de
+   CUALQUIER comercializadora sin dar de alta nada: no crea contrato, factura ni
+   CUPS — el resultado vive solo en esta página (ver app/api/v1/endpoints/
+   playground.py, garantía de no-persistencia comentada en el propio módulo). #}
+<div class="glass-panel" style="padding:0.9rem 1.1rem;margin-bottom:1rem;">
+  <p class="text-muted" style="margin:0;font-size:0.8rem;" data-i18n="pg.intro">
+    Sube una factura, ficha o contrato de cualquier comercializadora para ver qué
+    extrae el modelo. Herramienta de comparación entre proveedores: NO se guarda
+    nada — ni contrato, ni factura, ni CUPS.
+  </p>
+</div>
+
+<div class="pg-layout">
+  <div class="pg-main">
+    <!-- Upload card -->
+    <div class="glass-panel" style="padding:0.9rem 1.1rem;margin-bottom:1rem;">
+      <h4 style="margin:0 0 0.6rem;font-size:0.85rem;" data-i18n="pg.uploadTitle">Documento a probar</h4>
+      <div style="display:flex;flex-direction:column;gap:10px;font-size:0.85rem;">
+        <div>
+          <label style="font-weight:600;" data-i18n="pg.upFile">Documento (PDF o foto)</label>
+          <input type="file" id="pg-file" accept="application/pdf,image/*,.md,.txt" class="pibico-input" style="padding:6px;">
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.78rem;color:var(--color-text-light);">
+          <input type="checkbox" id="pg-vlm">
+          <span data-i18n="pg.upVlm">Es una foto o un escaneo (lectura más lenta pero mejor)</span>
+        </label>
+        <div>
+          <label data-i18n="pg.upOrText">…o pega aquí el texto</label>
+          <textarea id="pg-text" rows="4" class="pibico-input" data-i18n-placeholder="pg.upTextPh" placeholder="Pega el texto de la factura/ficha/contrato"></textarea>
+        </div>
+        <div id="pg-status" style="font-size:0.8rem;min-height:1.1em;"></div>
+        <div>
+          <button type="button" class="btn btn-primary" id="pg-read-btn" onclick="PgPage.readDocument()" data-i18n="pg.upReadBtn">Leer con IA</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div class="wx-2col" id="pg-results" style="display:none;">
+      <div class="glass-panel" style="padding:0.9rem 1.1rem;">
+        <h4 style="margin:0 0 0.6rem;font-size:0.85rem;display:flex;align-items:center;gap:8px;">
+          <span data-i18n="pg.tariffTitle">Tarifa extraída</span>
+          <span class="badge badge-info" id="pg-kind-badge" style="display:none;"></span>
+          <span class="pg-conf-badge pg-conf-na" id="pg-conf-badge" style="margin-left:auto;">—</span>
+        </h4>
+        <table class="pg-field-table"><tbody id="pg-tariff-tbody"></tbody></table>
+      </div>
+      <div class="glass-panel" style="padding:0.9rem 1.1rem;">
+        <h4 style="margin:0 0 0.6rem;font-size:0.85rem;" data-i18n="pg.amountsTitle">Importes de la factura</h4>
+        <table class="pg-field-table"><tbody id="pg-amounts-tbody"></tbody></table>
+        <p class="text-muted" id="pg-amounts-sum" style="margin:0.5rem 0 0;font-size:0.78rem;"></p>
+      </div>
+    </div>
+
+    <div id="pg-warning" class="text-muted" style="display:none;margin:0.6rem 0;font-size:0.8rem;color:#b9770e;background:rgba(243,156,18,0.10);border:1px solid rgba(243,156,18,0.35);border-radius:8px;padding:8px 10px;"></div>
+
+    <div id="pg-meta" class="text-muted" style="display:none;margin-top:0.6rem;font-size:0.75rem;align-items:center;gap:10px;">
+      <span id="pg-meta-text"></span>
+      <button type="button" class="btn btn-sm" onclick="PgPage.openMarkdown()" data-i18n="pg.viewMarkdown">Ver markdown</button>
+    </div>
+  </div>
+
+  <!-- Session-only history (in-memory JS array — nothing stored, nothing sent) -->
+  <div class="glass-panel" style="padding:0.8rem;">
+    <h4 style="margin:0 0 0.5rem;font-size:0.8rem;" data-i18n="pg.historyTitle">Historial de esta sesión</h4>
+    <div id="pg-history-list">
+      <p class="text-muted" style="font-size:0.75rem;" data-i18n="pg.historyEmpty">Aún no has probado ningún documento.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Raw markdown viewer (right slide panel — never a modal) -->
+<aside class="slide-panel" id="pgMdPanel" aria-hidden="true">
+  <div class="slide-panel-header">
+    <h2 data-i18n="pg.mdTitle">Markdown convertido</h2>
+    <button type="button" class="panel-close" onclick="PgPage.closeMarkdown()" aria-label="Cerrar">&times;</button>
+  </div>
+  <div class="slide-panel-body" style="padding:16px 20px;overflow-y:auto;">
+    <p class="text-muted" style="margin:0 0 0.6rem;font-size:0.78rem;" data-i18n="pg.mdIntro">
+      Esto es lo que vio el modelo tras convertir el documento — útil para diagnosticar por qué faltó un dato.
+    </p>
+    <pre id="pg-md-content" style="white-space:pre-wrap;word-break:break-word;font-size:0.75rem;background:rgba(0,0,0,0.03);border-radius:8px;padding:10px;"></pre>
+  </div>
+</aside>
+
+<script src="{{ root }}/static/js/pages/playground.js?v={{ v }}" defer></script>
+{% endblock %}

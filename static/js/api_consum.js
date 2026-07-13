@@ -189,6 +189,16 @@ function initApp() {
       a.classList.add('active');
     }
   });
+
+  // Playground nav link: superadmin-only (hidden by default in base.html).
+  // Reveal it once /consumption/context confirms is_superadmin — every /app/*
+  // page shares this shell, so one fetch here covers the whole console.
+  var navPg = document.getElementById('nav-playground');
+  if (navPg) {
+    apiFetch('/consumption/context').then(function (c) {
+      if (c && c.is_superadmin) navPg.style.display = '';
+    }).catch(function () { /* not entitled / not logged in yet — stay hidden */ });
+  }
 }
 
 if (document.readyState === 'loading') {
