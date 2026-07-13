@@ -71,6 +71,28 @@ async def billing_period(customer: Optional[str] = Query(None),
     return await invoices.billing_period_live(slugs[0])
 
 
+class NextCloseIn(BaseModel):
+    date: Optional[_date] = None    # null → back to the median estimate
+
+
+@router.put("/billing-period/expected-end")
+async def set_expected_end(body: NextCloseIn,
+                           customer: Optional[str] = Query(None),
+                           ctx: ConsumContext = Depends(consum_context)):
+    """Self-service: the household sets WHEN its open period closes (their
+    meter-reading day) — beats the median estimate in the KPI. Null clears."""
+    if ctx.is_service and not ctx.is_superadmin:
+        raise HTTPException(403, detail="read-only service key")
+    slugs = await _slugs(ctx, customer)
+    if not slugs:
+        raise HTTPException(400, detail="no household in scope")
+    slug = ctx.check_slug(slugs[0])
+    if body.date is not None and body.date < _date.today():
+        raise HTTPException(422, detail="La fecha de cierre no puede ser pasada.")
+    return await invoices.set_next_close(slug, body.date.isoformat() if body.date else None,
+                                         (ctx.user or {}).get("email"))
+
+
 @router.get("/{invoice_id}")
 async def get_invoice(invoice_id: int,
                       ctx: ConsumContext = Depends(consum_context)):
@@ -112,9 +134,27 @@ async def upload_invoice(
             ex = json.loads(extracted)
         except ValueError:
             ex = None
-    return await invoices.store_uploaded(slug, blob, file.filename or "factura.pdf",
-                                         ex, (ctx.user or {}).get("email"),
-                                         markdown=markdown)
+    inv = await invoices.store_uploaded(slug, blob, file.filename or "factura.pdf",
+                                        ex, (ctx.user or {}).get("email"),
+                                        markdown=markdown)
+    # Per-band kWh (P1/P2/P3) live in the bill TEXT, not in the tariff
+    # extraction — fill the mig-008 columns in the background (one amounts
+    # call) so the list shows the split without delaying the upload response.
+    if markdown:
+        asyncio.get_running_loop().create_task(_fill_band_kwh(inv["id"], markdown))
+    return inv
+
+
+async def _fill_band_kwh(invoice_id: int, markdown: str) -> None:
+    """Best-effort: AI amounts extraction → energy_p1/2/3_kwh columns."""
+    try:
+        from app.services.ai import registry
+        got = await registry.get("invoice").extract_bill_amounts(markdown)
+        if got and (got.kwh_horas_caras or got.kwh_horas_normales or got.kwh_horas_baratas):
+            await invoices.set_band_kwh(invoice_id, got.kwh_horas_caras,
+                                        got.kwh_horas_normales, got.kwh_horas_baratas)
+    except Exception:                                    # noqa: BLE001
+        pass                                             # list shows — until then
 
 
 @router.get("/{invoice_id}/file")
@@ -182,18 +222,39 @@ async def pdf(invoice_id: int,
 _explain_cache: _LRUCache = _LRUCache()
 
 
-@router.get("/{invoice_id}/explain")
-async def explain(invoice_id: int,
-                  ctx: ConsumContext = Depends(require_ai())):
-    """Plain-language explanation of an invoice (generated or uploaded), with
-    a comparison against the previous closed one when it exists."""
+@router.get("/{invoice_id}/amounts")
+async def amounts(invoice_id: int,
+                  ctx: ConsumContext = Depends(consum_context)):
+    """Structured cost concepts of ONE invoice (the colored breakdown panel).
+    Generated rows read their own columns (free); uploaded rows reuse the
+    cached AI amounts extraction — may be null when AI is off."""
     inv = await invoices.get(invoice_id)
     if not inv:
         raise HTTPException(404, detail="Factura no encontrada")
     await _check_invoice_scope(ctx, inv)
-    if invoice_id in _explain_cache:
+    if inv.get("origin") == "uploaded":
+        inv = await _ensure_uploaded_markdown(inv)
+    got = await _compute_amounts(inv)
+    return {"amounts": got, "total_eur": inv.get("total_eur"),
+            "energy_kwh": inv.get("energy_kwh"),
+            "period_start": inv.get("period_start"),
+            "period_end": inv.get("period_end")}
+
+
+@router.get("/{invoice_id}/explain")
+async def explain(invoice_id: int, regenerate: bool = False,
+                  ctx: ConsumContext = Depends(require_ai())):
+    """Plain-language explanation of an invoice (generated or uploaded), with
+    a comparison against the previous closed one when it exists. Computed ONCE
+    and PERSISTED with the invoice; `?regenerate=1` (the panel's 'Regenerar')
+    forces a fresh take when the first one doesn't convince."""
+    inv = await invoices.get(invoice_id)
+    if not inv:
+        raise HTTPException(404, detail="Factura no encontrada")
+    await _check_invoice_scope(ctx, inv)
+    if not regenerate and invoice_id in _explain_cache:
         return {"explanation": _explain_cache[invoice_id], "cached": True}
-    text = await _compute_explanation(inv)
+    text = await _compute_explanation(inv, regenerate=regenerate)
     return {"explanation": text, "cached": False}
 
 
@@ -231,14 +292,21 @@ async def ask(invoice_id: int, body: AskIn,
     return {"answer": answer}
 
 
-async def _compute_explanation(inv: dict) -> str:
-    """Generate (and cache) the plain-language explanation for an invoice."""
+async def _compute_explanation(inv: dict, regenerate: bool = False) -> str:
+    """Explanation resolution: in-proc cache → PERSISTED in the invoice's
+    breakdown (survives restarts — never re-bill the AI for work already done)
+    → LLM, persisting afterwards. `regenerate` skips both and overwrites."""
     from app.services.ai import registry
     from app.services.ai.invoices import facts_for_invoice
 
     iid = inv["id"]
-    if iid in _explain_cache:
-        return _explain_cache[iid]
+    if not regenerate:
+        if iid in _explain_cache:
+            return _explain_cache[iid]
+        saved = ((inv.get("breakdown") or {}).get("ai_explanation") or {}).get("text")
+        if saved:
+            _explain_cache[iid] = saved
+            return saved
     inv = await _ensure_uploaded_markdown(inv)
     prev = await invoices.previous_closed(inv["customer_id"], inv["period_start"])
     if prev and prev.get("id") == iid:
@@ -248,6 +316,8 @@ async def _compute_explanation(inv: dict) -> str:
     if not text:
         raise HTTPException(503, detail="La explicación con IA no está disponible ahora.")
     _explain_cache[iid] = text
+    await invoices.set_breakdown_key(iid, "ai_explanation",
+                                     {"text": text, "at": _date.today().isoformat()})
     return text
 
 
@@ -390,11 +460,24 @@ async def _compute_amounts(inv: dict) -> Optional[dict]:
                "kwh_horas_baratas": per["P3"] or None}
     else:
         from app.services.ai import registry
-        md = ((inv.get("breakdown") or {}).get("markdown"))
+        bd = inv.get("breakdown") or {}
+        saved = bd.get("ai_amounts")
+        if saved:                       # persisted — never re-bill the AI
+            _amounts_cache[iid] = saved
+            return saved
+        md = bd.get("markdown")
         if md:
             got = await registry.get("invoice").extract_bill_amounts(md)
             if got:
                 out = got.model_dump()
+                await invoices.set_breakdown_key(iid, "ai_amounts", out)
+                # Lazy backfill of the mig-008 band columns for rows uploaded
+                # before the background fill existed.
+                if inv.get("energy_p1_kwh") is None and \
+                   (got.kwh_horas_caras or got.kwh_horas_normales or got.kwh_horas_baratas):
+                    await invoices.set_band_kwh(iid, got.kwh_horas_caras,
+                                                got.kwh_horas_normales,
+                                                got.kwh_horas_baratas)
     if out is not None:
         _amounts_cache[iid] = out
     return out

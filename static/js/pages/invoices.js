@@ -79,7 +79,7 @@
   function renderRows(rows) {
     var tb = q('iv-tbody');
     if (!rows.length) {
-      tb.innerHTML = '<tr><td colspan="7" class="text-center text-muted">' +
+      tb.innerHTML = '<tr><td colspan="9" class="text-center text-muted">' +
         __t('inv.empty', 'Sin facturas — cierra un periodo para generar la primera.') + '</td></tr>';
       return;
     }
@@ -111,12 +111,37 @@
       var cups = iv.cups
         ? '<span style="font-family:monospace;font-size:0.78rem;" title="' + iv.cups + '">…' + iv.cups.slice(-8) + '</span>'
         : '<span class="text-muted">—</span>';
+      var days = daysBetween(iv.period_start, iv.period_end);
+      // Energy: total (uploaded rows may only know the band sum) + kWh/day.
+      var kwhTotal = iv.energy_kwh ||
+        ((iv.energy_p1_kwh || 0) + (iv.energy_p2_kwh || 0) + (iv.energy_p3_kwh || 0)) || null;
+      var energy = kwhTotal
+        ? fmt(kwhTotal, 1) + ' kWh' + (days > 0
+            ? '<div class="text-muted" style="font-size:0.72rem;">' + fmt(kwhTotal / days, 1) + ' ' + __t('inv.perDay', 'kWh/día') + '</div>' : '')
+        : '—';
+      // Band split P1 · P2 · P3, colored like everywhere else in the app.
+      var bands = (iv.energy_p1_kwh != null || iv.energy_p2_kwh != null || iv.energy_p3_kwh != null)
+        ? '<span style="white-space:nowrap;font-size:0.82rem;" title="' + __t('inv.bandsTitle', 'caras · normales · baratas (kWh)') + '">' +
+          '<span style="color:#e74c3c;font-weight:600;">' + fmt(iv.energy_p1_kwh || 0, 0) + '</span> · ' +
+          '<span style="color:#f39c12;font-weight:600;">' + fmt(iv.energy_p2_kwh || 0, 0) + '</span> · ' +
+          '<span style="color:#2ecc71;font-weight:600;">' + fmt(iv.energy_p3_kwh || 0, 0) + '</span></span>'
+        : '<span class="text-muted">—</span>';
+      // All-in effective price: total ÷ kWh (power, tolls and taxes INSIDE) —
+      // the honest number to compare bills with. Click → concept breakdown.
+      var allIn = (iv.total_eur && kwhTotal)
+        ? '<button class="btn btn-sm pnl-day-btn" onclick="IvPage.cost(' + iv.id + ')" ' +
+          'title="' + __t('inv.allInTitle', 'Ver el desglose por conceptos') + '" ' +
+          'style="font-family:monospace;font-size:0.8rem;padding:2px 8px;">' +
+          (iv.total_eur / kwhTotal).toFixed(3).replace('.', ',') + '</button>'
+        : '<span class="text-muted">—</span>';
       return '<tr' + (voided ? ' style="opacity:0.55;"' : '') + '>' +
         '<td>' + iv.period_start + ' → ' + iv.period_end + '</td>' +
         '<td>' + cups + '</td>' +
-        '<td>' + daysBetween(iv.period_start, iv.period_end) + '</td>' +
-        '<td>' + (uploaded && !iv.energy_kwh ? '—' : fmt(iv.energy_kwh, 1) + ' kWh') + '</td>' +
+        '<td>' + days + '</td>' +
+        '<td>' + energy + '</td>' +
+        '<td>' + bands + '</td>' +
         '<td><b>' + eur(iv.total_eur) + '</b></td>' +
+        '<td>' + allIn + '</td>' +
         '<td>' + badge + '</td>' +
         '<td style="text-align:right;white-space:nowrap;">' + actions + '</td>' +
       '</tr>';
@@ -262,7 +287,34 @@
   }
 
   // ── Close-period form ────────────────────────────────────────────────────
-  function openForm() { q('iv-form-error').textContent = ''; AppUI.openPanel('invoicePanel'); }
+  // The OPENING day is not a question — it is the day after the household's
+  // last (non-void) invoice, same anchor the "factura en curso" KPIs use.
+  // Prefilled (editable for the first-ever close); the user only picks the
+  // closing day, defaulted to yesterday.
+  function openForm() {
+    q('iv-form-error').textContent = '';
+    var latest = null;
+    (list || []).forEach(function (iv) {
+      if (iv.status === 'void') return;
+      if (!latest || iv.period_end > latest) latest = iv.period_end;
+    });
+    var hint = q('iv-f-start-hint');
+    if (latest) {
+      var d = new Date(latest + 'T00:00:00');
+      d.setDate(d.getDate() + 1);
+      var start = localDate(d);
+      q('iv-f-start').value = start;
+      if (hint) hint.textContent = __t('inv.fStartAuto', 'día siguiente a tu última factura');
+      var y = new Date(); y.setDate(y.getDate() - 1);
+      var yesterday = localDate(y);
+      q('iv-f-end').value = yesterday >= start ? yesterday : '';
+    } else if (hint) {
+      hint.textContent = '';
+    }
+    AppUI.openPanel('invoicePanel');
+    var endEl = q('iv-f-end');
+    if (endEl) setTimeout(function () { endEl.focus(); }, 150);
+  }
   function closeForm() { AppUI.closePanel('invoicePanel'); }
 
   function presetLastMonth() {
@@ -300,8 +352,118 @@
     loadBillingPeriod();
     return cfetch('/invoices' + custQS()).then(function (r) { list = r.values || []; })
       .catch(function () { list = []; })
-      .then(renderTable);
+      .then(function () { renderTable(); renderCharts(); });
   }
+
+  // ── Per-invoice charts (above the table): kWh/day and band split ─────────
+  var _ivCharts = {};
+  var _ivRange = 12;   // months back shown in the charts (6/12/24 selector)
+  function _chart(id) {
+    var el = q(id);
+    if (!el || typeof echarts === 'undefined') return null;
+    if (!_ivCharts[id]) _ivCharts[id] = echarts.init(el);
+    return _ivCharts[id];
+  }
+  function setRange(months) {
+    _ivRange = months;
+    renderCharts();
+  }
+  function _paintRange() {
+    var box = q('iv-range');
+    if (!box) return;
+    box.querySelectorAll('button').forEach(function (b) {
+      var on = +b.dataset.months === _ivRange;
+      b.style.background = on ? 'rgba(70,130,180,0.85)' : 'none';
+      b.style.color = on ? '#fff' : '';
+      b.style.fontWeight = on ? '600' : '';
+    });
+  }
+  function renderCharts() {
+    var wrap = q('iv-charts');
+    if (!wrap) return;
+    _paintRange();
+    // Range cutoff: only periods ending in the last N months.
+    var cut = new Date();
+    cut.setMonth(cut.getMonth() - _ivRange);
+    var cutIso = localDate(cut);
+    // Oldest → newest, skip voided; need at least 2 periods to be a chart.
+    var rows = (list || []).filter(function (iv) {
+      return iv.status !== 'void' && iv.period_end >= cutIso;
+    }).slice().sort(function (a, b) { return a.period_start < b.period_start ? -1 : 1; });
+    if (rows.length < 2) { wrap.style.display = 'none'; return; }
+    wrap.style.display = '';
+    var labels = rows.map(function (iv) { return iv.period_end; });
+    var days = rows.map(function (iv) { return daysBetween(iv.period_start, iv.period_end); });
+    var AX = {
+      axisLabel: { fontSize: 9, color: '#3d5a75' },
+      axisLine: { lineStyle: { color: 'rgba(44,81,113,0.3)' } },
+    };
+    var perDay = _chart('iv-chart-perday');
+    if (perDay) {
+      perDay.setOption({
+        grid: { left: 40, right: 10, top: 12, bottom: 22 },
+        tooltip: { trigger: 'axis' },
+        xAxis: Object.assign({ type: 'category', data: labels }, AX),
+        yAxis: Object.assign({ type: 'value' }, AX),
+        series: [{
+          type: 'line', name: __t('inv.perDay', 'kWh/día'),
+          symbol: 'circle', symbolSize: 9, smooth: 0.25, connectNulls: true,
+          lineStyle: { color: 'rgba(70,130,180,0.9)', width: 2.5 },
+          itemStyle: { color: '#4682b4', borderColor: '#fff', borderWidth: 1.5 },
+          areaStyle: { color: 'rgba(70,130,180,0.10)' },
+          data: rows.map(function (iv, i) {
+            var tot = iv.energy_kwh ||
+              ((iv.energy_p1_kwh || 0) + (iv.energy_p2_kwh || 0) + (iv.energy_p3_kwh || 0));
+            return tot && days[i] ? +(tot / days[i]).toFixed(2) : null;
+          }),
+        }],
+      }, true);
+    }
+    var allin = _chart('iv-chart-allin');
+    if (allin) {
+      allin.setOption({
+        grid: { left: 44, right: 10, top: 12, bottom: 22 },
+        tooltip: { trigger: 'axis', valueFormatter: function (v) { return v != null ? v.toFixed(3) + ' €/kWh' : '—'; } },
+        xAxis: Object.assign({ type: 'category', data: labels }, AX),
+        yAxis: Object.assign({ type: 'value', scale: true }, AX),
+        series: [{
+          type: 'line', name: '€/kWh',
+          symbol: 'circle', symbolSize: 9, smooth: 0.25, connectNulls: true,
+          lineStyle: { color: 'rgba(230,126,34,0.9)', width: 2.5 },
+          itemStyle: { color: '#e67e22', borderColor: '#fff', borderWidth: 1.5 },
+          areaStyle: { color: 'rgba(230,126,34,0.08)' },
+          data: rows.map(function (iv) {
+            var tot = iv.energy_kwh ||
+              ((iv.energy_p1_kwh || 0) + (iv.energy_p2_kwh || 0) + (iv.energy_p3_kwh || 0));
+            return (iv.total_eur && tot) ? +(iv.total_eur / tot).toFixed(3) : null;
+          }),
+        }],
+      }, true);
+    }
+    var bands = _chart('iv-chart-bands');
+    if (bands) {
+      function serie(name, key, color) {
+        return { type: 'bar', stack: 'kwh', name: name, barMaxWidth: 26,
+                 itemStyle: { color: color },
+                 data: rows.map(function (iv) { return iv[key] != null ? +iv[key] : null; }) };
+      }
+      bands.setOption({
+        grid: { left: 40, right: 10, top: 12, bottom: 22 },
+        tooltip: { trigger: 'axis' },
+        legend: { show: false },
+        xAxis: Object.assign({ type: 'category', data: labels }, AX),
+        yAxis: Object.assign({ type: 'value' }, AX),
+        series: [
+          serie('P1', 'energy_p1_kwh', 'rgba(231,76,60,0.85)'),
+          serie('P2', 'energy_p2_kwh', 'rgba(243,156,18,0.85)'),
+          serie('P3', 'energy_p3_kwh', 'rgba(46,204,113,0.85)'),
+        ],
+      }, true);
+    }
+  }
+  window.addEventListener('resize', function () {
+    Object.keys(_ivCharts).forEach(function (k) { _ivCharts[k].resize(); });
+  });
 
   // ── "Factura en curso" KPIs — the OPEN billing period, anchored on the
   // invoice history (cycle = median bill length) + projection to close.
@@ -312,16 +474,63 @@
     cfetch('/invoices/billing-period' + custQS()).then(function (bp) {
       if (!bp || bp.status !== 'ok') { row.style.display = 'none'; return; }
       row.style.display = '';
-      q('iv-bp-period').textContent = bp.period_start + ' → ~' + bp.expected_end;
+      _bp = bp;
+      // A user-set close date is exact (no ~); the estimate keeps the tilde.
+      var approx = bp.end_source === 'user' ? '' : '~';
+      q('iv-bp-period').textContent = bp.period_start + ' → ' + approx + bp.expected_end;
       q('iv-bp-days').textContent = __t('inv.bpDay', 'día {n} de ~{m}')
-        .replace('{n}', bp.days_elapsed).replace('{m}', bp.days_total);
+        .replace('{n}', bp.days_elapsed)
+        .replace('~{m}', approx + bp.days_total)
+        .replace('{m}', bp.days_total);
       q('iv-bp-acc').textContent = eur(bp.total_eur);
-      q('iv-bp-acc-kwh').textContent = fmt(bp.energy_kwh, 1) + ' kWh';
+      // Total + band split, colored like the invoice table (P1·P2·P3).
+      var accKwh = fmt(bp.energy_kwh, 1) + ' kWh';
+      if (bp.energy_p1_kwh != null || bp.energy_p2_kwh != null || bp.energy_p3_kwh != null) {
+        accKwh += ' &nbsp;<span style="white-space:nowrap;" title="' +
+          __t('inv.bandsTitle', 'caras · normales · baratas (kWh)') + '">' +
+          '<span style="color:#e74c3c;font-weight:600;">' + fmt(bp.energy_p1_kwh || 0, 0) + '</span> · ' +
+          '<span style="color:#f39c12;font-weight:600;">' + fmt(bp.energy_p2_kwh || 0, 0) + '</span> · ' +
+          '<span style="color:#2ecc71;font-weight:600;">' + fmt(bp.energy_p3_kwh || 0, 0) + '</span></span>';
+      }
+      q('iv-bp-acc-kwh').innerHTML = accKwh;
       q('iv-bp-proj').textContent = bp.projected_eur != null ? '~' + eur(bp.projected_eur) : '—';
-      q('iv-bp-proj-sub').textContent = bp.eur_day != null
+      var projSub = bp.eur_day != null
         ? eur(bp.eur_day) + '/' + __t('inv.bpPerDay', 'día') + ' · ' + __t('inv.bpEstimate', 'estimado')
         : __t('inv.bpTooEarly', 'aún pocos días para estimar');
+      var projEl = q('iv-bp-proj-sub');
+      if (bp.incomplete) {
+        // Missing reading days understate the accrual AND the projection.
+        projEl.innerHTML = esc(projSub) +
+          '<div style="color:#b9770e;font-weight:600;">' +
+          esc(__t('inv.bpIncomplete', 'medición incompleta: {m} de {n} días con lecturas')
+            .replace('{m}', bp.measured_days).replace('{n}', bp.days_elapsed)) + '</div>';
+      } else {
+        projEl.textContent = projSub;
+      }
     }).catch(function () { row.style.display = 'none'; });
+  }
+
+  // The household KNOWS its meter-reading day — let them set the close date
+  // (beats the median estimate; PUT null via clearing is not offered here,
+  // picking a new date simply replaces it).
+  function editBpEnd() {
+    var box = q('iv-bp-edit');
+    if (!box) return;
+    if (box.style.display === 'flex') { box.style.display = 'none'; return; }
+    q('iv-bp-end-input').value = (_bp && _bp.expected_end) || '';
+    box.style.display = 'flex';
+  }
+  function saveBpEnd() {
+    var v = q('iv-bp-end-input').value;
+    if (!v) return;
+    cfetch('/invoices/billing-period/expected-end' + custQS(), {
+      method: 'PUT', body: JSON.stringify({ date: v }),
+    }).then(function () {
+      q('iv-bp-edit').style.display = 'none';
+      loadBillingPeriod();
+    }).catch(function (e) {
+      App.showNotification(__t('common.error', 'Error'), e.message, 'danger');
+    });
   }
 
   function loadContext() {
@@ -357,6 +566,7 @@
   var chosenType = null;   // fixed|indexed|pvpc after step 2 (or doc-settled)
   var catalogHit = null;   // catalog row when retailer/product resolved — settles
                            // the type without asking and prefills missing terms
+  var _bp = null;          // last billing-period payload (edit-close-date UI)
   var activeContract = null;
 
   function upfetch(endpoint, formData) {
@@ -662,13 +872,15 @@
 
   var _explainId = null;   // invoice shown in the explain panel (→ PDF button)
 
-  function explain(id) {
+  function explain(id, regen) {
+    if (id == null) id = _explainId;        // Regenerar keeps the open invoice
+    if (id == null) return;
     _explainId = id;
     var body = q('iv-explain-body');
     var anomEl = q('iv-explain-anomaly');
     anomEl.style.display = 'none';
     var askLog = q('iv-ask-log');           // Q&A belongs to ONE invoice —
-    if (askLog) askLog.innerHTML = '';      // reset when another one opens
+    if (askLog && !regen) askLog.innerHTML = '';   // reset on a new invoice
     body.innerHTML = '<span class="spinner"></span> <span class="text-muted">' +
       __t('inv.explaining', 'Leyendo tu factura y preparando la explicación…') + '</span>';
     AppUI.openPanel('explainPanel');
@@ -691,7 +903,7 @@
       anomEl.style.marginBottom = '0.8rem';
       anomEl.innerHTML = html;
     }).catch(function () {});
-    cfetch('/invoices/' + id + '/explain').then(function (r) {
+    cfetch('/invoices/' + id + '/explain' + (regen ? '?regenerate=1' : '')).then(function (r) {
       var text = (r.explanation || '').trim();
       body.innerHTML = text.split(/\n{2,}/).map(function (p) {
         return '<p style="margin:0 0 0.8rem;line-height:1.55;">' +
@@ -703,6 +915,62 @@
     });
   }
   function closeExplain() { AppUI.closePanel('explainPanel'); }
+
+  // ── Cost-concept breakdown panel (explain-PDF palette) ──────────────────
+  var COST_CONCEPTS = [
+    ['energia_eur', 'inv.cEnergy', 'La energía que usaste', '#4682b4'],
+    ['potencia_eur', 'inv.cPower', 'El fijo de la potencia', '#8e6cc8'],
+    ['peajes_eur', 'inv.cTolls', 'Los peajes y cargos', '#f39c12'],
+    ['bono_social_eur', 'inv.cBono', 'El bono social', '#2ecc71'],
+    ['alquiler_eur', 'inv.cRental', 'El alquiler del contador', '#6a9bc3'],
+    ['impuestos_eur', 'inv.cTaxes', 'Los impuestos', '#e74c3c'],
+  ];
+  function cost(id) {
+    var head = q('iv-cost-head'), bar = q('iv-cost-bar'), leg = q('iv-cost-legend');
+    head.innerHTML = '<span class="spinner"></span>';
+    bar.innerHTML = ''; leg.innerHTML = '';
+    AppUI.openPanel('costPanel');
+    cfetch('/invoices/' + id + '/amounts').then(function (r) {
+      var iv = (list || []).find(function (x) { return x.id === id; }) || {};
+      var kwh = r.energy_kwh ||
+        ((iv.energy_p1_kwh || 0) + (iv.energy_p2_kwh || 0) + (iv.energy_p3_kwh || 0)) || null;
+      var allIn = (r.total_eur && kwh) ? (r.total_eur / kwh).toFixed(3).replace('.', ',') : null;
+      head.innerHTML =
+        '<div style="font-size:0.85rem;color:#3d5a75;">' + esc(r.period_start + ' → ' + r.period_end) + '</div>' +
+        '<div style="display:flex;gap:1.4rem;align-items:baseline;flex-wrap:wrap;">' +
+        '<span style="font-size:1.7rem;font-weight:700;color:#2c5171;">' + eur(r.total_eur) + '</span>' +
+        (allIn ? '<span style="font-size:1rem;font-weight:600;color:#2c5171;">' + allIn +
+          ' €/kWh <span class="text-muted" style="font-weight:400;font-size:0.75rem;">' +
+          __t('inv.allInLabel', 'con todo incluido') + '</span></span>' : '') +
+        '</div>';
+      var a = r.amounts || {};
+      var parts = COST_CONCEPTS.map(function (c) {
+        return { label: __t(c[1], c[2]), color: c[3], v: +a[c[0]] || 0 };
+      }).filter(function (p) { return p.v > 0; });
+      var sum = parts.reduce(function (s, p) { return s + p.v; }, 0);
+      if (!parts.length || sum <= 0) {
+        leg.innerHTML = '<span class="text-muted">' +
+          __t('inv.costNoData', 'No hay desglose disponible para esta factura.') + '</span>';
+        return;
+      }
+      bar.innerHTML = parts.map(function (p) {
+        return '<div style="width:' + Math.max(p.v / sum * 100, 1.5) + '%;background:' + p.color + ';" title="' +
+          esc(p.label) + ' ' + eur(p.v) + '"></div>';
+      }).join('');
+      leg.innerHTML = parts.map(function (p) {
+        return '<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:8px;' +
+          'background:' + p.color + '17;border-left:3px solid ' + p.color + ';margin-bottom:5px;font-size:0.85rem;">' +
+          '<span style="width:10px;height:10px;border-radius:3px;background:' + p.color + ';flex:none;"></span>' +
+          '<span>' + esc(p.label) + '</span>' +
+          '<b style="margin-left:auto;">' + eur(p.v) + '</b>' +
+          '<span class="text-muted" style="font-size:0.72rem;min-width:38px;text-align:right;">' + (p.v / sum * 100).toFixed(0) + ' %</span>' +
+          '</div>';
+      }).join('');
+    }).catch(function (e) {
+      head.innerHTML = '<span class="text-muted">' + esc(e.message || __t('common.error', 'Error')) + '</span>';
+    });
+  }
+  function closeCost() { AppUI.closePanel('costPanel'); }
 
   // Q&A en llano sobre LA factura abierta en el panel Explicar.
   function ask() {
@@ -757,7 +1025,8 @@
     openFix: openFix, closeFix: closeFix, fixType: fixType, saveFix: saveFix,
     closePdf: closePdf, togglePdfExpand: togglePdfExpand,
     explain: explain, closeExplain: closeExplain, explainPdf: explainPdf,
-    ask: ask,
+    ask: ask, editBpEnd: editBpEnd, saveBpEnd: saveBpEnd, setRange: setRange,
+    cost: cost, closeCost: closeCost,
   };
 
   document.addEventListener('i18n:changed', renderTable);

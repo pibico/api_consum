@@ -271,6 +271,11 @@
 
         {% include "partials/lang_dropdown.html" %}
 
+        <button class="app-header-btn" id="btnHelp" onclick="HelpPanel.open()"
+                data-i18n-title="help.btn" title="Ayuda y guía">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12" y2="17"/></svg>
+        </button>
+
         <button class="app-header-btn avatar-btn" id="userAvatar" onclick="pibicoOpenAccount(event)"
                 data-i18n-title="nav.account" title="Cuenta">?</button>
       </div>
@@ -405,10 +410,28 @@
   {# Active locale dict BEFORE the engine: the engine registers window.I18N_*
      synchronously at its IIFE, so __t()/i18n.t() translate from the very first
      dynamic render (no async _ensureDict race on first paint). #}
+  <!-- Ayuda y guía — slide panel (never a modal), built by help.js from i18n -->
+  <aside class="slide-panel" id="helpPanel" aria-hidden="true">
+    <div class="slide-panel-header">
+      <h2 data-i18n="help.title">Guía de CONSUM-IA</h2>
+      <button type="button" class="panel-close" onclick="HelpPanel.close()" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="slide-panel-body" style="padding:14px 18px;overflow-y:auto;">
+      <p class="text-muted" style="margin:0 0 0.9rem;font-size:0.85rem;" data-i18n="help.intro">Tu caja mide; aquí lo entiendes. Toca cada apartado para ver cómo se usa.</p>
+      <a href="{{ root }}/guia" target="_blank" class="btn btn-sm btn-primary" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:0.9rem;"
+         onclick="try{this.href='{{ root }}/guia?lang='+(localStorage.getItem('consum_lang')||'es')}catch(e){}">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        <span data-i18n="help.fullGuide">Ver la guía completa (con capturas)</span>
+      </a>
+      <div id="help-body"><span class="spinner"></span></div>
+    </div>
+  </aside>
+
   <script src="{{ root }}/static/js/i18n.{{ lang }}.js?v={{ v }}" defer></script>
   <script src="{{ root }}/static/js/i18n.js?v={{ v }}" defer></script>
   <script src="{{ root }}/static/js/api_consum.js?v={{ v }}" defer></script>
   <script src="{{ root }}/static/js/pages/_pagination.js?v={{ v }}" defer></script>
+  <script src="{{ root }}/static/js/help.js?v={{ v }}" defer></script>
   {% block extra_js %}{% endblock %}
 </body>
 </html>

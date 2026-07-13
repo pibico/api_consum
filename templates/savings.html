@@ -32,16 +32,29 @@
   </div>
 </div>
 
-<!-- Charts: real vs weather-expected + window scores -->
+<!-- Real vs weather-expected — full width, with a how-to-read note -->
+<div class="glass-panel" style="padding:0.75rem 1rem;margin-bottom:1rem;">
+  <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="sav.chartThermal">Consumo real vs esperado por clima</span>
+    <span class="text-muted" id="sv-r2" style="font-weight:400;"></span></h4>
+  <canvas id="sav-thermal-chart" style="width:100%;height:200px;"></canvas>
+  <div style="display:flex;gap:12px;margin-top:6px;font-size:0.7rem;color:var(--color-text-light);">
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(70,130,180,0.75);"></span> <span data-i18n="sav.legReal">kWh real</span></span>
+    <span><span style="display:inline-block;width:14px;height:3px;background:#8e44ad;vertical-align:middle;"></span> <span data-i18n="sav.legExpected">esperado (HDD/CDD)</span></span>
+  </div>
+  <p class="text-muted" style="font-size:0.72rem;margin:8px 0 0;line-height:1.5;" data-i18n="sav.thermalHow">Cómo leerlo: cada barra es lo que tu casa gastó ese día; la línea morada, lo que se esperaría gastar SOLO por el clima de ese día (frío o calor). Barras muy por encima de la línea = gasto extra por hábitos (ahí se pudo ahorrar); por debajo = mejor de lo esperado. El R² dice qué parte de tu consumo la explica el clima.</p>
+</div>
+
+<!-- When to consume: compact best-hours card + price & sun chart -->
 <div class="wx-2col">
-  <div class="glass-panel" style="padding:0.75rem 1rem;">
-    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="sav.chartThermal">Consumo real vs esperado por clima</span>
-      <span class="text-muted" id="sv-r2" style="font-weight:400;"></span></h4>
-    <canvas id="sav-thermal-chart" style="width:100%;height:200px;"></canvas>
-    <div style="display:flex;gap:12px;margin-top:6px;font-size:0.7rem;color:var(--color-text-light);">
-      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(70,130,180,0.75);"></span> <span data-i18n="sav.legReal">kWh real</span></span>
-      <span><span style="display:inline-block;width:14px;height:3px;background:#8e44ad;vertical-align:middle;"></span> <span data-i18n="sav.legExpected">esperado (HDD/CDD)</span></span>
-    </div>
+  <div class="glass-panel" style="padding:0.75rem 1rem;display:flex;flex-direction:column;">
+    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;display:flex;gap:8px;align-items:baseline;">
+      <span data-i18n="sav.bestHoursTitle">Mejores horas de consumo</span>
+      <span class="text-muted" id="sv-table-day" style="font-weight:400;font-size:0.75rem;"></span>
+    </h4>
+    <div id="sv-best-top"><span class="spinner"></span></div>
+    <div class="text-muted" id="sv-best-rest-label" style="display:none;font-size:0.7rem;margin:8px 0 3px;text-transform:uppercase;letter-spacing:0.5px;" data-i18n="sav.bestRest">El resto del día — baja para verlas</div>
+    <div id="sv-best-more" style="max-height:168px;overflow-y:auto;"></div>
+    <p class="text-muted" style="font-size:0.7rem;margin:10px 0 0;line-height:1.5;" data-i18n="sav.starsNote">Las estrellas comparan cada hora con el precio del propio día: ★★★ entre el 25 % más barato · ★★ por debajo de la mitad · ★ algo cara · sin estrellas, el 25 % más caro. 🟢 = dentro de la ventana recomendada (precio y sol).</p>
   </div>
   <div class="glass-panel" style="padding:0.75rem 1rem;">
     <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="sav.chartWindow">Precio y sol — mejores horas</span>
@@ -52,25 +65,6 @@
       <span><span style="display:inline-block;width:14px;height:3px;background:#f39c12;vertical-align:middle;"></span> <span data-i18n="sav.legSolar">irradiancia solar</span></span>
       <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(46,204,113,0.35);"></span> <span data-i18n="sav.legBest">ventana recomendada</span></span>
     </div>
-  </div>
-</div>
-
-<!-- Best consumption hours — ordered by price (cheapest first), api_exo style -->
-<div class="glass-panel">
-  <div class="filters-bar" style="justify-content:space-between;">
-    <h3 data-i18n="sav.bestHoursTitle">Mejores horas de consumo</h3>
-    <span class="text-muted" id="sv-table-day" style="font-size:0.8rem;"></span>
-  </div>
-  <div class="table-scroll">
-    <table class="data-table" id="sav-table">
-      <thead><tr>
-        <th data-i18n="cons.colHour">Hora</th>
-        <th data-i18n="cons.colPeriod">Periodo</th>
-        <th>PVPC €/kWh</th>
-        <th data-i18n="sav.colVerdict">Valoración</th>
-      </tr></thead>
-      <tbody id="sav-tbody"><tr><td colspan="4" class="text-center"><span class="spinner"></span></td></tr></tbody>
-    </table>
   </div>
 </div>
 

@@ -1,0 +1,198 @@
+/* Guía de usuario de Talk2Doc — página de onboarding/documentación.
+   Reusa los tokens de pibico.css (--bg-gradient, --glass-bg, --accent-color,
+   --font-heading/body, --radius*). Layout de lectura: barra superior glass +
+   columna de tarjetas glass sobre el degradado de marca. Clonado del guia.css
+   de ScriptorIA para mantener una misma experiencia entre apps pibiCo. */
+
+.guia-body {
+  background: var(--bg-gradient);
+  min-height: 100vh;
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--text-color, #333);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Top bar */
+.guia-top {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  height: 52px; padding: 0 18px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--glass-border, rgba(255,255,255,0.3));
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.guia-top-brand { display: flex; align-items: center; gap: 9px; }
+.guia-top-brand img { width: 26px; height: 26px; }
+.guia-top-brand b {
+  font-family: var(--font-brand, 'Raleway'); font-weight: 700;
+  font-size: 1.05rem; color: var(--primary-color);
+}
+.guia-top-brand span {
+  font-family: var(--font-heading); font-weight: 600;
+  font-size: 0.85rem; color: var(--accent-color);
+}
+.guia-back {
+  display: inline-flex; align-items: center; gap: 6px;
+  text-decoration: none; font-size: 0.82rem; font-weight: 600;
+  color: #fff; background: var(--primary-color);
+  padding: 7px 14px; border-radius: var(--radius-sm, 8px);
+  transition: all 0.2s;
+}
+.guia-back:hover { background: var(--accent-color); transform: translateY(-1px); }
+.guia-back svg { width: 15px; height: 15px; }
+
+/* Top-right actions: language switch + back link */
+.guia-top-actions { display: flex; align-items: center; gap: 10px; }
+
+/* ES / EN switch */
+.guia-langsw {
+  display: inline-flex; align-items: center;
+  background: rgba(70,130,180,0.12);
+  border-radius: 999px; padding: 2px;
+}
+.guia-langsw button {
+  border: none; background: transparent; cursor: pointer;
+  font-family: var(--font-body); font-size: 0.74rem; font-weight: 700;
+  color: var(--accent-color);
+  padding: 4px 10px; border-radius: 999px; line-height: 1;
+  transition: background 0.15s, color 0.15s;
+}
+.guia-langsw button:hover { background: rgba(70,130,180,0.18); }
+.guia-langsw button.is-active {
+  background: var(--primary-color); color: #fff;
+}
+
+/* Language blocks — the inline script toggles [hidden]; this is a
+   defensive fallback so nothing flashes before the script runs. */
+.guia-doc[data-lang] { display: block; }
+[data-lang][hidden] { display: none !important; }
+
+/* Page wrapper — full width; cards get breathing room, text stays dense */
+.guia-wrap {
+  max-width: none; margin: 0; padding: 16px 18px;
+}
+
+/* Hero */
+.guia-hero {
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border, rgba(255,255,255,0.3));
+  border-radius: var(--radius-card, 24px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  padding: 18px 30px; margin-bottom: 16px;
+}
+.guia-hero h1 {
+  font-family: var(--font-heading); font-weight: 700;
+  font-size: 1.7rem; line-height: 1; color: var(--accent-color); margin: 0 0 3px;
+}
+.guia-hero p { font-size: 0.98rem; line-height: 1; color: #44525e; margin: 0 0 3px; }
+.guia-hero .guia-lead { font-size: 1.05rem; color: #2c3e50; }
+
+/* Table of contents */
+.guia-toc {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-top: 3px;
+}
+.guia-toc a {
+  display: inline-flex; align-items: center; gap: 6px;
+  text-decoration: none; font-size: 0.8rem; font-weight: 600;
+  color: var(--accent-color);
+  background: rgba(70,130,180,0.12);
+  padding: 6px 12px; border-radius: 999px; transition: all 0.15s;
+}
+.guia-toc a:hover { background: rgba(70,130,180,0.22); transform: translateY(-1px); }
+.guia-toc a .n {
+  font-family: var(--font-mono, monospace); font-size: 0.72rem;
+  background: var(--primary-color); color: #fff;
+  width: 18px; height: 18px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+
+/* Section card */
+.guia-sec {
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border, rgba(255,255,255,0.3));
+  border-radius: var(--radius-card, 24px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  padding: 18px 30px; margin-bottom: 16px;
+  scroll-margin-top: 66px;
+}
+.guia-sec h2 {
+  font-family: var(--font-heading); font-weight: 700;
+  font-size: 1.28rem; line-height: 1; color: var(--accent-color);
+  margin: 0 0 3px; display: flex; align-items: center; gap: 10px;
+}
+.guia-sec h2 .step-n {
+  font-family: var(--font-mono, monospace); font-size: 0.85rem; font-weight: 700;
+  color: #fff; background: var(--primary-color);
+  min-width: 26px; height: 26px; padding: 0 7px; border-radius: 13px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.guia-sec h3 {
+  font-family: var(--font-heading); font-weight: 600;
+  font-size: 1rem; line-height: 1; color: #34536b; margin: 3px 0;
+}
+.guia-sec p { font-size: 0.92rem; line-height: 1; color: #44525e; margin: 0 0 3px; }
+.guia-sec ul, .guia-sec ol { margin: 0 0 3px; padding-left: 22px; }
+.guia-sec li { font-size: 0.92rem; line-height: 1; color: #44525e; margin-bottom: 3px; }
+.guia-sec b, .guia-sec strong { color: #2c3e50; }
+.guia-sec code {
+  font-family: var(--font-mono, monospace); font-size: 0.83em;
+  background: rgba(44,81,113,0.09); color: var(--accent-color);
+  padding: 1px 6px; border-radius: 5px;
+}
+
+/* Figure / screenshot */
+.guia-fig { margin: 3px 0; }
+.guia-fig img {
+  width: 100%; height: auto; display: block;
+  border-radius: var(--radius, 12px);
+  border: 1px solid rgba(44,81,113,0.18);
+  box-shadow: 0 6px 22px rgba(0,0,0,0.16);
+}
+.guia-fig figcaption {
+  font-size: 0.78rem; line-height: 1; color: #6b7a89; margin-top: 3px;
+  text-align: center; font-style: italic;
+}
+
+/* Callouts */
+.guia-note {
+  border-radius: var(--radius, 12px); padding: 3px 16px; margin: 3px 0;
+  font-size: 0.88rem; line-height: 1;
+}
+.guia-note b { display: block; margin-bottom: 3px; }
+.guia-note.tip      { background: rgba(16,185,129,0.10);  border: 1px solid rgba(16,185,129,0.30);  color: #1a5c3a; }
+.guia-note.example  { background: rgba(70,130,180,0.10);  border: 1px solid rgba(70,130,180,0.30);  color: #1a4a7a; }
+.guia-note.warn     { background: rgba(214,158,46,0.12);  border: 1px solid rgba(214,158,46,0.32);  color: #8a6d1a; }
+
+/* Status legend / chips */
+.guia-legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0; }
+.guia-pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 0.82rem; font-weight: 600;
+  padding: 5px 12px; border-radius: 999px;
+}
+.guia-pill .dot { width: 10px; height: 10px; border-radius: 50%; }
+.guia-pill.g  { background: rgba(16,185,129,0.12);  color: #1a5c3a; }
+.guia-pill.g  .dot { background: #10b981; }
+.guia-pill.b  { background: rgba(70,130,180,0.14);  color: #1a4a7a; }
+.guia-pill.b  .dot { background: #4682b4; }
+.guia-pill.y  { background: rgba(214,158,46,0.14);  color: #8a6d1a; }
+.guia-pill.y  .dot { background: #d69e2e; }
+
+/* Footer */
+.guia-foot {
+  text-align: center; color: rgba(255,255,255,0.85);
+  font-size: 0.78rem; padding: 8px 0 4px;
+}
+.guia-foot a { color: #fff; }
+
+@media (max-width: 640px) {
+  .guia-wrap { padding: 12px 10px; }
+  .guia-sec, .guia-hero { padding: 14px 16px; }
+  .guia-hero h1 { font-size: 1.35rem; }
+  .guia-top-brand span { display: none; }
+}

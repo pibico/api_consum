@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "65"  # 65: Q&A en llano sobre la factura (answer_billing_question) en el panel Explicar
+ASSET_VERSION = "77"  # 77: 3ª gráfica €/kWh todo-incluido por periodo (grid 3 col, mismo filtro 6-12-24m)
 
 
 def render_template(template_name: str, **context) -> str:
@@ -150,3 +150,13 @@ async def plc_page(request: Request):
     if guard:
         return guard
     return render_template("plc.html")
+
+
+@router.get("/guia", response_class=HTMLResponse)
+async def guia_page(request: Request):
+    """Full user guide with screenshots (talk2doc pattern) — member-gated,
+    reachable from the help (?) panel; language via ?lang= or consum_lang."""
+    guard = await _require_member_page(request)
+    if guard:
+        return guard
+    return render_template("guia.html")

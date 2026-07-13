@@ -198,27 +198,42 @@
     return t < 0.25 ? '★★★' : t < 0.5 ? '★★' : t < 0.75 ? '★' : '';
   }
   function renderTable() {
-    var tbody = q('sav-tbody');
+    // Compact card: the hours with ≥2 stars stay visible (that's the real
+    // decision set — "when do I run the washer?"), the rest of the day sits
+    // in its own scroll strip below. Stars note lives in the card footer.
+    var top = q('sv-best-top'), more = q('sv-best-more');
     var w = data.window || {};
     var hours = w.hours || [];
     q('sv-table-day').textContent = w.date || '';
     if (!hours.length) {
-      tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">' + __t('common.noData', 'Sin datos') + '</td></tr>';
+      top.innerHTML = '<span class="text-muted">' + __t('common.noData', 'Sin datos') + '</span>';
+      more.innerHTML = '';
+      q('sv-best-rest-label').style.display = 'none';
       return;
     }
     var sorted = hours.slice().sort(function (a, b) { return a.price_eur_kwh - b.price_eur_kwh; });
     var cheapest = sorted[0].price_eur_kwh;
     var priciest = sorted[sorted.length - 1].price_eur_kwh;
-    tbody.innerHTML = sorted.map(function (r, i) {
+    function row(r, highlight) {
       var inBest = w.best && r.hour >= w.best.start && r.hour < w.best.end;
-      var rowCls = i < 3 ? ' style="background:rgba(46,204,113,0.10);"' : '';
-      return '<tr' + rowCls + '>' +
-        '<td class="mono">' + hh(r.hour) + (inBest ? ' <span title="' + __t('sav.vBest', 'Recomendada') + '">🟢</span>' : '') + '</td>' +
-        '<td><span class="badge" style="background:' + periodColor(r.period).replace('0.75', '0.18') + ';color:#333;">' + (r.period || '—') + '</span></td>' +
-        '<td class="mono">' + r.price_eur_kwh.toFixed(4) + '</td>' +
-        '<td style="color:#e6a817;letter-spacing:1px;">' + priceStars(r.price_eur_kwh, cheapest, priciest) + '</td>' +
-        '</tr>';
-    }).join('');
+      return '<div style="display:flex;align-items:center;gap:8px;padding:3px 6px;border-radius:6px;font-size:0.82rem;' +
+        (highlight ? 'background:rgba(46,204,113,0.10);' : '') + '">' +
+        '<span class="mono" style="min-width:44px;">' + hh(r.hour) + '</span>' +
+        '<span class="badge" style="background:' + periodColor(r.period).replace('0.75', '0.18') + ';color:#333;min-width:26px;text-align:center;">' + (r.period || '—') + '</span>' +
+        '<span class="mono" style="min-width:58px;">' + r.price_eur_kwh.toFixed(4) + '</span>' +
+        '<span style="color:#e6a817;letter-spacing:1px;margin-left:auto;">' + priceStars(r.price_eur_kwh, cheapest, priciest) + '</span>' +
+        (inBest ? '<span title="' + __t('sav.vBest', 'Recomendada') + '">🟢</span>' : '') +
+        '</div>';
+    }
+    var span = priciest - cheapest;
+    var good = [], rest = [];
+    sorted.forEach(function (r) {
+      var t = span > 0 ? (r.price_eur_kwh - cheapest) / span : 0;
+      (t < 0.5 ? good : rest).push(r);          // t<0.5 ⇒ ★★ or ★★★
+    });
+    top.innerHTML = good.map(function (r, i) { return row(r, i < 3); }).join('');
+    more.innerHTML = rest.map(function (r) { return row(r, false); }).join('');
+    q('sv-best-rest-label').style.display = rest.length ? '' : 'none';
   }
 
   // ── Load ─────────────────────────────────────────────────────────────

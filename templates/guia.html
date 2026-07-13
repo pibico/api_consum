@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Guía de usuario · CONSUM-IA — pibiCo</title>
+  <link rel="icon" href="{{ root }}/static/icons/favicon.ico">
+  <link rel="stylesheet" href="{{ root }}/static/css/fonts.css?v={{ v }}">
+  <link rel="stylesheet" href="{{ root }}/static/css/pibico.css?v={{ v }}">
+  <link rel="stylesheet" href="{{ root }}/static/css/guia.css?v={{ v }}">
+</head>
+<body class="guia-body">
+
+  <div class="guia-top">
+    <div class="guia-top-brand">
+      <img src="{{ root }}/static/icons/pibico_icon.svg" alt="pibiCo">
+      <b>CONSUM-IA</b>
+      <span data-lang="es">· Guía de usuario</span>
+      <span data-lang="en">· User guide</span>
+    </div>
+    <div class="guia-top-actions">
+      <div class="guia-langsw" role="group" aria-label="Idioma / Language">
+        <button type="button" data-set-lang="es">ES</button>
+        <button type="button" data-set-lang="en">EN</button>
+      </div>
+      <a class="guia-back" href="{{ root }}/app">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+        <span data-lang="es">Volver a la app</span>
+        <span data-lang="en">Back to the app</span>
+      </a>
+    </div>
+  </div>
+
+  <div class="guia-wrap">
+
+    <!-- ════════════════════════ ESPAÑOL ════════════════════════ -->
+    <div class="guia-doc" data-lang="es">
+
+    <section class="guia-hero">
+      <h1>Cómo funciona CONSUM-IA</h1>
+      <p class="guia-lead">La caja de tu casa (el <b>PLC</b>) mide tu electricidad aparato a aparato; CONSUM-IA te lo cuenta <b>en claro</b>: qué gastas, qué te cuesta con TU tarifa y cómo pagar menos — con una IA que te explica tu factura como lo haría una persona.</p>
+      <p>No hay que configurar nada raro: subes una factura, contestas como mucho una pregunta, y todo lo demás se calcula solo con lo que miden tus contadores.</p>
+      <nav class="guia-toc">
+        <a href="#panel"><span class="n">1</span> El Panel</a>
+        <a href="#consumo"><span class="n">2</span> Consumo</a>
+        <a href="#facturas"><span class="n">3</span> Facturas</a>
+        <a href="#explicar"><span class="n">4</span> Tu factura, explicada</a>
+        <a href="#ahorro"><span class="n">5</span> Ahorro</a>
+        <a href="#ia"><span class="n">6</span> IA (AIDA)</a>
+        <a href="#plc"><span class="n">7</span> Mi PLC</a>
+        <a href="#consejos"><span class="n">8</span> Consejos</a>
+      </nav>
+    </section>
+
+    <section class="guia-sec" id="panel">
+      <h2><span class="step-n">1</span> El Panel</h2>
+      <p>La foto de tu casa <b>ahora mismo</b>: las tarjetas de arriba muestran la <b>potencia</b> que estás usando, lo gastado <b>hoy</b> y su coste, el <b>mes en curso</b>, el <b>precio de la luz</b> en este momento (con su franja), el CO₂ de la red y tu <b>factura en curso</b> con el estimado a cierre.</p>
+      <ul>
+        <li><b>Tu casa, hora a hora</b> — el consumo del día; cambia de día con las flechas.</li>
+        <li><b>La curva de precios</b> — las horas caras y baratas de hoy (y mañana cuando se publica).</li>
+        <li><b>Sol y viento</b> — si tienes placas, la estimación se ajusta a tus kWp instalados (editables en la propia tarjeta).</li>
+      </ul>
+      <figure class="guia-fig">
+        <img src="{{ root }}/static/images/guia/01-panel.png" alt="El Panel de CONSUM-IA">
+        <figcaption>El Panel: potencia en vivo, coste de hoy, precio actual y la factura en curso, con tu casa hora a hora debajo.</figcaption>
+      </figure>
+    </section>
+
+    <section class="guia-sec" id="consumo">
+      <h2><span class="step-n">2</span> Consumo</h2>
+      <p>Para mirar con lupa: elige <b>día o mes</b> y verás la energía con sus euros, el <b>desglose por franjas</b> (horas caras en rojo, normales en ámbar, baratas en verde) y la <b>previsión del mes</b> (plan PRO).</p>
+      <p>El diagrama del <b>cableado en vivo</b> enseña a dónde va la energía en este momento, aparato por aparato — tal y como está cableada tu casa. El <b>pico de potencia</b> por hora te dice si tu potencia contratada va sobrada o justa.</p>
+      <figure class="guia-fig">
+        <img src="{{ root }}/static/images/guia/02-consumo.png" alt="La página Consumo">
+        <figcaption>Consumo: desglose por franjas, previsión del mes y el cableado en vivo con los vatios de cada aparato.</figcaption>
+      </figure>
+    </section>
+
+    <section class="guia-sec" id="facturas">
+      <h2><span class="step-n">3</span> Facturas</h2>
+      <p>El sitio importante — aquí viven tu tarifa y tus facturas, y <b>todo empieza subiendo una</b>:</p>
+      <ul>
+        <li>Pulsa <b>«Sube tu factura»</b> y elige el PDF o una foto. La leemos por ti.</li>
+        <li>Si hace falta, te hacemos <b>una sola pregunta</b> en llano (si tu precio es siempre igual o cambia con el mercado). Si tu tarifa está en nuestro catálogo, ni eso.</li>
+        <li>Confirmas, y tu tarifa queda configurada <b>sin que tengas que entender nada</b> de peajes ni márgenes. La factura queda archivada en la lista con su PDF.</li>
+      </ul>
+      <p>Las tarjetas del <b>periodo en curso</b> muestran lo que llevas acumulado (con sus franjas), y el <b>estimado a cierre</b>. Con el <b>lápiz</b> puedes fijar tu día de lectura para que el cierre sea exacto. Las gráficas de arriba comparan tus periodos: <b>kWh por día</b> y <b>franjas</b> de cada factura.</p>
+      <p><b>«Cerrar periodo»</b> genera tu propia factura con lo que midió tu caja — para contrastarla con la de tu compañía cuando llegue.</p>
+      <figure class="guia-fig">
+        <img src="{{ root }}/static/images/guia/03-facturas.png" alt="La página Facturas">
+        <figcaption>Facturas: tu tarifa en llano, el periodo en curso con estimado, las gráficas por periodo y la lista con CUPS y franjas.</figcaption>
+      </figure>
+      <div class="guia-note tip"><b>¿No encuentras tu contrato?</b>No lo necesitas: la factura vale. Todo el flujo está pensado para configurarse con el documento que sí tienes en casa.</div>
+    </section>
+
+    <section class="guia-sec" id="explicar">
+      <h2><span class="step-n">4</span> Tu factura, explicada</h2>
+      <p>El botón <b>«Explicar»</b> de cada factura abre la explicación en cristiano: qué pagas, qué es cada pieza (la energía, el fijo de la potencia, los peajes, el bono social, los impuestos) y cómo compara con tu factura anterior.</p>
+      <ul>
+        <li>Un <b>aviso de color</b> te dice si esta factura se desvía de lo habitual (verde / ámbar / rojo) y por qué causas probables.</li>
+        <li>El botón de <b>PDF</b> genera una hoja imprimible, colorida y compacta — para la nevera o para quien no use el móvil.</li>
+        <li>Abajo tienes un cajón para <b>preguntar tus dudas</b> («¿por qué pago tanto si estuve fuera?») — la IA responde con los importes reales de TU factura.</li>
+      </ul>
+      <figure class="guia-fig">
+        <img src="{{ root }}/static/images/guia/04-explicar.png" alt="Tu factura, explicada">
+        <figcaption>La explicación: aviso de desvío arriba, la factura en llano y el cajón de preguntas al pie.</figcaption>
+      </figure>
+    </section>
+
+    <section class="guia-sec" id="ahorro">
+      <h2><span class="step-n">5</span> Ahorro</h2>
+      <p>Cuánto puedes ahorrar <b>sin cambiar de vida — solo de hora</b>: el ahorro del mes por mover lavadora o lavavajillas a horas baratas, la ventana recomendada del día y las <b>mejores horas</b> valoradas con estrellas (★★★ = entre el 25 % más barato del día).</p>
+      <p>La gráfica <b>«Consumo real vs esperado por clima»</b> separa el frío/calor de tus hábitos: cada barra es lo que gastaste ese día y la línea morada lo que se esperaría solo por el clima. Barras muy por encima = ahí se pudo ahorrar.</p>
+      <figure class="guia-fig">
+        <img src="{{ root }}/static/images/guia/05-ahorro.png" alt="La página Ahorro">
+        <figcaption>Ahorro: clima vs hábitos, la ventana recomendada y las mejores horas con estrellas.</figcaption>
+      </figure>
+    </section>
+
+    <section class="guia-sec" id="ia">
+      <h2><span class="step-n">6</span> IA (AIDA)</h2>
+      <p>Pregunta lo que quieras de tu casa y tu consumo, <b>como se lo dirías a una persona</b>. AIDA conoce tus datos agregados — consumo, precios, tiempo y tarifa — y responde en llano. Disponible si tu organización tiene la IA activada.</p>
+      <figure class="guia-fig">
+        <img src="{{ root }}/static/images/guia/06-ia.png" alt="El chat con AIDA">
+        <figcaption>AIDA: preguntas en tus palabras, respuestas con tus datos.</figcaption>
+      </figure>
+    </section>
+
+    <section class="guia-sec" id="plc">
+      <h2><span class="step-n">7</span> Mi PLC</h2>
+      <p>La caja de tu casa tiene su propio mini-panel, y aquí lo ves <b>en remoto</b> (plan PRO). Dentro están sus pestañas: <b>Inicio</b>, <b>Panel</b>, <b>Sensores</b>, <b>Cableado</b> y <b>Sistema</b>.</p>
+      <ul>
+        <li>En <b>Sensores</b> puedes renombrar aparatos y fijar su <b>rango de pico</b> (mín/máx W) para afinar el etiquetado automático.</li>
+        <li>En <b>Cableado</b> está el plano de tu casa: arrastra las habitaciones con el asa ⠿ y colócalo a tu gusto.</li>
+        <li>En <b>Eventos ⚡</b> puedes corregir a qué aparato pertenece un consumo — cada corrección enseña a la caja.</li>
+      </ul>
+      <figure class="guia-fig">
+        <img src="{{ root }}/static/images/guia/07-plc.png" alt="El mini-panel del PLC">
+        <figcaption>El mini-panel local del PLC visto en remoto: inicio con «encendido ahora», panel de contadores y el cableado de la casa.</figcaption>
+      </figure>
+    </section>
+
+    <section class="guia-sec" id="consejos">
+      <h2><span class="step-n">8</span> Consejos</h2>
+      <ul>
+        <li><b>Empieza subiendo una factura</b> — con eso el sistema ya sabe tu tarifa y todo lo demás sale con tus precios reales.</li>
+        <li><b>Mira la curva de precios por la mañana</b> y decide cuándo poner los electrodomésticos gordos.</li>
+        <li><b>Fija tu día de lectura</b> (el lápiz del periodo en curso) para que el estimado a cierre sea exacto.</li>
+        <li><b>Usa «Explicar» cuando llegue una factura rara</b> — el aviso de desvío te dice si es normal y por qué.</li>
+        <li><kbd>Esc</kbd> cierra cualquier panel lateral · el botón <b>?</b> de arriba abre la ayuda rápida en cualquier página.</li>
+      </ul>
+      <div class="guia-note tip"><b>¿Dudas?</b>Vuelve a esta guía cuando quieras desde el botón de <b>Ayuda</b> (?) de la barra superior. ¿Algo no funciona? Escribe a <b>soporte@pibico.es</b>.</div>
+    </section>
+
+    </div><!-- /es -->
+
+    <!-- ════════════════════════ ENGLISH ════════════════════════ -->
+    <div class="guia-doc" data-lang="en">
+
+    <section class="guia-hero">
+      <h1>How CONSUM-IA works</h1>
+      <p class="guia-lead">The box at home (the <b>PLC</b>) measures your electricity appliance by appliance; CONSUM-IA tells it to you <b>plainly</b>: what you use, what it costs with YOUR tariff and how to pay less — with an AI that explains your bill like a person would.</p>
+      <p>Nothing weird to configure: upload one bill, answer at most one question, and everything else is computed from what your meters measure.</p>
+      <nav class="guia-toc">
+        <a href="#panel"><span class="n">1</span> The Panel</a>
+        <a href="#consumo"><span class="n">2</span> Consumption</a>
+        <a href="#facturas"><span class="n">3</span> Invoices</a>
+        <a href="#explicar"><span class="n">4</span> Your bill, explained</a>
+        <a href="#ahorro"><span class="n">5</span> Savings</a>
+        <a href="#ia"><span class="n">6</span> AI (AIDA)</a>
+        <a href="#plc"><span class="n">7</span> My PLC</a>
+        <a href="#consejos"><span class="n">8</span> Tips</a>
+      </nav>
+    </section>
+
+    <section class="guia-sec" id="panel">
+      <h2><span class="step-n">1</span> The Panel</h2>
+      <p>Your home <b>right now</b>: the top cards show the <b>power</b> in use, what you spent <b>today</b>, the <b>current month</b>, the <b>electricity price</b> at this moment (with its band), grid CO₂ and your <b>current bill</b> with its projection at close.</p>
+      <ul>
+        <li><b>Your home, hour by hour</b> — the day's consumption; switch days with the arrows.</li>
+        <li><b>The price curve</b> — today's expensive and cheap hours (and tomorrow's once published).</li>
+        <li><b>Sun and wind</b> — with solar panels, the estimate scales to your installed kWp (editable on the card).</li>
+      </ul>
+      <figure class="guia-fig">
+        <img src="{{ root }}/static/images/guia/01-panel-en.png" alt="The CONSUM-IA Panel">
+        <figcaption>The Panel: live power, today's cost, the current price and your current bill, with your home hour by hour below.</figcaption>
+      </figure>
+    </section>
+
+    <section class="guia-sec" id="consumo">
+      <h2><span class="step-n">2</span> Consumption</h2>
+      <p>For a closer look: pick a <b>day or month</b> to see the energy with its euros, the <b>band breakdown</b> (expensive hours in red, normal in amber, cheap in green) and the <b>month forecast</b> (PRO plan).</p>
+      <p>The <b>live wiring</b> diagram shows where the energy is going right now, appliance by appliance — exactly as your home is wired. The hourly <b>power peak</b> tells you whether your contracted power is oversized or tight.</p>
+      <figure class="guia-fig">
+        <img src="{{ root }}/static/images/guia/02-consumo-en.png" alt="The Consumption page">
+        <figcaption>Consumption: band breakdown, month forecast and the live wiring with each appliance's watts.</figcaption>
+      </figure>
+    </section>
+
+    <section class="guia-sec" id="facturas">
+      <h2><span class="step-n">3</span> Invoices</h2>
+      <p>The place that matters — your tariff and your bills live here, and <b>everything starts by uploading one</b>:</p>
+      <ul>
+        <li>Press <b>“Upload your bill”</b> and pick the PDF or a photo. We read it for you.</li>
+        <li>If needed we ask <b>one plain question</b> (whether your price is always the same or follows the market). If your tariff is in our catalog, not even that.</li>
+        <li>You confirm, and your tariff configures itself <b>without you having to understand</b> tolls or margins. The bill is archived in the list with its PDF.</li>
+      </ul>
+      <p>The <b>current period</b> cards show what you have accrued (with its bands) and the <b>projection at close</b>. The <b>pencil</b> lets you set your meter-reading day so the close is exact. The charts above compare your periods: <b>kWh per day</b> and <b>bands</b> of each bill.</p>
+      <p><b>“Close period”</b> generates your own invoice from what your box measured — to check against your retailer's bill when it arrives.</p>
+      <figure class="guia-fig">
+        <img src="{{ root }}/static/images/guia/03-facturas-en.png" alt="The Invoices page">
+        <figcaption>Invoices: your tariff in plain words, the current period with its projection, per-period charts and the list with CUPS and bands.</figcaption>
+      </figure>
+      <div class="guia-note tip"><b>Can't find your contract?</b>You don't need it: the bill is enough. The whole flow is designed around the document you actually have at home.</div>
+    </section>
+
+    <section class="guia-sec" id="explicar">
+      <h2><span class="step-n">4</span> Your bill, explained</h2>
+      <p>The <b>“Explain”</b> button of every bill opens the plain-words explanation: what you pay, what each piece is (energy, the fixed power term, tolls, the social bonus, taxes) and how it compares with your previous bill.</p>
+      <ul>
+        <li>A <b>colored warning</b> tells you when this bill deviates from your usual (green / amber / red) and the likely causes.</li>
+        <li>The <b>PDF</b> button renders a printable, colorful one-pager — for the fridge door or for whoever doesn't use a phone.</li>
+        <li>At the bottom there's a box to <b>ask your questions</b> (“why did I pay so much if I was away?”) — the AI answers with YOUR bill's real amounts.</li>
+      </ul>
+      <figure class="guia-fig">
+        <img src="{{ root }}/static/images/guia/04-explicar-en.png" alt="Your bill, explained">
+        <figcaption>The explanation: deviation warning on top, the bill in plain words and the question box at the foot.</figcaption>
+      </figure>
+    </section>
+
+    <section class="guia-sec" id="ahorro">
+      <h2><span class="step-n">5</span> Savings</h2>
+      <p>How much you can save <b>without changing your life — only the hour</b>: the monthly saving from moving the washer or dishwasher to cheap hours, the day's recommended window and the <b>best hours</b> rated with stars (★★★ = within the day's cheapest 25%).</p>
+      <p>The <b>“Real vs weather-expected”</b> chart separates cold/heat from habits: each bar is what you used that day, the purple line what the weather alone would predict. Bars well above = that's where savings hide.</p>
+      <figure class="guia-fig">
+        <img src="{{ root }}/static/images/guia/05-ahorro-en.png" alt="The Savings page">
+        <figcaption>Savings: weather vs habits, the recommended window and the best hours with stars.</figcaption>
+      </figure>
+    </section>
+
+    <section class="guia-sec" id="ia">
+      <h2><span class="step-n">6</span> AI (AIDA)</h2>
+      <p>Ask anything about your home and your consumption, <b>the way you would ask a person</b>. AIDA knows your aggregated data — consumption, prices, weather and tariff — and answers plainly. Available when your organization has AI enabled.</p>
+      <figure class="guia-fig">
+        <img src="{{ root }}/static/images/guia/06-ia-en.png" alt="The AIDA chat">
+        <figcaption>AIDA: questions in your words, answers with your data.</figcaption>
+      </figure>
+    </section>
+
+    <section class="guia-sec" id="plc">
+      <h2><span class="step-n">7</span> My PLC</h2>
+      <p>The box at home has its own mini-panel, and here you see it <b>remotely</b> (PRO plan). Inside are its tabs: <b>Home</b>, <b>Dashboard</b>, <b>Sensors</b>, <b>Wiring</b> and <b>System</b>.</p>
+      <ul>
+        <li>In <b>Sensors</b> you can rename appliances and set their <b>spike range</b> (min/max W) to sharpen auto-tagging.</li>
+        <li>In <b>Wiring</b> lives your floor plan: drag rooms with the ⠿ handle and lay it out your way.</li>
+        <li>In <b>Events ⚡</b> you can correct which appliance a consumption belongs to — every correction teaches the box.</li>
+      </ul>
+      <figure class="guia-fig">
+        <img src="{{ root }}/static/images/guia/07-plc-en.png" alt="The PLC mini-panel">
+        <figcaption>The PLC's local mini-panel seen remotely: home with “on right now”, the meters dashboard and the house wiring.</figcaption>
+      </figure>
+    </section>
+
+    <section class="guia-sec" id="consejos">
+      <h2><span class="step-n">8</span> Tips</h2>
+      <ul>
+        <li><b>Start by uploading a bill</b> — with that the system knows your tariff and everything else uses your real prices.</li>
+        <li><b>Check the price curve in the morning</b> and decide when to run the heavy appliances.</li>
+        <li><b>Set your meter-reading day</b> (the pencil on the current period) so the projection at close is exact.</li>
+        <li><b>Use “Explain” when a strange bill arrives</b> — the deviation warning tells you whether it's normal and why.</li>
+        <li><kbd>Esc</kbd> closes any side panel · the <b>?</b> button on top opens the quick help on every page.</li>
+      </ul>
+      <div class="guia-note tip"><b>Questions?</b>Come back to this guide any time from the <b>Help</b> (?) button in the top bar. Something not working? Write to <b>soporte@pibico.es</b>.</div>
+    </section>
+
+    </div><!-- /en -->
+
+    <div class="guia-foot">© 2026 pibiCo · CONSUM-IA — <a href="{{ root }}/app"><span data-lang="es">Volver a la aplicación</span><span data-lang="en">Back to the application</span></a></div>
+
+  </div>
+
+  <script>
+    (function () {
+      function norm(l) { l = (l || '').slice(0, 2).toLowerCase(); return l === 'en' ? 'en' : 'es'; }
+      function apply(l) {
+        document.documentElement.lang = l;
+        var nodes = document.querySelectorAll('[data-lang]');
+        for (var i = 0; i < nodes.length; i++) {
+          nodes[i].hidden = (nodes[i].getAttribute('data-lang') !== l);
+        }
+        var btns = document.querySelectorAll('.guia-langsw [data-set-lang]');
+        for (var j = 0; j < btns.length; j++) {
+          btns[j].classList.toggle('is-active', btns[j].getAttribute('data-set-lang') === l);
+        }
+      }
+      var lang = 'es';
+      try {
+        var q = new URLSearchParams(location.search).get('lang');
+        lang = norm(q || localStorage.getItem('consum_lang'));
+      } catch (e) {}
+      apply(lang);
+      var btns = document.querySelectorAll('.guia-langsw [data-set-lang]');
+      for (var k = 0; k < btns.length; k++) {
+        btns[k].addEventListener('click', function () { apply(norm(this.getAttribute('data-set-lang'))); });
+      }
+      // Graceful degradation: hide any figure whose screenshot is missing.
+      var imgs = document.querySelectorAll('.guia-fig img');
+      for (var m = 0; m < imgs.length; m++) {
+        imgs[m].addEventListener('error', function () {
+          var f = this.closest('figure'); if (f) f.style.display = 'none';
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

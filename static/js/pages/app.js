@@ -800,7 +800,8 @@
       q('kpi-bill').textContent = v;
       q('kpi-bill-sub').textContent = __t('app.billDay', 'día {n} de ~{m}')
         .replace('{n}', bp.days_elapsed).replace('{m}', bp.days_total) +
-        (bp.projected_eur != null ? ' · ' + __t('app.billEstimate', 'estimado') : '');
+        (bp.projected_eur != null ? ' · ' + __t('app.billEstimate', 'estimado') : '') +
+        (bp.incomplete ? ' · ' + __t('app.billIncomplete', 'medición incompleta') : '');
       q('kpi-bill-card').style.display = '';
       q('kpi-grid').style.gridTemplateColumns = 'repeat(7,1fr)';
     }).catch(function () {});

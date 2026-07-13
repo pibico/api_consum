@@ -28,10 +28,18 @@
 
 <!-- Factura en curso — open billing period + projection (PRO; hidden otherwise) -->
 <div class="kpi-grid-8" id="iv-bp-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:1rem;display:none;">
-  <div class="glass-panel kpi-card">
+  <div class="glass-panel kpi-card" style="position:relative;">
+    <button type="button" onclick="IvPage.editBpEnd()" data-i18n-title="inv.bpEditEnd" title="Fijar el día de cierre"
+            style="position:absolute;top:8px;right:8px;width:26px;height:26px;display:flex;align-items:center;justify-content:center;padding:0;border:1px solid rgba(44,81,113,0.25);border-radius:6px;background:rgba(255,255,255,0.55);color:#2c5171;cursor:pointer;">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg>
+    </button>
     <div class="kpi-label" data-i18n="inv.bpPeriod">Periodo en curso</div>
     <div class="kpi-value" id="iv-bp-period" style="font-size:1.15rem;">—</div>
     <div class="kpi-sub" id="iv-bp-days">—</div>
+    <div id="iv-bp-edit" style="display:none;gap:6px;margin-top:6px;align-items:center;">
+      <input type="date" class="pibico-input" id="iv-bp-end-input" style="font-size:0.78rem;padding:3px 6px;">
+      <button class="btn btn-sm btn-primary" onclick="IvPage.saveBpEnd()" style="padding:3px 10px;">✓</button>
+    </div>
   </div>
   <div class="glass-panel kpi-card">
     <div class="kpi-label" data-i18n="inv.bpAccrued">Acumulado</div>
@@ -42,6 +50,31 @@
     <div class="kpi-label" data-i18n="inv.bpProjected">Estimado a cierre</div>
     <div class="kpi-value" id="iv-bp-proj">—</div>
     <div class="kpi-sub" id="iv-bp-proj-sub">—</div>
+  </div>
+</div>
+
+<!-- Per-invoice charts: kWh/day per period + band split per period -->
+<div id="iv-charts" style="display:none;margin-bottom:1rem;">
+  <div style="display:flex;justify-content:flex-end;margin-bottom:6px;">
+    <div class="pibico-segmented" id="iv-range" data-i18n-title="inv.rangeTitle" title="Periodos a mostrar" style="display:inline-flex;gap:0;border:1px solid rgba(44,81,113,0.25);border-radius:8px;overflow:hidden;background:rgba(255,255,255,0.5);">
+      <button type="button" data-months="6"  onclick="IvPage.setRange(6)"  style="border:0;background:none;padding:3px 12px;font-size:0.75rem;cursor:pointer;">6 m</button>
+      <button type="button" data-months="12" onclick="IvPage.setRange(12)" style="border:0;background:none;padding:3px 12px;font-size:0.75rem;cursor:pointer;">12 m</button>
+      <button type="button" data-months="24" onclick="IvPage.setRange(24)" style="border:0;background:none;padding:3px 12px;font-size:0.75rem;cursor:pointer;">24 m</button>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;">
+    <div class="glass-panel" style="padding:0.75rem 1rem;">
+      <h4 style="margin:0 0 0.5rem;font-size:0.85rem;" data-i18n="inv.chartPerDay">kWh por día en cada periodo</h4>
+      <div id="iv-chart-perday" style="width:100%;height:210px;"></div>
+    </div>
+    <div class="glass-panel" style="padding:0.75rem 1rem;">
+      <h4 style="margin:0 0 0.5rem;font-size:0.85rem;" data-i18n="inv.chartBands">Consumo por franjas en cada periodo</h4>
+      <div id="iv-chart-bands" style="width:100%;height:210px;"></div>
+    </div>
+    <div class="glass-panel" style="padding:0.75rem 1rem;">
+      <h4 style="margin:0 0 0.5rem;font-size:0.85rem;" data-i18n="inv.chartAllIn">€/kWh con todo, en cada periodo</h4>
+      <div id="iv-chart-allin" style="width:100%;height:210px;"></div>
+    </div>
   </div>
 </div>
 
@@ -58,11 +91,13 @@
         <th data-i18n="inv.colCups">CUPS</th>
         <th data-i18n="inv.colDays">Días</th>
         <th data-i18n="inv.colEnergy">Energía</th>
+        <th data-i18n="inv.colBands" title="P1 · P2 · P3">Franjas</th>
         <th data-i18n="inv.colTotal">Total</th>
+        <th data-i18n="inv.colAllIn" title="Total ÷ kWh — con potencia, peajes e impuestos">€/kWh</th>
         <th data-i18n="inv.colStatus">Estado</th>
         <th></th>
       </tr></thead>
-      <tbody id="iv-tbody"><tr><td colspan="7" class="text-center"><span class="spinner"></span></td></tr></tbody>
+      <tbody id="iv-tbody"><tr><td colspan="9" class="text-center"><span class="spinner"></span></td></tr></tbody>
     </table>
   </div>
   <div id="iv-pager-bottom"></div>
@@ -175,6 +210,9 @@
   <div class="slide-panel-header">
     <h2 data-i18n="inv.explainTitle">Tu factura, explicada</h2>
     <span style="display:flex;gap:6px;align-items:center;">
+      <button type="button" class="btn btn-sm" id="iv-explain-regen" onclick="IvPage.explain(null, true)" data-i18n-title="inv.explainRegen" title="Regenerar la explicación (si esta no te convence)" style="display:inline-flex;align-items:center;padding:0.3rem 0.5rem;">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      </button>
       <button type="button" class="btn btn-sm" id="iv-explain-pdf" onclick="IvPage.explainPdf()" data-i18n-title="inv.explainPdf" title="Ver en PDF (imprimible)" style="display:inline-flex;align-items:center;padding:0.3rem 0.5rem;">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15h6"/><path d="M9 11h6"/></svg>
       </button>
@@ -196,6 +234,20 @@
       </div>
     </div>
     <p class="text-muted" style="margin-top:0.5rem;font-size:0.7rem;" data-i18n="inv.explainNote">Explicación generada con IA a partir de los importes de tu factura. Si algo no cuadra, consulta el documento.</p>
+  </div>
+</aside>
+
+<!-- Cost-concept breakdown of one invoice (colored, explain-PDF palette) -->
+<aside class="slide-panel" id="costPanel" aria-hidden="true">
+  <div class="slide-panel-header">
+    <h2 data-i18n="inv.costTitle">¿A dónde fue tu dinero?</h2>
+    <button type="button" class="panel-close" onclick="IvPage.closeCost()" aria-label="Cerrar">&times;</button>
+  </div>
+  <div class="slide-panel-body" style="padding:16px 20px;overflow-y:auto;">
+    <div id="iv-cost-head" style="margin-bottom:0.9rem;"></div>
+    <div id="iv-cost-bar" style="display:flex;height:22px;border-radius:11px;overflow:hidden;margin-bottom:0.8rem;"></div>
+    <div id="iv-cost-legend"></div>
+    <p class="text-muted" style="margin-top:0.9rem;font-size:0.7rem;" data-i18n="inv.costNote">Los importes salen de tu propia factura (o de su liquidación). El €/kWh «con todo» divide el total — potencia, peajes e impuestos incluidos — entre la energía consumida.</p>
   </div>
 </aside>
 
@@ -242,6 +294,7 @@
         <div>
           <label data-i18n="inv.fStart">Desde</label>
           <input type="date" class="pibico-input" id="iv-f-start" required>
+          <div class="text-muted" id="iv-f-start-hint" style="font-size:0.7rem;margin-top:2px;"></div>
         </div>
         <div>
           <label data-i18n="inv.fEnd">Hasta</label>
@@ -260,5 +313,6 @@
   </div>
 </aside>
 
+<script src="{{ root }}/static/js/vendor/echarts.min.js" defer></script>
 <script src="{{ root }}/static/js/pages/invoices.js?v={{ v }}" defer></script>
 {% endblock %}

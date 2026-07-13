@@ -30,17 +30,20 @@ logger = logging.getLogger("consum.invoices")
 
 _TOTALS = ("energy_kwh", "energy_eur", "power_eur", "fixed_eur",
            "iee_eur", "vat_eur", "total_eur", "uncosted_kwh")
+# Per-band energy split (mig 008) — first-class so the LIGHT list query can
+# show "P1 · P2 · P3" and kWh/day without dragging the breakdown blob.
+_BANDS = ("energy_p1_kwh", "energy_p2_kwh", "energy_p3_kwh")
 
 
 def _row_to_dict(row: Sequence[Any], with_breakdown: bool = True) -> Dict[str, Any]:
     keys = ("id", "customer_id", "period_start", "period_end", "status",
-            "settlement", "cups", *_TOTALS,
+            "settlement", "cups", *_BANDS, *_TOTALS,
             *(("breakdown",) if with_breakdown else ()),
             "created_by", "created_at",
             "voided_at", "voided_by", "origin", "pdf_filename")
     out: Dict[str, Any] = {}
     for k, v in zip(keys, row):
-        if k in _TOTALS and v is not None:
+        if (k in _TOTALS or k in _BANDS) and v is not None:
             v = float(v)
         elif k in ("period_start", "period_end", "created_at", "voided_at") and v is not None:
             v = v.isoformat()
@@ -51,7 +54,7 @@ def _row_to_dict(row: Sequence[Any], with_breakdown: bool = True) -> Dict[str, A
 
 
 _SELECT = ("SELECT id, customer_id, period_start, period_end, status, settlement, cups, "
-           + ", ".join(_TOTALS)
+           + ", ".join(_BANDS) + ", " + ", ".join(_TOTALS)
            + ", breakdown, created_by, created_at, voided_at, voided_by, "
            "origin, pdf_filename "
            "FROM consum.invoices")
@@ -60,7 +63,7 @@ _SELECT = ("SELECT id, customer_id, period_start, period_end, status, settlement
 # for list/history queries that pop breakdown anyway. Pair with
 # _row_to_dict(..., with_breakdown=False) so the positional keys stay aligned.
 _SELECT_LIGHT = ("SELECT id, customer_id, period_start, period_end, status, settlement, cups, "
-                 + ", ".join(_TOTALS)
+                 + ", ".join(_BANDS) + ", " + ", ".join(_TOTALS)
                  + ", created_by, created_at, voided_at, voided_by, "
                  "origin, pdf_filename "
                  "FROM consum.invoices")
@@ -209,15 +212,25 @@ async def close_period(customer_id: str, slugs: Sequence[str], start: str,
     # segment's (i.e. the contract covering period_end).
     cups = next((s["contract"]["cups"] for s in reversed(segments)
                  if s.get("contract") and s["contract"].get("cups")), None)
+    # Per-band energy split across the segments (mig 008 columns).
+    bands = {p: 0.0 for p in ("P1", "P2", "P3")}
+    for s in segments:
+        for p, v in (s.get("energy") or {}).items():
+            if p in bands and isinstance(v, dict):
+                bands[p] += v.get("kwh") or 0.0
+    bands = {p: round(v, 3) for p, v in bands.items()}
     try:
         async with db.raw_connection() as con:
             async with con.cursor() as cur:
                 await cur.execute(
                     "INSERT INTO consum.invoices (customer_id, period_start, period_end, "
-                    "settlement, cups, " + ", ".join(_TOTALS) + ", breakdown, created_by) "
-                    "VALUES (%s, %s, %s, 'hourly', %s, "
+                    "settlement, cups, " + ", ".join(_BANDS) + ", "
+                    + ", ".join(_TOTALS) + ", breakdown, created_by) "
+                    "VALUES (%s, %s, %s, 'hourly', %s, %s, %s, %s, "
                     + ", ".join(["%s"] * len(_TOTALS)) + ", %s, %s) RETURNING id",
-                    [customer_id, start, end, cups, *[totals[k] for k in _TOTALS],
+                    [customer_id, start, end, cups,
+                     bands["P1"], bands["P2"], bands["P3"],
+                     *[totals[k] for k in _TOTALS],
                      Jsonb(breakdown), created_by],
                 )
                 new_id = (await cur.fetchone())[0]
@@ -330,6 +343,50 @@ async def set_uploaded_markdown(invoice_id: int, markdown: str) -> None:
                 (Jsonb({"markdown": markdown[:60000]}), invoice_id))
 
 
+async def set_next_close(customer_slug: str, next_close: Optional[str],
+                         updated_by: Optional[str]) -> Dict[str, Any]:
+    """Persist the household's expected close of the OPEN period (None clears
+    → back to the median estimate) and drop its billing-period cache entry."""
+    ids = await consumption._slugs_to_ids([customer_slug])
+    cid = ids.get(customer_slug)
+    if not cid:
+        raise HTTPException(404, detail=f"Hogar desconocido: {customer_slug}")
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                """INSERT INTO consum.billing_prefs (customer_id, next_close, updated_by)
+                   VALUES (%s, %s, %s)
+                   ON CONFLICT (customer_id) DO UPDATE
+                     SET next_close = EXCLUDED.next_close,
+                         updated_by = EXCLUDED.updated_by, updated_at = now()""",
+                (cid, next_close, updated_by))
+    _bp_cache.pop(customer_slug, None)      # the KPI must reflect it right away
+    return await billing_period_live(customer_slug)
+
+
+async def set_breakdown_key(invoice_id: int, key: str, value: Any) -> None:
+    """Merge one key into an invoice's breakdown JSONB — persistence for the
+    AI artifacts (explanation, amounts): computed once, reused across process
+    restarts; 'Regenerar' overwrites."""
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                "UPDATE consum.invoices SET breakdown = breakdown || %s WHERE id = %s",
+                (Jsonb({key: value}), invoice_id))
+
+
+async def set_band_kwh(invoice_id: int, p1: Optional[float], p2: Optional[float],
+                       p3: Optional[float]) -> None:
+    """Persist the per-band kWh of an UPLOADED bill (AI amounts extraction) —
+    background fill on upload + lazy backfill from the explain/amounts path."""
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                "UPDATE consum.invoices SET energy_p1_kwh=%s, energy_p2_kwh=%s, "
+                "energy_p3_kwh=%s WHERE id=%s AND origin='uploaded'",
+                (p1, p2, p3, invoice_id))
+
+
 async def history_before(customer_id: str, before_start: str,
                          limit: int = 6) -> List[Dict[str, Any]]:
     """Recent invoices (closed AND uploaded, newest first) starting before
@@ -388,23 +445,56 @@ async def billing_period_live(customer_slug: str) -> Dict[str, Any]:
 
     lengths = sorted((e - s).days + 1 for s, e in hist)
     cycle = lengths[len(lengths) // 2]                      # median cycle
-    expected_end = start + timedelta(days=cycle - 1)
+    # A USER-SET close date (billing_prefs, mig 009) beats the estimate —
+    # households know their meter-reading day. Stale dates (before the open
+    # period) are ignored and the median estimate returns.
+    source = "estimate"
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                "SELECT next_close FROM consum.billing_prefs WHERE customer_id = %s",
+                (cid,))
+            row = await cur.fetchone()
+    user_close = row[0] if row else None
+    if user_close and user_close >= start:
+        expected_end = user_close
+        source = "user"
+    else:
+        expected_end = start + timedelta(days=cycle - 1)
     if expected_end < today:
         expected_end = today                                # overdue: bill imminent
     days_total = (expected_end - start).days + 1
     days_elapsed = (today - start).days + 1
 
-    _, totals = await _settle(str(cid), [customer_slug],
-                              start.isoformat(), today.isoformat())
+    segments, totals = await _settle(str(cid), [customer_slug],
+                                     start.isoformat(), today.isoformat())
+    # Accrued energy split by band — the Acumulado KPI shows P1·P2·P3 too.
+    bp_bands = {p: 0.0 for p in ("P1", "P2", "P3")}
+    for s in segments:
+        for p, v in (s.get("energy") or {}).items():
+            if p in bp_bands and isinstance(v, dict):
+                bp_bands[p] += v.get("kwh") or 0.0
+    # Coverage: days of the open window that actually HAVE readings — a PLC
+    # installed mid-period or offline days would silently understate the
+    # accrued total and the projection; the KPI must say so.
+    daily = await consumption.energy_series([customer_slug], start.isoformat(),
+                                            today.isoformat(), bucket="day")
+    measured_days = len({r["ts"][:10] for r in daily if (r.get("kwh") or 0) > 0})
     out = {
         "status": "ok",
         "period_start": start.isoformat(),
         "expected_end": expected_end.isoformat(),
+        "end_source": source,
         "cycle_days": cycle,
         "days_elapsed": days_elapsed,
         "days_total": days_total,
         "energy_kwh": totals["energy_kwh"],
+        "energy_p1_kwh": round(bp_bands["P1"], 1),
+        "energy_p2_kwh": round(bp_bands["P2"], 1),
+        "energy_p3_kwh": round(bp_bands["P3"], 1),
         "total_eur": totals["total_eur"],
+        "measured_days": measured_days,
+        "incomplete": measured_days < days_elapsed,
         "based_on": len(hist),
     }
     if days_elapsed >= 3 and totals["total_eur"] > 0:
