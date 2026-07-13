@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "88"  # 88: sin border-left en cards (desglose €/kWh + respuesta QASSET_VERSION = "87"  # 87: playground de extracción de facturas (superadmin only)A factura)
+ASSET_VERSION = "91"  # 91: kpi-cols-* responsive (adios inline grids), legibilidad KPI movil, gutter 6px
 
 
 def render_template(template_name: str, **context) -> str:

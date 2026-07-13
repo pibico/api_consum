@@ -803,7 +803,10 @@
         (bp.projected_eur != null ? ' · ' + __t('app.billEstimate', 'estimado') : '') +
         (bp.incomplete ? ' · ' + __t('app.billIncomplete', 'medición incompleta') : '');
       q('kpi-bill-card').style.display = '';
-      q('kpi-grid').style.gridTemplateColumns = 'repeat(7,1fr)';
+      // Class swap, NOT an inline style — inline grid-template-columns would
+      // defeat the phone media queries (2-col layout on mobile).
+      q('kpi-grid').classList.remove('kpi-cols-6');
+      q('kpi-grid').classList.add('kpi-cols-7');
     }).catch(function () {});
   }
 

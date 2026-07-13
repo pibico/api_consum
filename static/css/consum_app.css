@@ -735,6 +735,36 @@
 .kpi-grid-8 .kpi-card .kpi-label { font-size: 0.68rem; }
 @media (max-width: 1400px) { .kpi-grid-8 { grid-template-columns: repeat(4, 1fr); } }
 @media (max-width: 768px)  { .kpi-grid-8 { grid-template-columns: repeat(2, 1fr); } }
+/* Column-count VARIANTS — replace the old per-page inline styles (inline
+   grid-template-columns beat every media query, wrecking the phone layout). */
+.kpi-grid-8.kpi-cols-7 { grid-template-columns: repeat(7, 1fr); }
+.kpi-grid-8.kpi-cols-6 { grid-template-columns: repeat(6, 1fr); }
+.kpi-grid-8.kpi-cols-4 { grid-template-columns: repeat(4, 1fr); }
+.kpi-grid-8.kpi-cols-3 { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 1100px) {
+  .kpi-grid-8.kpi-cols-7, .kpi-grid-8.kpi-cols-6 { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 768px) {
+  .kpi-grid-8.kpi-cols-7, .kpi-grid-8.kpi-cols-6,
+  .kpi-grid-8.kpi-cols-4, .kpi-grid-8.kpi-cols-3 { grid-template-columns: repeat(2, 1fr); }
+  /* Phone readability: shorter cards, bigger label, ONE value size (the
+     !important beats the inline font-size:1.6rem on some values). */
+  .kpi-grid-8 { gap: 0.45rem; }
+  .kpi-grid-8 .kpi-card { min-height: 92px; padding: 0.65rem 0.35rem !important; }
+  .kpi-grid-8 .kpi-card .kpi-label { font-size: 0.7rem; letter-spacing: 0.02em; }
+  .kpi-grid-8 .kpi-card .kpi-value { font-size: 1.45rem !important; }
+  .kpi-grid-8 .kpi-card .kpi-sub { font-size: 0.68rem; }
+}
+/* Facturas — "periodo en curso" (3 KPI) and the between-dates summary card.
+   Column rules live HERE (not inline) so the phone/PWA breakpoints win. */
+#iv-bp-row { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 768px) { #iv-bp-row { grid-template-columns: 1fr; } }
+.iv-sum-dates { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+.iv-sum-dates input[type="date"] { font-size: 0.78rem; padding: 3px 6px; width: auto; }
+@media (max-width: 640px) {
+  .iv-sum-dates { margin-left: 0; width: 100%; }
+  .iv-sum-dates input[type="date"] { flex: 1 1 40%; min-width: 0; }
+}
 .wx-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; align-items: stretch; }
 .wx-2col > * { margin-bottom: 0 !important; min-width: 0; }
 @media (max-width: 768px) { .wx-2col { grid-template-columns: 1fr; } }

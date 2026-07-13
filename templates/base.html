@@ -2,7 +2,7 @@
 <html lang="{{ lang }}">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
     <meta name="description" content="CONSUM-IA — tu consumo, en claro">
     <title>{% block title %}CONSUM-IA{% endblock %}</title>
     <link rel="stylesheet" href="{{ root }}/static/css/fonts.css?v={{ v }}">
@@ -167,6 +167,10 @@
         background: rgba(255,255,255,0.05);
         border-bottom: 1px solid rgba(255,255,255,0.08);
         min-height: 40px;
+        /* flex item of the column .main-wrapper: without this it SHRINKS to
+           min-height when the page overflows, and a second filter row paints
+           OVER the content below instead of pushing it down. */
+        flex-shrink: 0;
       }
       .topbar-title {
         font-family: var(--font-heading);
@@ -174,6 +178,13 @@
       }
       .topbar-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
       .topbar { flex-wrap: wrap; row-gap: 0.4rem; }
+      /* ONE control height for every topbar filter/button (selects, date
+         inputs, text buttons, icon buttons) — mixed 25-32px heights looked
+         ragged next to each other. */
+      .topbar-actions .pibico-select, .topbar-actions .pibico-input,
+      .topbar-actions .btn, .topbar-actions button {
+        height: 32px;
+      }
 
       main {
         flex: 1; padding: 1.25rem 1.5rem;
@@ -249,6 +260,28 @@
         .sidebar-footer { display: none; }
         .kpi-grid { grid-template-columns: repeat(2, 1fr); }
         .grid-2col { grid-template-columns: 1fr; }
+        /* Edge-to-edge content on the phone: 6px lateral gutters. */
+        main { padding: 1rem 6px; }
+        .topbar { padding: 0.6rem 10px; }
+        /* Filters share the title's line and stay FULLY VISIBLE: the action
+           cluster flexes beside the title and wraps ITS OWN children — what
+           fits (e.g. the device select) sits next to the title, the rest
+           (date nav) drops to a full-width second row. No sideways scroll.
+           The clock is decorative and yields its space. */
+        /* Anchor the title to the FIRST row (centered vertically on it) —
+           a title centered on the whole 2-row bar collides with row 2. */
+        .topbar { align-items: flex-start; }
+        .topbar-title { flex-shrink: 0; line-height: 30px; }
+        .topbar-actions {
+          flex: 1; min-width: 0; flex-wrap: wrap;
+          justify-content: flex-end; row-gap: 0.4rem;
+        }
+        .topbar-actions .pibico-select { min-width: 110px !important; }
+        #topbar-clock { display: none; }
+        /* iOS auto-zooms when a focused field renders <16px — pin form
+           controls to 16px on mobile so the keyboard never zooms the page
+           (belt: the viewport meta also caps scale at 1). */
+        input, select, textarea { font-size: 16px !important; }
       }
     </style>
     {% block extra_css %}{% endblock %}

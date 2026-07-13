@@ -352,7 +352,66 @@
     loadBillingPeriod();
     return cfetch('/invoices' + custQS()).then(function (r) { list = r.values || []; })
       .catch(function () { list = []; })
-      .then(function () { renderTable(); renderCharts(); });
+      .then(function () { renderTable(); renderCharts(); renderSummary(true); });
+  }
+
+  // ── "Resumen entre fechas" — invoiced kWh + € summed over the invoices
+  // whose period overlaps the picked range (an invoice counts whole; the
+  // settlement is atomic). Pure client-side over the loaded list.
+  function renderSummary(resetDates) {
+    var card = q('iv-sum-card');
+    if (!card) return;
+    var rows = (list || []).filter(function (iv) { return iv.status !== 'void'; });
+    if (!rows.length) { card.style.display = 'none'; return; }
+    card.style.display = '';
+    var fromEl = q('iv-sum-from'), toEl = q('iv-sum-to');
+    if (resetDates === true || !fromEl.value || !toEl.value) {
+      // Default to the loaded history's full span (rows come newest first).
+      var minS = rows[rows.length - 1].period_start, maxE = rows[0].period_end;
+      rows.forEach(function (iv) {
+        if (iv.period_start < minS) minS = iv.period_start;
+        if (iv.period_end > maxE) maxE = iv.period_end;
+      });
+      fromEl.value = minS; toEl.value = maxE;
+    }
+    var from = fromEl.value, to = toEl.value;
+    var sel = rows.filter(function (iv) {
+      return iv.period_end >= from && iv.period_start <= to;
+    });
+    // Invoices only partially inside the range are PRO-RATED by days: the
+    // covered fraction of the period scales its kWh and €.
+    var kwh = 0, tot = 0, days = 0, costed = 0, partial = 0;
+    sel.forEach(function (iv) {
+      var e = iv.energy_kwh != null ? iv.energy_kwh
+        : ((iv.energy_p1_kwh || 0) + (iv.energy_p2_kwh || 0) + (iv.energy_p3_kwh || 0));
+      var invDays = daysBetween(iv.period_start, iv.period_end) || 1;
+      var ovDays = daysBetween(iv.period_start > from ? iv.period_start : from,
+                               iv.period_end < to ? iv.period_end : to);
+      if (ovDays <= 0) return;
+      var frac = Math.min(ovDays / invDays, 1);
+      if (frac < 1) partial++;
+      kwh += (e || 0) * frac;
+      days += ovDays;
+      if (iv.total_eur != null) { tot += iv.total_eur * frac; costed += (e || 0) * frac; }
+    });
+    function cell(label, value, sub) {
+      return '<div><div style="font-size:0.68rem;color:var(--color-text-light,#6b7f92);text-transform:uppercase;letter-spacing:0.03em;">' + label + '</div>' +
+        '<div style="font-size:1.15rem;font-weight:700;color:#2c5171;">' + value + '</div>' +
+        (sub ? '<div style="font-size:0.68rem;color:var(--color-text-light,#6b7f92);">' + sub + '</div>' : '') + '</div>';
+    }
+    q('iv-sum-body').innerHTML =
+      cell(__t('inv.sumKwh', 'Consumo facturado'), fmt(kwh, 0) + ' kWh',
+           days > 0 ? fmt(kwh / days, 1) + ' ' + __t('inv.perDay', 'kWh/día') : '') +
+      cell(__t('inv.sumEur', 'Importe'), eur(tot),
+           costed > 0 ? fmt(tot / costed, 3) + ' €/kWh ' + __t('inv.sumAllin', 'con todo') : '') +
+      cell(__t('inv.sumCount', 'Facturas'), String(sel.length),
+           days > 0 ? fmt(days, 0) + ' ' + __t('inv.sumDays', 'días') : '');
+    q('iv-sum-note').textContent = !sel.length
+      ? __t('inv.sumEmpty', 'Ninguna factura en ese rango de fechas.')
+      : (partial > 0
+        ? __t('inv.sumProrated', '{n} factura(s) entran a medias: se prorratean por días.')
+          .replace('{n}', partial)
+        : '');
   }
 
   // ── Per-invoice charts (above the table): kWh/day and band split ─────────
@@ -1026,7 +1085,7 @@
     closePdf: closePdf, togglePdfExpand: togglePdfExpand,
     explain: explain, closeExplain: closeExplain, explainPdf: explainPdf,
     ask: ask, editBpEnd: editBpEnd, saveBpEnd: saveBpEnd, setRange: setRange,
-    cost: cost, closeCost: closeCost,
+    cost: cost, closeCost: closeCost, renderSummary: renderSummary,
   };
 
   document.addEventListener('i18n:changed', renderTable);

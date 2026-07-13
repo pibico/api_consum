@@ -6,9 +6,11 @@ Data model (verified live 2026-07-11):
   - `apower`         → instantaneous power, W (per device+channel)
   - `apower_energy`  → CUMULATIVE energy counter, Wh (per device+channel)
   - Household energy meter (Shelly EM) publishes NUMERIC channels ('0','1');
-    smart plugs publish 'switch:0'. Summing every device double-counts (the
-    EM already measures the whole house), so "whole house" totals use ONLY
-    numeric-channel devices; per-device series are exposed unfiltered.
+    smart plugs publish 'switch:0'. "Whole house" = the sensors registry's
+    role='main' sensor (SSOT, synced from the PLC topology) — the EM's other
+    clamp can be a SUBCIRCUIT (pibico ch '1' = lavadoras, parent ch '0') and
+    summing it double-counts. Households without a registered main fall back
+    to the numeric-channel heuristic; per-device series are unfiltered.
 
 kWh per bucket = GREATEST(max(counter)-min(counter), 0)/1000 per
 device+channel (monotonic counter; the GREATEST clamp absorbs resets),
@@ -27,8 +29,44 @@ from app.core import db
 logger = logging.getLogger("consum.consumption")
 
 # Whole-house filter: EM channels are plain integers ('0','1','2'); plug/PM
-# channels look like 'switch:0'. See module docstring.
+# channels look like 'switch:0'. See module docstring. HEURISTIC FALLBACK
+# only — the sensors registry (role='main') is the SSOT: the EM's second
+# clamp can be a SUBCIRCUIT (e.g. pibico ch '1' = lavadoras, parent ch '0'),
+# and summing it double-counts. Use _house_cond()/_mains_rows() instead.
 _HOUSE_CHANNEL_SQL = "channel ~ '^[0-9]+$'"
+
+
+async def _mains_rows(ids: Dict[str, str]) -> List[Any]:
+    """(customer_id, device_id, channel) of each registered role='main'
+    sensor (topology synced from the PLC's appliances.yaml)."""
+    if not ids:
+        return []
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                """SELECT customer_id::text, sensor_key, channel FROM sensors
+                    WHERE customer_id::text = ANY(%s) AND role = 'main'""",
+                (list(ids.values()),),
+            )
+            return list(await cur.fetchall())
+
+
+async def _house_cond(ids: Dict[str, str]) -> tuple:
+    """(sql, params) selecting whole-house rows: customers WITH a registered
+    main count ONLY that (device, channel); the rest keep the numeric-channel
+    heuristic. Column names match both sensor_data and sensor_hourly."""
+    mains = await _mains_rows(ids)
+    if not mains:
+        return _HOUSE_CHANNEL_SQL, []
+    triple = "(customer_id::text = %s AND device_id = %s AND channel = %s)"
+    sql = " OR ".join([triple] * len(mains))
+    params: List[Any] = [x for r in mains for x in r]
+    with_main = {r[0] for r in mains}
+    without = [cid for cid in ids.values() if cid not in with_main]
+    if without:
+        sql = f"({sql}) OR (customer_id::text = ANY(%s) AND {_HOUSE_CHANNEL_SQL})"
+        params.append(without)
+    return f"({sql})", params
 
 
 async def _slugs_to_ids(slugs: Sequence[str]) -> Dict[str, str]:
@@ -175,17 +213,23 @@ async def sensor_devices(slugs: Sequence[str]) -> List[Dict[str, Any]]:
 
 
 async def current_power(slugs: Sequence[str]) -> Dict[str, Any]:
-    """Latest instantaneous power per device (+ whole-house total from the
-    EM numeric channels only). Looks at the last 10 minutes."""
+    """Latest instantaneous power per device (+ whole-house total). The total
+    counts ONLY the registered role='main' sensor of each household — the EM's
+    second clamp can be a subcircuit (pibico ch '1' = lavadoras) and summing
+    it double-counts; households without topology fall back to the numeric-
+    channel heuristic. Looks at the last 10 minutes."""
     ids = await _slugs_to_ids(slugs)
     if not ids:
         return {"total_w": 0, "devices": []}
+    mains_by_cid: Dict[str, set] = {}
+    for cid, dev, ch in await _mains_rows(ids):
+        mains_by_cid.setdefault(cid, set()).add((dev, ch))
     async with db.raw_connection() as con:
         async with con.cursor() as cur:
             await cur.execute(
                 """
                 SELECT DISTINCT ON (device_id, channel)
-                       device_id, channel, value_num, ts
+                       device_id, channel, value_num, ts, customer_id::text
                 FROM sensor_data
                 WHERE customer_id::text = ANY(%s)
                   AND variable = 'apower'
@@ -197,12 +241,16 @@ async def current_power(slugs: Sequence[str]) -> Dict[str, Any]:
             rows = await cur.fetchall()
     devices: Dict[str, Dict[str, Any]] = {}
     total = 0.0
-    for device_id, channel, value, ts in rows:
+    for device_id, channel, value, ts, cid in rows:
         d = devices.setdefault(device_id, {"device": device_id, "power_w": 0.0,
                                            "channels": {}, "ts": ts.isoformat()})
         d["channels"][channel] = value
         d["power_w"] += value or 0.0
-        if channel and channel.isdigit():
+        mains = mains_by_cid.get(cid)
+        if mains is not None:
+            if (device_id, channel) in mains:
+                total += value or 0.0
+        elif channel and channel.isdigit():
             total += value or 0.0
     # No EM present → fall back to the sum of everything (plug-only homes)
     if total == 0.0 and rows:
@@ -244,6 +292,8 @@ async def energy_series(
     trunc = {"quarter": "15 minutes", "hour": "1 hour", "day": "1 day"}.get(bucket, "1 hour")
     hours_per_bucket = {"15 minutes": 0.25, "1 hour": 1.0, "1 day": 24.0}[trunc]
     boundary = (_date.today() - _td(days=RAW_WINDOW_DAYS)).isoformat()
+    house_sql, house_params = (await _house_cond(ids)) if (house_only and not device) \
+        else ("", [])
 
     counter_rows: List[Any] = []
     power_rows: List[Any] = []
@@ -259,7 +309,8 @@ async def energy_series(
                     cond += " AND device_id = %s"
                     params.append(device)
                 elif house_only:
-                    cond += f" AND {_HOUSE_CHANNEL_SQL}"
+                    cond += f" AND {house_sql}"
+                    params += house_params
                 await cur.execute(f"""
                     SELECT time_bucket(%s::interval, bucket) AS b, device_id, channel,
                            SUM(GREATEST(max - min, 0)) / 1000.0 AS kwh
@@ -286,7 +337,8 @@ async def energy_series(
                     cond += " AND device_id = %s"
                     params.append(device)
                 elif house_only:
-                    cond += f" AND {_HOUSE_CHANNEL_SQL}"
+                    cond += f" AND {house_sql}"
+                    params += house_params
                 sql_counter = f"""
                     SELECT time_bucket(%s::interval, ts) AS bucket, device_id, channel,
                            GREATEST(MAX(value_num) - MIN(value_num), 0) / 1000.0 AS kwh
@@ -390,7 +442,9 @@ async def power_peak_hourly(slugs: Sequence[str], date: str,
         where.append("device_id = %s")
         params.append(device)
     else:
-        where.append(_HOUSE_CHANNEL_SQL)
+        house_sql, house_params = await _house_cond(ids)
+        where.append(house_sql)
+        params += house_params
     sql = f"""
         SELECT time_bucket('1 hour', {ts_col}) AS h, MAX({val}) AS peak_w
         FROM {table} WHERE {" AND ".join(where)}

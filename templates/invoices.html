@@ -27,7 +27,7 @@
 </div>
 
 <!-- Factura en curso — open billing period + projection (PRO; hidden otherwise) -->
-<div class="kpi-grid-8" id="iv-bp-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:1rem;display:none;">
+<div class="kpi-grid-8" id="iv-bp-row" style="margin-bottom:1rem;display:none;">
   <div class="glass-panel kpi-card" style="position:relative;">
     <button type="button" onclick="IvPage.editBpEnd()" data-i18n-title="inv.bpEditEnd" title="Fijar el día de cierre"
             style="position:absolute;top:8px;right:8px;width:26px;height:26px;display:flex;align-items:center;justify-content:center;padding:0;border:1px solid rgba(44,81,113,0.25);border-radius:6px;background:rgba(255,255,255,0.55);color:#2c5171;cursor:pointer;">
@@ -51,6 +51,20 @@
     <div class="kpi-value" id="iv-bp-proj">—</div>
     <div class="kpi-sub" id="iv-bp-proj-sub">—</div>
   </div>
+</div>
+
+<!-- Resumen entre fechas — invoiced kWh + € across the filtered range -->
+<div class="glass-panel" id="iv-sum-card" style="display:none;padding:0.75rem 1rem;margin-bottom:1rem;">
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <h4 style="margin:0;font-size:0.85rem;" data-i18n="inv.sumTitle">Resumen entre fechas</h4>
+    <div class="iv-sum-dates">
+      <input type="date" class="pibico-input" id="iv-sum-from" onchange="IvPage.renderSummary()">
+      <span style="font-size:0.8rem;color:#3d5a75;">→</span>
+      <input type="date" class="pibico-input" id="iv-sum-to" onchange="IvPage.renderSummary()">
+    </div>
+  </div>
+  <div id="iv-sum-body" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-top:10px;"></div>
+  <p class="text-muted" id="iv-sum-note" style="margin:8px 0 0;font-size:0.7rem;"></p>
 </div>
 
 <!-- Per-invoice charts: kWh/day per period + band split per period -->
