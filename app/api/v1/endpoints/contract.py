@@ -349,6 +349,16 @@ async def catalog_list(retailer: Optional[str] = Query(None),
     return {"values": await tariff_catalog.list_products(retailer)}
 
 
+@router.get("/catalog/resolve")
+async def catalog_resolve(retailer: Optional[str] = Query(None),
+                          product: Optional[str] = Query(None),
+                          ctx: ConsumContext = Depends(consum_context)):
+    """Match an extracted retailer/product against the catalog (upload step 2:
+    a confident match settles the contract type without asking the user)."""
+    hit = await tariff_catalog.resolve(retailer, product)
+    return hit or {"match": None}
+
+
 @router.get("/catalog/{cid}")
 async def catalog_get(cid: int, ctx: ConsumContext = Depends(consum_context)):
     row = await tariff_catalog.get(cid)

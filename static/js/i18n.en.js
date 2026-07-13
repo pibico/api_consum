@@ -359,6 +359,8 @@ window.I18N_EN = {
   'inv.savedMsg': 'Your tariff is set — your € numbers are now real.',
   'inv.listTitle': 'Closed invoices',
   'inv.count': 'invoices',
+  'inv.cfCatalog': 'from our tariff catalog',
+  'inv.viaCatalog': 'type and terms from the tariff catalog',
   'inv.bpPeriod': 'Current period',
   'inv.bpAccrued': 'Accrued',
   'inv.bpProjected': 'Projected at close',

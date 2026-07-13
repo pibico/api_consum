@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "63"  # 63: upsell PRO sin logout (cfetch en Consumo/PLC), catálogo solo staff, summary robusto a resets
+ASSET_VERSION = "64"  # 64: catálogo de tarifas conectado — resolve en la subida (sin pregunta de tipo si hay match)
 
 
 def render_template(template_name: str, **context) -> str:

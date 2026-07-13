@@ -122,3 +122,41 @@ async def delete(cid: int) -> None:
             await cur.execute("DELETE FROM consum.tariff_catalog WHERE id = %s", (cid,))
             if cur.rowcount == 0:
                 raise HTTPException(404, detail="Producto no encontrado")
+
+
+def _norm(s: Optional[str]) -> str:
+    """Loose match key: lowercase, collapsed spaces, no accents/punctuation."""
+    if not s:
+        return ""
+    import re
+    import unicodedata
+    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9 ]+", " ", s.lower()).strip()
+
+
+def _contains(a: str, b: str) -> bool:
+    """Normalized containment either way ('masnorte' ↔ 'masnorte global power sl')."""
+    return bool(a and b) and (a in b or b in a)
+
+
+async def resolve(retailer: Optional[str], product: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Match an AI-extracted retailer/product against the catalog so the upload
+    flow can settle the CONTRACT TYPE without asking (an invoice's month-average
+    prices look 'fixed' even on indexed products — the catalog knows better).
+
+    Confident only: exact-ish product match, or a retailer with a SINGLE active
+    product. Anything fuzzier returns None and the flow asks the plain question."""
+    r_key, p_key = _norm(retailer), _norm(product)
+    if not r_key:
+        return None
+    rows = await list_products()
+    by_retailer = [row for row in rows if _contains(r_key, _norm(row["retailer"]))]
+    if not by_retailer:
+        return None
+    if p_key:
+        for row in by_retailer:
+            if _contains(p_key, _norm(row["product_name"])):
+                return {"match": row, "matched_by": "product"}
+    if len({row["id"] for row in by_retailer}) == 1:
+        return {"match": by_retailer[0], "matched_by": "retailer_single"}
+    return None

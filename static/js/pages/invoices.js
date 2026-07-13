@@ -355,6 +355,8 @@
   // the user never meets the "contract" concept; /app/contract = advanced).
   var extracted = null;    // last AI extraction
   var chosenType = null;   // fixed|indexed|pvpc after step 2 (or doc-settled)
+  var catalogHit = null;   // catalog row when retailer/product resolved — settles
+                           // the type without asking and prefills missing terms
   var activeContract = null;
 
   function upfetch(endpoint, formData) {
@@ -464,12 +466,24 @@
       archiveUpload(file, extracted, r.markdown || '');
       // Trust the type ONLY from a contract document (an invoice shows monthly
       // AVERAGE prices that look fixed even on indexed products).
+      catalogHit = null;
       if (extracted.document_kind === 'contrato' && extracted.contract_type) {
         chosenType = extracted.contract_type;
         showConfirm();
       } else if (extracted.contract_type === 'pvpc') {
         chosenType = 'pvpc';
         showConfirm();
+      } else if (extracted.retailer) {
+        // The CATALOG knows the product's real type — resolve before asking.
+        cfetch('/contracts/catalog/resolve?retailer=' + encodeURIComponent(extracted.retailer) +
+               (extracted.product_name ? '&product=' + encodeURIComponent(extracted.product_name) : ''))
+          .then(function (r) {
+            if (r && r.match && r.match.contract_type) {
+              catalogHit = r.match;
+              chosenType = r.match.contract_type;
+              showConfirm();
+            } else { upStep(2); }
+          }).catch(function () { upStep(2); });
       } else {
         upStep(2);
       }
@@ -484,7 +498,9 @@
     var ex = extracted || {};
     var lines = [];
     if (ex.retailer) lines.push(__t('inv.tfWho', 'Pagas la luz a') + ' <b>' + ex.retailer + '</b>.');
-    lines.push(__t('inv.cfType', 'Tu precio es') + ' <b>' + typePlain(chosenType) + '</b>.');
+    lines.push(__t('inv.cfType', 'Tu precio es') + ' <b>' + typePlain(chosenType) + '</b>' +
+      (catalogHit ? ' <span class="text-muted" style="font-size:0.78rem;">(' +
+        __t('inv.cfCatalog', 'según nuestro catálogo de tarifas') + ')</span>' : '') + '.');
     if (chosenType === 'fixed' && ex.energy_p1_eur_kwh != null)
       lines.push(__t('inv.cfPrice', 'Alrededor de') + ' <b>' +
         Number(ex.energy_p1_eur_kwh).toFixed(3).replace('.', ',') + ' €/kWh</b>.');
@@ -504,38 +520,46 @@
       return;
     }
     var today = localDate(new Date());
+    var cat = catalogHit || {};   // catalog terms fill what the bill lacks
     var p = {
       contract_type: chosenType,
-      label: ex.product_name || null,
-      retailer: ex.retailer || null,
+      label: ex.product_name || cat.product_name || null,
+      retailer: ex.retailer || cat.retailer || null,
       cups: ex.cups || null,
-      access_tariff: '2.0TD',
+      access_tariff: cat.access_tariff || '2.0TD',
       start_date: (ex.start_date && /^\d{4}-\d{2}-\d{2}$/.test(ex.start_date)) ? ex.start_date : today,
       end_date: null,
       power_p1_kw: ex.power_p1_kw != null ? ex.power_p1_kw : null,
       power_p2_kw: ex.power_p2_kw != null ? ex.power_p2_kw : (ex.power_p1_kw != null ? ex.power_p1_kw : null),
-      power_p1_eur_kw_day: ex.power_p1_eur_kw_day != null ? ex.power_p1_eur_kw_day : null,
-      power_p2_eur_kw_day: ex.power_p2_eur_kw_day != null ? ex.power_p2_eur_kw_day : null,
-      meter_rental_eur_month: ex.meter_rental_eur_month != null ? ex.meter_rental_eur_month : 0.81,
-      notes: (ex.notes ? ex.notes + ' · ' : '') + __t('inv.viaInvoice', 'Configurado desde factura subida'),
+      power_p1_eur_kw_day: ex.power_p1_eur_kw_day != null ? ex.power_p1_eur_kw_day
+        : (cat.power_p1_eur_kw_day != null ? cat.power_p1_eur_kw_day : null),
+      power_p2_eur_kw_day: ex.power_p2_eur_kw_day != null ? ex.power_p2_eur_kw_day
+        : (cat.power_p2_eur_kw_day != null ? cat.power_p2_eur_kw_day : null),
+      meter_rental_eur_month: ex.meter_rental_eur_month != null ? ex.meter_rental_eur_month
+        : (cat.meter_rental_eur_month != null ? cat.meter_rental_eur_month : 0.81),
+      notes: (ex.notes ? ex.notes + ' · ' : '') + __t('inv.viaInvoice', 'Configurado desde factura subida') +
+        (catalogHit ? ' · ' + __t('inv.viaCatalog', 'tipo y términos del catálogo de tarifas') : ''),
     };
     if (chosenType === 'fixed') {
-      // The invoice's period prices are what they actually pay — best available.
-      p.energy_p1_eur_kwh = ex.energy_p1_eur_kwh;
-      p.energy_p2_eur_kwh = ex.energy_p2_eur_kwh;
-      p.energy_p3_eur_kwh = ex.energy_p3_eur_kwh;
+      // The invoice's period prices are what they actually pay — best available;
+      // the catalog's sheet prices only fill in when the bill shows none.
+      p.energy_p1_eur_kwh = ex.energy_p1_eur_kwh != null ? ex.energy_p1_eur_kwh : cat.energy_p1_eur_kwh;
+      p.energy_p2_eur_kwh = ex.energy_p2_eur_kwh != null ? ex.energy_p2_eur_kwh : cat.energy_p2_eur_kwh;
+      p.energy_p3_eur_kwh = ex.energy_p3_eur_kwh != null ? ex.energy_p3_eur_kwh : cat.energy_p3_eur_kwh;
       if (p.energy_p1_eur_kwh == null) {
         setUpStatus('iv-up-save-status', __t('inv.errNoPrice',
           'No pudimos leer tu precio en el documento — usa el editor avanzado.'), 'err');
         return;
       }
     } else if (chosenType === 'indexed') {
-      // CC per period from the doc if present; else the SSOT reference values
-      // (flagged) — the advanced editor can refine later.
-      p.components = ex.components || null;
+      // CC per period from the doc if present; then the CATALOG's reviewed
+      // terms; only then the SSOT reference default (flagged).
+      p.components = ex.components || cat.components || null;
       p.margin_eur_kwh = (ex.components && ex.components.CC && ex.components.CC.P1) != null
-        ? ex.components.CC.P1 : (ex.margin_eur_kwh != null ? ex.margin_eur_kwh : 0.03);
-      if (!p.components) {
+        ? ex.components.CC.P1
+        : (ex.margin_eur_kwh != null ? ex.margin_eur_kwh
+           : (cat.margin_eur_kwh != null ? cat.margin_eur_kwh : 0.03));
+      if (!p.components && cat.margin_eur_kwh == null) {
         p.notes += ' · ' + __t('inv.estMargin', 'margen estimado (referencia) — sube tu contrato para afinar');
       }
     }

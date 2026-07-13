@@ -359,6 +359,8 @@ window.I18N_ES = {
   'inv.savedMsg': 'Tu tarifa quedó configurada — tus números en € ya son los de verdad.',
   'inv.listTitle': 'Facturas cerradas',
   'inv.count': 'facturas',
+  'inv.cfCatalog': 'según nuestro catálogo de tarifas',
+  'inv.viaCatalog': 'tipo y términos del catálogo de tarifas',
   'inv.bpPeriod': 'Periodo en curso',
   'inv.bpAccrued': 'Acumulado',
   'inv.bpProjected': 'Estimado a cierre',
