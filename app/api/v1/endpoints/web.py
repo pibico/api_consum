@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "77"  # 77: 3ª gráfica €/kWh todo-incluido por periodo (grid 3 col, mismo filtro 6-12-24m)
+ASSET_VERSION = "86"  # 86: meta de inferencia bajo el bubble (modelo, hora, tiempo, tokens, tok/s)
 
 
 def render_template(template_name: str, **context) -> str:

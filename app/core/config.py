@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     CHAT_PROVIDER: str = "ollama"
     CHAT_MODEL: str = ""       # e.g. "qwen2.5:14b" / "claude-haiku-4-5" — empty = AI off
     AI_ASK_DAILY_LIMIT: int = 30   # chat questions per org·day (cost control)
+    # Monthly TOKEN credit per household scope (prompt+completion, all AI
+    # kinds) — crossing it turns /ai/ask into 429 AI_CREDITS until the 1st.
+    AI_MONTHLY_TOKEN_CAP: int = 2_000_000
     CONVERT_BASE_URL: str = "https://api.pibico.es/convert"
     CONVERT_API_KEY: str = ""  # api_convert (PDF→Markdown) key — empty = conversion off
 

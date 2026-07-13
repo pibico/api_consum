@@ -32,9 +32,11 @@
     <h3 style="margin:0 0 0.5rem;"><span data-i18n="ai.chatTitle">Pregunta sobre tu consumo</span>
       <span class="text-muted" id="ai-quota" style="font-weight:400;font-size:0.8rem;"></span></h3>
     <div id="ai-chat-log" class="ai-chat-log"></div>
-    <form id="ai-form" style="display:flex;gap:8px;margin-top:0.75rem;">
-      <input type="text" id="ai-q" class="pibico-input" style="flex:1;" maxlength="500"
-             data-i18n-placeholder="ai.placeholder" placeholder="¿Por qué gasté más ayer?" autocomplete="off">
+    <form id="ai-form" style="display:flex;gap:8px;margin-top:0.75rem;align-items:flex-end;">
+      <textarea id="ai-q" class="pibico-input" rows="2" maxlength="6000"
+                style="flex:1;resize:vertical;min-height:44px;max-height:200px;font-family:inherit;"
+                data-i18n-placeholder="ai.placeholder"
+                placeholder="¿Por qué gasté más ayer? (Enter envía · Mayús+Enter, salto de línea)"></textarea>
       <button type="submit" class="btn btn-primary" id="ai-send" data-i18n="ai.send">Enviar</button>
     </form>
   </div>

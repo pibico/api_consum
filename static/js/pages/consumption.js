@@ -17,9 +17,10 @@
   // when present; otherwise a clean short id instead of the raw 'shelly_<mac>'
   // key (name the appliance in the PLC to replace it).
   function sensorLabel(o) {
-    if (o.name && String(o.name).trim()) return o.name;
-    var m = String(o.id || '').replace(/^shelly[_-]?/i, '');
-    return m.length > 5 ? __t('cons.sensorGeneric', 'Sensor') + ' ··' + m.slice(-4) : (m || o.id);
+    // Curated name when set, else the FULL id exactly as registered in
+    // api_edge — recognizable against the console (no "Sensor ··xxxx").
+    if (o.name && String(o.name).trim() && o.name !== o.id) return o.name;
+    return o.id;
   }
   function fmt(n, dec) { return (n == null) ? '—' : Number(n).toLocaleString(undefined, { maximumFractionDigits: dec == null ? 2 : dec }); }
   function today() {

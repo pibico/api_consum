@@ -38,12 +38,15 @@ async def insights(customer: Optional[str] = Query(None),
     if hit and now < hit[0] and not refresh:
         return hit[1]
 
-    shift, thermal, window = await asyncio.gather(
+    shift, thermal, window, achieved, appliances = await asyncio.gather(
         oe3.shift_analysis(slugs, device=device),
         oe3.thermal_analysis(slugs, device=device),
         oe3.green_window(),
+        oe3.achieved_savings(slugs, device=device),
+        oe3.appliance_costs(slugs),
     )
-    out = {"shift": shift, "thermal": thermal, "window": window}
+    out = {"shift": shift, "thermal": thermal, "window": window,
+           "achieved": achieved, "appliances": appliances}
     _cache[key] = (now + _TTL, out)
     await oe3.persist_insights(key[0] + (f":{device}" if device else ""),
                                shift, thermal, window)

@@ -1,15 +1,18 @@
-"""AI endpoints (F4) — daily narrative + Q&A over the household's AGGREGATES.
+"""AI endpoints (F4) — daily narrative + AGENTIC Q&A over the household data.
 
-Privacy rule (ADR): the LLM only ever receives aggregates — KPIs, daily/hour
-totals, OE3 insights, exogenous context. Never raw sensor rows, device MACs,
-emails or names. Gates: require_ai (ServiceAccess.ai_enabled). Cost control:
-narrative cached per scope·day (24 h); /ask rate-limited per org·day.
+Privacy rule (ADR, revised 2026-07-13 by owner mandate): /narrative keeps the
+aggregates-only contract; /ask may additionally reach PER-HOUSEHOLD detail
+through datatools (sensor series with their PLC names, the household's OWN
+invoices and their text) — never another tenant's anything, emails redacted.
+Gates: require_ai (ServiceAccess.ai_enabled). Cost control: narrative cached
+per scope·day (24 h); /ask rate-limited per org·day, ≤5 tool hops per turn.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date
+import time
+from datetime import date, datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
@@ -126,7 +129,7 @@ async def narrative(customer: Optional[str] = Query(None),
 
 
 @router.post("/ask")
-async def ask(question: str = Body(..., embed=True, max_length=500),
+async def ask(question: str = Body(..., embed=True, max_length=6000),
               history: List[dict] = Body(default=[], embed=True),
               customer: Optional[str] = Body(None, embed=True),
               ctx: ConsumContext = Depends(require_ai())):
@@ -147,14 +150,45 @@ async def ask(question: str = Body(..., embed=True, max_length=500),
     if count >= settings.AI_ASK_DAILY_LIMIT:
         raise HTTPException(429, detail={"code": "AI_RATE_LIMIT",
                                          "message": f"Límite diario de {settings.AI_ASK_DAILY_LIMIT} preguntas alcanzado."})
+    # CREDIT CUTOFF: monthly token budget per scope (the ai_usage ledger is
+    # also the pay-per-use billing source).
+    from app.services import ai_usage
+    used = await ai_usage.month_tokens(scope)
+    if used >= settings.AI_MONTHLY_TOKEN_CAP:
+        raise HTTPException(429, detail={
+            "code": "AI_CREDITS",
+            "message": "Has agotado los créditos de IA de este mes."})
     _ask_counter[scope] = (day, count + 1)
 
     import json
+
+    from app.services.ai import datatools
+
     context = await _aggregate_context(slugs)
     _audit_context(scope, "ask", context)
     messages = [{"role": "system", "content": _SYSTEM +
                  "\n\nContexto agregado del hogar (hoy):\n" +
-                 json.dumps(context, ensure_ascii=False)}]
+                 json.dumps(context, ensure_ascii=False) +
+                 "\n\nTienes HERRAMIENTAS para consultar los datos reales del "
+                 "hogar (sensores, históricos, facturas): úsalas siempre que "
+                 "la pregunta pida cifras que no estén en el contexto. Nunca "
+                 "menciones las herramientas al usuario. REGLAS: las facturas "
+                 "cubren SU periodo, no meses naturales — si preguntan por un "
+                 "mes, aclara qué periodos lo cubren y no sumes facturas como "
+                 "si fueran el mes. Para importes de conceptos (peajes, "
+                 "impuestos, bono social, alquiler) usa la herramienta "
+                 "`invoice` o `invoice_search` — NUNCA los deduzcas. Para "
+                 "potencia contratada/ICP usa `peaks` con threshold_w: si los "
+                 "picos SUPERAN la potencia contratada, dilo claramente y "
+                 "explica que el ICP corta con excesos sostenidos (picos "
+                 "breves pasan) — NUNCA digas que no hay riesgo si los datos "
+                 "muestran picos por encima. El dato `carbono` del contexto "
+                 "es la intensidad de la RED (mix nacional): antes de "
+                 "atribuir CO2 al CONSUMO del hogar, consulta `tariff` — si "
+                 "origen_renovable es true, las emisiones de su consumo son "
+                 "0 (garantía de origen) y la intensidad de red es solo "
+                 "informativa. Responde en texto llano, sin tablas Markdown. "
+                 "Hoy es " + date.today().isoformat() + "."}]
     for turn in history[-6:]:                      # last 3 exchanges max
         role = turn.get("role")
         content = str(turn.get("content") or "")[:1000]
@@ -162,8 +196,110 @@ async def ask(question: str = Body(..., embed=True, max_length=500),
             messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": question})
 
-    text = await ai_client.llm_chat(messages, temperature=0.5, max_tokens=700)
+    # Agentic loop (2026-07-13, supersedes the aggregates-only ADR by owner
+    # mandate): the model may call up to 4 HOUSEHOLD-SCOPED tools before
+    # answering. gpt-oss emits NATIVE tool_calls (ollama channel) even from a
+    # prompt-level spec, with empty content — so we consume both channels:
+    # structured tool_calls first, {"tool": ...} in the text as fallback (any
+    # provider). Every tool result is size-audited; invoice text is
+    # email-redacted inside datatools.
+    def _parse_text_call(reply: str):
+        s = (reply or "").strip()
+        if s.startswith("```"):
+            s = s.strip("`").strip()
+            if s[:4].lower() == "json":
+                s = s[4:].strip()
+        if s.startswith("{") and '"tool"' in s[:80]:
+            try:
+                parsed = json.loads(s)
+                if isinstance(parsed, dict) and parsed.get("tool"):
+                    return {"name": str(parsed["tool"]),
+                            "args": parsed.get("args") or {}}
+            except ValueError:
+                pass
+        return None
+
+    text = None
+    tok_prompt = tok_completion = hops = 0
+    started_at = datetime.now().strftime("%H:%M:%S")
+    t0 = time.monotonic()
+    for _hop in range(6):
+        # NATIVE tool protocol (verified with the gateway/gpt-oss): schemas go
+        # in `tools`; each executed call is replayed as an assistant message
+        # WITH tool_calls plus a role='tool' result — then the model answers.
+        use_tools = datatools.NATIVE_TOOLS if _hop < 5 else None
+        if _hop == 5:
+            messages.append({"role": "user", "content":
+                             "Responde YA al usuario en texto normal con la "
+                             "información obtenida."})
+        got = await ai_client.llm_chat_full(
+            messages, temperature=0.2, max_tokens=900, tools=use_tools)
+        if not got:
+            break
+        u = got.get("usage") or {}
+        tok_prompt += u.get("prompt_tokens") or 0
+        tok_completion += u.get("completion_tokens") or 0
+        hops += 1
+        calls = got.get("tool_calls") or []
+        reply = got.get("text") or ""
+        if not calls:
+            fallback = _parse_text_call(reply)
+            if fallback:
+                fallback["id"] = "call_0"
+                calls = [fallback]
+                got["raw_tool_calls"] = [{"id": "call_0", "type": "function",
+                                          "function": {
+                    "name": fallback["name"], "arguments": fallback["args"]}}]
+            else:
+                text = reply or None
+                break
+        # Execute EVERY call of the turn (gpt-oss usually emits one).
+        messages.append({"role": "assistant", "content": reply,
+                         "tool_calls": got.get("raw_tool_calls") or []})
+        for i, call in enumerate(calls):
+            name = call["name"]
+            if name.startswith("tool_"):
+                name = name[5:]
+            result = await datatools.run_tool(slugs, name, call.get("args") or {})
+            blob = json.dumps(result, ensure_ascii=False)[:6000]
+            logger.info("AI-AUDIT scope=%s kind=tool:%s bytes=%d",
+                        scope, name, len(blob))
+            # tool_call_id is REQUIRED for anthropic-style providers (the
+            # gateway maps it to tool_result.tool_use_id); ollama ignores it.
+            messages.append({"role": "tool", "content": blob, "name": name,
+                             "tool_call_id": call.get("id") or f"call_{i}"})
+    email = (ctx.user or {}).get("email")
+    await ai_usage.record(scope, email, "ask", tok_prompt, tok_completion,
+                          tool_hops=max(hops - 1, 0))
     if not text:
         raise HTTPException(502, detail={"code": "AI_UPSTREAM",
                                          "message": "El servicio de IA no respondió."})
-    return {"answer": text, "remaining_today": settings.AI_ASK_DAILY_LIMIT - count - 1}
+    # Per-turn inference metadata — rendered under the bubble and persisted
+    # with the assistant turn so it survives page reloads.
+    meta = {"model": settings.CHAT_MODEL, "started_at": started_at,
+            "elapsed_ms": int((time.monotonic() - t0) * 1000),
+            "prompt_tokens": tok_prompt, "completion_tokens": tok_completion,
+            "tool_hops": max(hops - 1, 0)}
+    # Persist the day's conversation — the /ai page restores it on load.
+    await ai_usage.chat_append(scope, email, "user", question)
+    await ai_usage.chat_append(scope, email, "assistant", text, meta=meta)
+    return {"answer": text,
+            "remaining_today": settings.AI_ASK_DAILY_LIMIT - count - 1,
+            "meta": meta,
+            "tokens": {"prompt": tok_prompt, "completion": tok_completion},
+            "credits_used_month": used + tok_prompt + tok_completion,
+            "credits_cap": settings.AI_MONTHLY_TOKEN_CAP}
+
+
+@router.get("/chat")
+async def chat_today(customer: Optional[str] = Query(None),
+                     ctx: ConsumContext = Depends(require_ai())):
+    """Today's persisted conversation for this household+user — restores the
+    /ai page after navigation."""
+    from app.services import ai_usage
+    slugs = await _slugs(ctx, customer)
+    if not slugs:
+        raise HTTPException(404, detail="no household in scope")
+    scope = "|".join(sorted(slugs))
+    turns = await ai_usage.chat_get(scope, (ctx.user or {}).get("email"))
+    return {"turns": turns}

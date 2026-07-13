@@ -45,11 +45,50 @@ def _extract_text(data: Any) -> Optional[str]:
     return None
 
 
-async def llm_chat(messages: List[Dict[str, str]],
-                   temperature: float = 0.4,
-                   max_tokens: int = 1024) -> Optional[str]:
-    """messages = [{role, content}, …] → assistant text (None on any failure —
-    callers degrade gracefully, the page never breaks on AI)."""
+def _extract_tool_calls(data: Any) -> List[Dict[str, Any]]:
+    """Provider-agnostic tool-call extraction. Known shapes:
+    - ollama: message.tool_calls[].function {name, arguments} (gpt-oss emits
+      these from a prompt-level tool spec, with content='' and the reasoning
+      in message.thinking)
+    - openai-style: choices[0].message.tool_calls[].function
+    Names may arrive prefixed ('tool_list_sensors') — callers normalize."""
+    if not isinstance(data, dict):
+        return []
+    msg = data.get("message") or {}
+    if not isinstance(msg, dict):
+        msg = {}
+    calls = msg.get("tool_calls")
+    if not calls:
+        choices = data.get("choices")
+        if isinstance(choices, list) and choices:
+            calls = (choices[0].get("message") or {}).get("tool_calls")
+    out = []
+    for c in calls or []:
+        fn = (c or {}).get("function") or {}
+        name = fn.get("name")
+        if not name:
+            continue
+        args = fn.get("arguments")
+        if isinstance(args, str):
+            try:
+                import json as _json
+                args = _json.loads(args)
+            except ValueError:
+                args = {}
+        out.append({"name": str(name), "args": args if isinstance(args, dict) else {},
+                    "id": c.get("id")})
+    return out
+
+
+async def llm_chat_full(messages: List[Dict[str, Any]],
+                        temperature: float = 0.4,
+                        max_tokens: int = 1024,
+                        tools: Optional[List[Dict[str, Any]]] = None
+                        ) -> Optional[Dict[str, Any]]:
+    """One chat turn → {"text", "tool_calls" (normalized), "raw_tool_calls"
+    (provider shape, replayable in an assistant message)}. None only on
+    transport/parse failure. `tools` = native function schemas (the gateway
+    forwards them verbatim; verified working with ollama/gpt-oss)."""
     if not configured():
         return None
     url = f"{settings.CHAT_BASE_URL.rstrip('/')}/api/v1/llm/chat"
@@ -60,6 +99,8 @@ async def llm_chat(messages: List[Dict[str, str]],
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
+    if tools:
+        body["tools"] = tools
     try:
         client = http_client.get_client()
         r = await client.post(url, json=body,
@@ -68,13 +109,38 @@ async def llm_chat(messages: List[Dict[str, str]],
         if r.status_code != 200:
             logger.warning("AIDA /llm/chat -> %s: %s", r.status_code, r.text[:200])
             return None
-        text = _extract_text(r.json())
-        if not text:
-            logger.warning("AIDA response shape not recognized: %s", str(r.json())[:200])
-        return text
+        data = r.json()
+        msg = data.get("message") if isinstance(data, dict) else {}
+        raw_calls = (msg or {}).get("tool_calls") or []
+        # Token accounting (billing ledger): ollama exposes *_eval_count;
+        # openai-style providers expose usage.{prompt,completion}_tokens.
+        usage = data.get("usage") or {}
+        prompt_t = int(data.get("prompt_eval_count")
+                       or usage.get("prompt_tokens") or 0)
+        completion_t = int(data.get("eval_count")
+                           or usage.get("completion_tokens") or 0)
+        return {"text": _extract_text(data),
+                "tool_calls": _extract_tool_calls(data),
+                "raw_tool_calls": raw_calls,
+                "usage": {"prompt_tokens": prompt_t,
+                          "completion_tokens": completion_t}}
     except httpx.RequestError as e:
         logger.error("AIDA unreachable: %s", e)
         return None
     except (ValueError, KeyError, TypeError, AttributeError) as e:
         logger.warning("AIDA response parse failed: %s", e)
         return None
+
+
+async def llm_chat(messages: List[Dict[str, str]],
+                   temperature: float = 0.4,
+                   max_tokens: int = 1024) -> Optional[str]:
+    """messages = [{role, content}, …] → assistant text (None on any failure —
+    callers degrade gracefully, the page never breaks on AI)."""
+    got = await llm_chat_full(messages, temperature=temperature,
+                              max_tokens=max_tokens)
+    if not got:
+        return None
+    if not got.get("text") and not got.get("tool_calls"):
+        logger.warning("AIDA response had no text/tool_calls")
+    return got.get("text") or None

@@ -299,3 +299,140 @@ async def persist_insights(scope: str, shift: dict, thermal: dict, window: dict)
         ])
     except Exception as e:  # persistence is best-effort, never breaks the page
         logger.warning("insight persist failed: %s", e)
+
+
+# ---------------------------------------------------------------------------
+# 4. Achieved savings — the HERO number: what the household actually paid this
+#    month vs pricing the same energy at the month's EXPENSIVE-hour average.
+#    The baseline is named in the UI copy ("comparado con hacer todo en horas
+#    caras") — a savings figure without a stated counterfactual reads as noise.
+# ---------------------------------------------------------------------------
+
+
+async def achieved_savings(slugs: Sequence[str],
+                           device: Optional[str] = None) -> Dict[str, Any]:
+    from app.services import pricing
+
+    today = date.today()
+    start = today.replace(day=1)
+    if today.day < 2:                          # month just started — no story yet
+        return {"status": "no_data"}
+    end = today - timedelta(days=1)
+    rows = await consumption.energy_series(slugs, start.isoformat(),
+                                           end.isoformat(), bucket="hour",
+                                           device=device)
+    prices, source = await pricing.hourly_price_map_for_slugs(
+        slugs, start.isoformat(), end.isoformat())
+    real = kwh_tot = 0.0
+    p1_prices: List[float] = []
+    for r in rows:
+        d, h = r["ts"][:10], int(r["ts"][11:13])
+        p = prices.get((d, h)) or {}
+        price = p.get("price_eur_kwh")
+        if price is None:
+            continue
+        kwh = r["kwh"] or 0.0
+        real += kwh * price
+        kwh_tot += kwh
+        if p.get("period") == "P1":
+            p1_prices.append(price)
+    if kwh_tot <= 0 or not p1_prices:
+        return {"status": "no_data"}
+    p1_avg = sum(p1_prices) / len(p1_prices)
+    expensive = kwh_tot * p1_avg
+    saving = max(expensive - real, 0.0)
+    return {
+        "status": "ok",
+        "month": start.isoformat()[:7],
+        "kwh": round(kwh_tot, 1),
+        "real_eur": round(real, 2),
+        "expensive_eur": round(expensive, 2),
+        "saving_eur": round(saving, 2),
+        "p1_avg_eur_kwh": round(p1_avg, 5),
+        "avg_eur_kwh": round(real / kwh_tot, 5),
+        "price_source": source,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 5. Appliance cost ranking — "qué te cuesta cada aparato" + the always-on
+#    (standby) floor, the single most actionable finding in the field.
+#    Reads the permanent hourly cagg (cheap); € uses the month's average
+#    energy price (approximation, labeled as such in the UI).
+# ---------------------------------------------------------------------------
+
+
+async def appliance_costs(slugs: Sequence[str]) -> Dict[str, Any]:
+    from app.core import db
+
+    ids = await consumption._slugs_to_ids(slugs)
+    if not ids:
+        return {"status": "no_data", "items": []}
+    today = date.today()
+    start = today.replace(day=1)
+    hours_elapsed = max(int((today - start).days) * 24, 1)
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            # ONLY sensors the PLC specifies (active registry rows) — rogue
+            # publishers that reuse the home's topic prefix must never show.
+            await cur.execute("""
+                SELECT h.device_id,
+                       SUM(h.avg) / 1000.0                                  AS kwh,
+                       percentile_cont(0.05) WITHIN GROUP (ORDER BY h.avg)  AS floor_w
+                FROM sensor_hourly h
+                JOIN sensors s ON s.customer_id = h.customer_id
+                              AND s.sensor_key = h.device_id
+                              AND s.channel = h.channel AND s.is_active
+                WHERE h.variable = 'apower' AND h.customer_id::text = ANY(%s)
+                  AND h.channel LIKE 'switch:%%' AND h.bucket >= %s::timestamptz
+                GROUP BY h.device_id ORDER BY kwh DESC
+            """, (list(ids.values()), start.isoformat()))
+            rows = await cur.fetchall()
+    names = {d["id"]: d.get("name") or d["id"]
+             for d in await consumption.sensor_devices(slugs)}
+
+    # WIRING-AWARE de-nesting: a metered plug may hang BELOW another metered
+    # plug (a strip/UPS feeding PCs) — its energy is already inside the
+    # parent's reading. Using the synced wiring tree (sensors.parent, mig
+    # 021) we subtract each child from its NEAREST measured ancestor, so the
+    # bars are DISJOINT and their sum is honest.
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                "SELECT sensor_key, channel, parent FROM sensors "
+                "WHERE customer_id::text = ANY(%s) AND parent IS NOT NULL "
+                "AND parent <> ''", (list(ids.values()),))
+            parent_of = {f"{k}/{c}": p for k, c, p in await cur.fetchall()}
+
+    measured = {dev: [float(kwh or 0), float(floor_w or 0)]
+                for dev, kwh, floor_w in rows if (kwh or 0) > 0.05}
+    nested_in: Dict[str, str] = {}
+    for dev in measured:
+        node, hops = parent_of.get(f"{dev}/switch:0"), 0
+        while node and hops < 10:                    # walk up the wiring tree
+            anc = node.split("/", 1)[0]
+            if anc in measured and anc != dev:
+                nested_in[dev] = anc
+                break
+            node, hops = parent_of.get(node), hops + 1
+    for child, anc in nested_in.items():             # make the bars disjoint
+        measured[anc][0] = max(measured[anc][0] - measured[child][0], 0.0)
+        measured[anc][1] = max(measured[anc][1] - measured[child][1], 0.0)
+
+    items = []
+    standby_kwh = 0.0
+    for dev, kwh, floor_w in rows:
+        if dev not in measured:
+            continue
+        kwh, floor_w = measured[dev]
+        if kwh <= 0.05:
+            continue
+        st_kwh = floor_w * hours_elapsed / 1000.0 if floor_w >= 1.5 else 0.0
+        standby_kwh += st_kwh
+        items.append({"device": dev, "name": names.get(dev, dev),
+                      "kwh": round(kwh, 1), "standby_w": round(floor_w, 1),
+                      "nested_in": nested_in.get(dev),
+                      "has_children": dev in set(nested_in.values())})
+    items.sort(key=lambda it: -it["kwh"])
+    return {"status": "ok", "month": start.isoformat()[:7],
+            "items": items, "standby_kwh": round(standby_kwh, 1)}

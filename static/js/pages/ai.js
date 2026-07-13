@@ -39,11 +39,29 @@
     return html;
   }
 
-  function addTurn(role, content) {
+  function addTurn(role, content, meta) {
     var log = q('ai-chat-log');
     var div = document.createElement('div');
     div.className = 'ai-turn ai-turn-' + role;
     div.innerHTML = role === 'assistant' ? renderProse(content) : esc(content);
+    // Inference metadata under the assistant bubble: model · start time ·
+    // elapsed · in/out tokens · tok/s (persisted server-side, mig 011).
+    if (role === 'assistant' && meta && meta.elapsed_ms != null) {
+      var secs = meta.elapsed_ms / 1000;
+      var tps = meta.completion_tokens && secs > 0
+        ? Math.round(meta.completion_tokens / secs) : null;
+      var parts = [];
+      if (meta.model) parts.push(meta.model);
+      if (meta.started_at) parts.push(meta.started_at);
+      parts.push(secs.toFixed(1).replace('.', ',') + ' s');
+      parts.push('↑' + (meta.prompt_tokens || 0) + ' ↓' +
+        (meta.completion_tokens || 0) + ' tok');
+      if (tps != null) parts.push(tps + ' tok/s');
+      var m = document.createElement('div');
+      m.className = 'ai-turn-meta';
+      m.textContent = parts.join(' · ');
+      div.appendChild(m);
+    }
     log.appendChild(div);
     log.scrollTop = log.scrollHeight;
   }
@@ -80,12 +98,17 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question: question, history: history.slice(-6) }),
     }).then(function (r) {
-      addTurn('assistant', r.answer || '');
+      addTurn('assistant', r.answer || '', r.meta);
       history.push({ role: 'user', content: question });
       history.push({ role: 'assistant', content: r.answer || '' });
       if (r.remaining_today != null) {
-        q('ai-quota').textContent = '· ' + __t('ai.remaining', '{n} preguntas restantes hoy')
+        var quota = '· ' + __t('ai.remaining', '{n} preguntas restantes hoy')
           .replace('{n}', r.remaining_today);
+        if (r.credits_cap) {
+          quota += ' · ' + __t('ai.credits', 'créditos {p}%')
+            .replace('{p}', Math.min(100, Math.round(100 * (r.credits_used_month || 0) / r.credits_cap)));
+        }
+        q('ai-quota').textContent = quota;
       }
     }).catch(function (e) {
       addTurn('assistant', msgOf(e));
@@ -105,6 +128,18 @@
       q('ai-refresh').style.display = '';
       q('ai-refresh').onclick = function () { loadNarrative(true); };
       q('ai-form').addEventListener('submit', send);
+      // Textarea: Enter sends, Shift+Enter = newline (scripts/pastes fit now).
+      q('ai-q').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(e); }
+      });
+      // Restore today's persisted conversation (server-side, mig 010) so
+      // navigating away and back doesn't lose the chat.
+      App.apiFetch('/ai/chat').then(function (r) {
+        (r.turns || []).forEach(function (t) {
+          addTurn(t.role, t.content, t.meta);
+          history.push({ role: t.role, content: t.content });
+        });
+      }).catch(function () { /* chat restore is best-effort */ });
       loadNarrative(false);
     }).catch(function (e) {
       q('ai-upsell').style.display = '';

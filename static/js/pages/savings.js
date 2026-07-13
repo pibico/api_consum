@@ -14,12 +14,12 @@
   function fmt(n, dec) { return (n == null) ? '—' : Number(n).toLocaleString(undefined, { maximumFractionDigits: dec == null ? 2 : dec }); }
   function hh(h) { return String(h).padStart(2, '0') + ':00'; }
 
-  // Appliance label: PLC-given name (sensors.name) when set, else a clean short
-  // id instead of the raw 'shelly_<mac>' key.
+  // Appliance label: curated name (sensors.name) when set, else the FULL id
+  // exactly as registered in api_edge — recognizable against the console,
+  // unlike a shortened "Sensor ··xxxx".
   function sensorLabel(o) {
-    if (o.name && String(o.name).trim()) return o.name;
-    var m = String(o.id || '').replace(/^shelly[_-]?/i, '');
-    return m.length > 5 ? __t('cons.sensorGeneric', 'Sensor') + ' ··' + m.slice(-4) : (m || o.id);
+    if (o.name && String(o.name).trim() && o.name !== o.id) return o.name;
+    return o.id;
   }
 
   function periodColor(p) {
@@ -28,164 +28,198 @@
     return 'rgba(46,204,113,0.75)';
   }
 
-  function prep(id, h) {
-    var c = q(id);
-    if (!c || !c.parentElement.clientWidth) return null;
-    var dpr = window.devicePixelRatio || 1;
-    var rect = c.parentElement.getBoundingClientRect();
-    var W = rect.width - 32, H = h || 200;
-    c.width = W * dpr; c.height = H * dpr;
-    c.style.width = W + 'px'; c.style.height = H + 'px';
-    var ctx = c.getContext('2d');
-    ctx.scale(dpr, dpr); ctx.clearRect(0, 0, W, H);
-    return { ctx: ctx, W: W, H: H };
+  // ── ECharts (same init pattern as the rest of the app) ───────────────
+  var charts = {};
+  function chart(id) {
+    var el = q(id);
+    if (!el || typeof echarts === 'undefined' || !el.clientWidth) return null;
+    if (!charts[id]) charts[id] = echarts.init(el);
+    return charts[id];
   }
+  var AX = { axisLabel: { fontSize: 9, color: '#3d5a75' },
+             axisLine: { lineStyle: { color: 'rgba(44,81,113,0.3)' } } };
 
-  // ── Cards ────────────────────────────────────────────────────────────
+  // ── Row 1 cards: hero (achieved) · semáforo · next action ────────────
   function renderCards() {
-    var s = data.shift || {}, t = data.thermal || {}, w = data.window || {};
+    var a = data.achieved || {}, s = data.shift || {}, w = data.window || {};
 
-    q('sv-shift').textContent = s.saving_month_eur != null ? fmt(s.saving_month_eur) + ' €' : '—';
-    q('sv-shift-txt').textContent = __t('sav.shiftExplain',
-      'Si movieras el {pct}% flexible de tu consumo (lavadora, lavavajillas, termo…) a las {n} horas más baratas de cada día, ahorrarías un {sp}% del término de energía.')
-      .replace('{pct}', Math.round((s.flex_share || 0.3) * 100))
-      .replace('{n}', s.cheap_hours || 6)
-      .replace('{sp}', fmt(s.saving_pct, 1));
+    // Hero — achieved savings with the baseline IN the copy (Opower rule).
+    if (a.status === 'ok') {
+      q('sv-hero').textContent = fmt(a.saving_eur) + ' €';
+      q('sv-hero-txt').textContent = __t('sav.heroExplain',
+        'Has pagado {real} € por {kwh} kWh. Ese mismo consumo, todo a precio de horas caras, habría costado {exp} €.')
+        .replace('{real}', fmt(a.real_eur))
+        .replace('{kwh}', fmt(a.kwh, 0))
+        .replace('{exp}', fmt(a.expensive_eur));
+    } else {
+      q('sv-hero').textContent = '—';
+      q('sv-hero-txt').textContent = __t('sav.heroNoData', 'El mes acaba de empezar — en un par de días te lo cuento.');
+    }
 
-    if (t.status === 'ok') {
-      q('sv-thermal').textContent = fmt(t.weather_share_pct, 0) + ' %';
-      var y = t.yesterday;
-      var txt = __t('sav.thermalExplain',
-        'Cada grado-día de calor añade {cdd} kWh a tu día (base {base} kWh).')
-        .replace('{cdd}', fmt(Math.max(t.kwh_per_cdd || 0, 0), 2))
-        .replace('{base}', fmt(t.base_kwh, 1));
-      if (y && y.deviation_pct != null) {
-        var dev = y.deviation_pct;
-        txt += ' ' + (dev > 10
-          ? __t('sav.devHigh', 'Ayer consumiste un {d}% MÁS de lo que explica el clima — revisa hábitos.')
-          : dev < -10
-            ? __t('sav.devLow', 'Ayer consumiste un {d}% menos de lo esperado por clima. ¡Bien!')
-            : __t('sav.devOk', 'Ayer ({d}%) estuviste en línea con lo esperado por el clima.'))
-          .replace('{d}', fmt(Math.abs(dev), 0));
+    // Next action — the ONE concrete tip with its € value (shift + window).
+    q('sv-action').textContent = s.saving_month_eur != null ? '~' + fmt(s.saving_month_eur) + ' €' : '—';
+    var when = w.best ? hh(w.best.start) + '–' + hh(w.best.end) : __t('sav.cheapHours', 'las horas baratas');
+    q('sv-action-txt').textContent = __t('sav.actionExplain',
+      'Pon la lavadora, el lavavajillas o el termo en la franja {win} en vez de en horas caras. Eso es todo.')
+      .replace('{win}', when);
+  }
+
+  // Semáforo "ahora" — needs the live price/period (same source as Panel).
+  function renderNow() {
+    App.apiFetch('/consumption/summary').then(function (r) {
+      var period = r.price_period || r.pvpc_period;
+      var price = r.price_now_eur_kwh != null ? r.price_now_eur_kwh : r.pvpc_now_eur_kwh;
+      var LBL = { P1: ['CARA', '#e74c3c'], P2: ['NORMAL', '#f39c12'], P3: ['BARATA', '#2ecc71'] };
+      var st = LBL[period] || ['—', '#6a9bc3'];
+      q('sv-now').innerHTML = '<span style="color:' + st[1] + ';">● ' +
+        __t('sav.now' + (period || ''), st[0]) + '</span>';
+      q('sv-now-sub').textContent = price != null ? fmt(price, 3) + ' €/kWh' : '—';
+      // Next band change today (from the window hours when they are today's).
+      var w = (data && data.window) || {};
+      var today = new Date().toISOString().slice(0, 10);
+      var txt = '';
+      if (w.date === today && (w.hours || []).length && period) {
+        var nowH = new Date().getHours();
+        for (var i = 0; i < w.hours.length; i++) {
+          var r2 = w.hours[i];
+          if (r2.hour > nowH && r2.period !== period) {
+            txt = (LBL[r2.period] && r2.period === 'P3'
+              ? __t('sav.dropsAt', 'La luz baja a las {h}')
+              : __t('sav.changesAt', 'Cambia a {p} a las {h}')
+                .replace('{p}', __t('sav.now' + r2.period, (LBL[r2.period] || ['—'])[0]).toLowerCase()))
+              .replace('{h}', hh(r2.hour));
+            break;
+          }
+        }
       }
-      q('sv-thermal-txt').textContent = txt;
-    } else {
-      q('sv-thermal').textContent = '—';
-      q('sv-thermal-txt').textContent = __t('sav.thermalNoData', 'Aún no hay días suficientes para separar clima de hábitos (se necesitan ~10).');
-    }
-
-    if (w.best) {
-      q('sv-window').textContent = hh(w.best.start) + ' – ' + hh(w.best.end);
-      q('sv-window-date').textContent = w.date;
-      q('sv-window-txt').textContent = __t('sav.windowExplain',
-        'Mejor franja para lavadora, lavavajillas o cargar el coche: PVPC medio {p} €/kWh y máximo aprovechamiento solar.')
-        .replace('{p}', fmt(w.best.price_avg, 4));
-    } else {
-      q('sv-window').textContent = '—';
-      q('sv-window-date').textContent = w.date || '—';
-      q('sv-window-txt').textContent = __t('common.noData', 'Sin datos');
-    }
+      if (!txt && w.best) {
+        txt = __t('sav.bestToday', 'Mejor momento: {win} ☀️')
+          .replace('{win}', hh(w.best.start) + '–' + hh(w.best.end));
+      }
+      q('sv-now-txt').textContent = txt;
+    }).catch(function () {
+      q('sv-now').textContent = '—';
+    });
   }
 
-  // ── Thermal chart: kWh bars + expected line ─────────────────────────
-  function drawThermal() {
-    var cv = prep('sav-thermal-chart');
-    if (!cv || !data) return;
-    var t = data.thermal || {};
-    var series = t.series || [];
-    if (!series.length) return;
-    var ctx = cv.ctx, W = cv.W, H = cv.H;
-    var padL = 34, padB = 18, padT = 8;
-    var n = series.length;
-    var max = Math.max(0.5, Math.max.apply(null, series.map(function (r) {
-      return Math.max(r.kwh, r.expected_kwh || 0);
-    })));
-    var chartW = W - padL - 8, chartH = H - padT - padB;
-    var bw = chartW / n;
-    ctx.font = '10px Inter, sans-serif';
-    ctx.fillStyle = 'rgba(44,62,80,0.55)';
-    ctx.textAlign = 'right';
-    ctx.fillText(max.toFixed(0), padL - 3, padT + 8);
-    ctx.fillText('0', padL - 3, H - padB);
-    series.forEach(function (r, i) {
-      var x = padL + i * bw;
-      var bh = chartH * (r.kwh / max);
-      ctx.fillStyle = 'rgba(70,130,180,0.75)';
-      ctx.fillRect(x + 0.5, H - padB - bh, Math.max(bw - 1, 1), bh);
-    });
-    ctx.beginPath();
-    var started = false;
-    series.forEach(function (r, i) {
-      if (r.expected_kwh == null) return;
-      var x = padL + i * bw + bw / 2;
-      var y = H - padB - chartH * (r.expected_kwh / max);
-      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
-    });
-    ctx.strokeStyle = '#8e44ad';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(44,62,80,0.55)';
-    ctx.textAlign = 'center';
-    series.forEach(function (r, i) {
-      if (i % 7 === 0) ctx.fillText(r.date.slice(5), padL + i * bw + bw / 2, H - 5);
-    });
-    q('sv-r2').textContent = t.r2 != null ? '· R² ' + t.r2 : '';
-  }
-
-  // ── Window chart: price bars + GHI line, best window highlighted ────
-  function drawWindow() {
-    var cv = prep('sav-window-chart');
-    if (!cv || !data) return;
+  // ── Row 2: today's price bars (band colors + best window) ────────────
+  function drawPrices() {
+    var c = chart('sv-chart-prices');
+    if (!c || !data) return;
     var w = data.window || {};
     var hours = w.hours || [];
-    if (!hours.length) return;
-    var ctx = cv.ctx, W = cv.W, H = cv.H;
-    var padL = 40, padB = 18, padT = 8;
+    q('sv-window-day').textContent = '· ' + (w.date || '');
+    if (!hours.length) { c.clear(); return; }
     var byHour = {};
     hours.forEach(function (r) { byHour[r.hour] = r; });
-    var maxP = Math.max.apply(null, hours.map(function (r) { return r.price_eur_kwh; }));
-    var maxG = Math.max(1, Math.max.apply(null, hours.map(function (r) { return r.ghi || 0; })));
-    var chartW = W - padL - 8, chartH = H - padT - padB;
-    var bw = chartW / 24;
-    // Best-window highlight behind everything
-    if (w.best) {
-      ctx.fillStyle = 'rgba(46,204,113,0.18)';
-      ctx.fillRect(padL + w.best.start * bw, padT,
-        (w.best.end - w.best.start) * bw, chartH);
-    }
-    ctx.font = '10px Inter, sans-serif';
-    ctx.fillStyle = 'rgba(44,62,80,0.55)';
-    ctx.textAlign = 'right';
-    ctx.fillText(maxP.toFixed(2), padL - 3, padT + 8);
-    ctx.fillText('0', padL - 3, H - padB);
-    ctx.textAlign = 'center';
+    var labels = [], vals = [];
     for (var h = 0; h < 24; h++) {
+      labels.push(String(h).padStart(2, '0'));
       var r = byHour[h];
-      var x = padL + h * bw;
-      if (r) {
-        var bh = chartH * (r.price_eur_kwh / maxP);
-        ctx.fillStyle = 'rgba(70,130,180,0.75)';
-        ctx.fillRect(x + 1, H - padB - bh, bw - 2, bh);
-      }
-      if (h % 3 === 0) {
-        ctx.fillStyle = 'rgba(44,62,80,0.55)';
-        ctx.fillText(String(h).padStart(2, '0'), x + bw / 2, H - 5);
-      }
+      vals.push(r ? { value: +r.price_eur_kwh.toFixed(4),
+                      itemStyle: { color: periodColor(r.period) } } : null);
     }
-    // GHI line
-    ctx.beginPath();
-    var started = false;
-    for (var h2 = 0; h2 < 24; h2++) {
-      var r2 = byHour[h2];
-      if (!r2) continue;
-      var x2 = padL + h2 * bw + bw / 2;
-      var y2 = H - padB - chartH * ((r2.ghi || 0) / maxG);
-      if (!started) { ctx.moveTo(x2, y2); started = true; } else ctx.lineTo(x2, y2);
+    var markArea = w.best ? { silent: true, itemStyle: { color: 'rgba(46,204,113,0.15)' },
+      data: [[{ xAxis: String(w.best.start).padStart(2, '0') },
+              { xAxis: String(Math.min(w.best.end, 23)).padStart(2, '0') }]] } : undefined;
+    c.setOption({
+      grid: { left: 44, right: 8, top: 10, bottom: 20 },
+      tooltip: { trigger: 'axis', valueFormatter: function (v) { return v != null ? v + ' €/kWh' : '—'; } },
+      xAxis: Object.assign({ type: 'category', data: labels }, AX),
+      yAxis: Object.assign({ type: 'value' }, AX),
+      series: [{ type: 'bar', data: vals, barCategoryGap: '18%', markArea: markArea }],
+    }, true);
+  }
+
+  // ── Row 2: the month, compared (two labeled bars) ────────────────────
+  function drawMonth() {
+    var c = chart('sv-chart-month');
+    if (!c || !data) return;
+    var a = data.achieved || {};
+    if (a.status !== 'ok') { c.clear(); return; }
+    c.setOption({
+      grid: { left: 8, right: 40, top: 10, bottom: 8, containLabel: true },
+      xAxis: Object.assign({ type: 'value' }, AX),
+      yAxis: Object.assign({ type: 'category', data: [
+        __t('sav.barExpensive', 'Todo en horas caras'),
+        __t('sav.barReal', 'Tu mes, con tus horas'),
+      ] }, AX, { axisLabel: { fontSize: 10, color: '#2c5171' } }),
+      series: [{
+        type: 'bar', barMaxWidth: 34,
+        label: { show: true, position: 'right', fontWeight: 600,
+                 formatter: function (p) { return p.value.toFixed(2) + ' €'; } },
+        data: [
+          { value: +a.expensive_eur, itemStyle: { color: 'rgba(231,76,60,0.75)', borderRadius: [0, 6, 6, 0] } },
+          { value: +a.real_eur, itemStyle: { color: 'rgba(46,204,113,0.8)', borderRadius: [0, 6, 6, 0] } },
+        ],
+      }],
+    }, true);
+    // The weather insight, demoted to one honest sentence.
+    var t = data.thermal || {};
+    q('sv-weather-txt').textContent = (t.status === 'ok' && t.weather_share_pct != null)
+      ? __t('sav.weatherLine', 'El frío/calor explica ~{p} % de lo que consumes — el resto son hábitos, y ahí está el ahorro.')
+        .replace('{p}', fmt(t.weather_share_pct, 0))
+      : '';
+  }
+
+  // ── Row 3: appliance cost ranking + standby ──────────────────────────
+  function drawAppliances() {
+    var c = chart('sv-chart-appl');
+    if (!c || !data) return;
+    var ap = data.appliances || {};
+    var a = data.achieved || {};
+    q('sv-appl-month').textContent = ap.month ? '· ' + ap.month : '';
+    var items = (ap.items || []).slice(0, 9);
+    if (!items.length) { c.clear(); return; }
+    var price = a.avg_eur_kwh || null;
+    var byDev = {};
+    items.forEach(function (it) { byDev[it.device] = it; });
+    var rows = items.map(function (it) {
+      // Curated name when it exists; else the FULL raw id — recognizable,
+      // unlike a shortened "Sensor ··xxxx" (these plugs publish directly and
+      // have no name anywhere yet; name them in the api_edge console).
+      var label = (it.name && it.name !== it.device) ? it.name : it.device;
+      // Wiring-aware: a parent's bar is its REMAINDER (children subtracted),
+      // and a child says who it hangs from — so nobody adds nested bars twice.
+      if (it.has_children) label += ' ' + __t('sav.restSuffix', '(resto)');
+      var anc = byDev[it.nested_in];
+      var nested = it.nested_in
+        ? (anc && anc.name && anc.name !== it.nested_in ? anc.name : it.nested_in)
+        : null;
+      return { name: label, kwh: it.kwh, eur: price ? it.kwh * price : null,
+               standby: false, nested: nested || null };
+    });
+    if (ap.standby_kwh > 0.5) {
+      rows.push({ name: __t('sav.standbyRow', 'Siempre encendidos (standby)'),
+                  kwh: ap.standby_kwh, eur: price ? ap.standby_kwh * price : null, standby: true });
     }
-    ctx.strokeStyle = '#f39c12';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    q('sv-window-day').textContent = '· ' + (w.date || '');
+    rows.sort(function (x, y) { return x.kwh - y.kwh; });   // ECharts: bottom-up
+    c.setOption({
+      grid: { left: 8, right: 60, top: 6, bottom: 8, containLabel: true },
+      tooltip: { trigger: 'item', formatter: function (p) {
+        var r = rows[p.dataIndex];
+        return p.name + '<br><b>' + fmt(r.kwh, 1) + ' kWh</b>' +
+          (r.eur != null ? ' · ~' + fmt(r.eur) + ' €' : '') +
+          (r.nested ? '<br><span style="font-size:0.8em;">' +
+            __t('sav.nestedIn', 'cuelga de {p} — ya descontado del de arriba').replace('{p}', r.nested) + '</span>' : '');
+      } },
+      xAxis: Object.assign({ type: 'value' }, AX),
+      yAxis: Object.assign({ type: 'category', data: rows.map(function (r) { return r.name; }) },
+        AX, { axisLabel: { fontSize: 10, color: '#2c5171' } }),
+      series: [{
+        type: 'bar', barMaxWidth: 16,
+        label: { show: true, position: 'right', fontSize: 10,
+                 formatter: function (p) {
+                   var r = rows[p.dataIndex];
+                   return r.eur != null ? '~' + r.eur.toFixed(2) + ' €' : fmt(r.kwh, 1) + ' kWh';
+                 } },
+        data: rows.map(function (r) {
+          return { value: +r.kwh.toFixed(1),
+                   itemStyle: { color: r.standby ? 'rgba(231,76,60,0.8)' : 'rgba(70,130,180,0.75)',
+                                borderRadius: [0, 5, 5, 0] } };
+        }),
+      }],
+    }, true);
   }
 
   // ── Best hours ───────────────────────────────────────────────────────
@@ -198,42 +232,30 @@
     return t < 0.25 ? '★★★' : t < 0.5 ? '★★' : t < 0.75 ? '★' : '';
   }
   function renderTable() {
-    // Compact card: the hours with ≥2 stars stay visible (that's the real
-    // decision set — "when do I run the washer?"), the rest of the day sits
-    // in its own scroll strip below. Stars note lives in the card footer.
-    var top = q('sv-best-top'), more = q('sv-best-more');
+    // Compact single list, cheapest first — small type, tight rows, one
+    // scroll for the whole day. Stars note lives in the card footer.
+    var top = q('sv-best-top');
     var w = data.window || {};
     var hours = w.hours || [];
     q('sv-table-day').textContent = w.date || '';
     if (!hours.length) {
       top.innerHTML = '<span class="text-muted">' + __t('common.noData', 'Sin datos') + '</span>';
-      more.innerHTML = '';
-      q('sv-best-rest-label').style.display = 'none';
       return;
     }
     var sorted = hours.slice().sort(function (a, b) { return a.price_eur_kwh - b.price_eur_kwh; });
     var cheapest = sorted[0].price_eur_kwh;
     var priciest = sorted[sorted.length - 1].price_eur_kwh;
-    function row(r, highlight) {
+    top.innerHTML = sorted.map(function (r, i) {
       var inBest = w.best && r.hour >= w.best.start && r.hour < w.best.end;
-      return '<div style="display:flex;align-items:center;gap:8px;padding:3px 6px;border-radius:6px;font-size:0.82rem;' +
-        (highlight ? 'background:rgba(46,204,113,0.10);' : '') + '">' +
-        '<span class="mono" style="min-width:44px;">' + hh(r.hour) + '</span>' +
-        '<span class="badge" style="background:' + periodColor(r.period).replace('0.75', '0.18') + ';color:#333;min-width:26px;text-align:center;">' + (r.period || '—') + '</span>' +
-        '<span class="mono" style="min-width:58px;">' + r.price_eur_kwh.toFixed(4) + '</span>' +
-        '<span style="color:#e6a817;letter-spacing:1px;margin-left:auto;">' + priceStars(r.price_eur_kwh, cheapest, priciest) + '</span>' +
+      return '<div style="display:flex;align-items:center;gap:6px;padding:1px 5px;border-radius:5px;font-size:0.72rem;line-height:1.35;' +
+        (i < 3 ? 'background:rgba(46,204,113,0.10);' : '') + '">' +
+        '<span class="mono" style="min-width:38px;">' + hh(r.hour) + '</span>' +
+        '<span class="badge" style="background:' + periodColor(r.period).replace('0.75', '0.18') + ';color:#333;min-width:22px;text-align:center;font-size:0.66rem;padding:0 4px;">' + (r.period || '—') + '</span>' +
+        '<span class="mono" style="min-width:52px;">' + r.price_eur_kwh.toFixed(4) + '</span>' +
+        '<span style="color:#e6a817;letter-spacing:0.5px;margin-left:auto;">' + priceStars(r.price_eur_kwh, cheapest, priciest) + '</span>' +
         (inBest ? '<span title="' + __t('sav.vBest', 'Recomendada') + '">🟢</span>' : '') +
         '</div>';
-    }
-    var span = priciest - cheapest;
-    var good = [], rest = [];
-    sorted.forEach(function (r) {
-      var t = span > 0 ? (r.price_eur_kwh - cheapest) / span : 0;
-      (t < 0.5 ? good : rest).push(r);          // t<0.5 ⇒ ★★ or ★★★
-    });
-    top.innerHTML = good.map(function (r, i) { return row(r, i < 3); }).join('');
-    more.innerHTML = rest.map(function (r) { return row(r, false); }).join('');
-    q('sv-best-rest-label').style.display = rest.length ? '' : 'none';
+    }).join('');
   }
 
   // ── Load ─────────────────────────────────────────────────────────────
@@ -242,8 +264,10 @@
     return App.apiFetch('/savings/insights' + qs).then(function (r) {
       data = r;
       renderCards();
-      drawThermal();
-      drawWindow();
+      renderNow();
+      drawPrices();
+      drawMonth();
+      drawAppliances();
       renderTable();
     }).catch(function (e) {
       App.showNotification(__t('common.error', 'Error'), e.message, 'danger');
@@ -269,7 +293,13 @@
 
   window.SavPage = { reload: reload };
 
-  window.addEventListener('resize', function () { drawThermal(); drawWindow(); });
+  var _rsz;
+  window.addEventListener('resize', function () {
+    clearTimeout(_rsz);
+    _rsz = setTimeout(function () {
+      Object.keys(charts).forEach(function (k) { charts[k].resize(); });
+    }, 120);
+  });
 
   document.addEventListener('DOMContentLoaded', function () {
     window.onAppReady(function () {

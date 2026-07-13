@@ -850,6 +850,11 @@
   border: 1px solid rgba(44, 62, 80, 0.08);
 }
 .ai-turn-assistant p:last-child, .ai-turn-assistant ul:last-child { margin-bottom: 0; }
+.ai-turn-meta {
+  margin-top: 6px; padding-top: 4px; border-top: 1px solid rgba(44, 62, 80, 0.08);
+  font-size: 0.62rem; color: var(--color-text-light, #888);
+  font-variant-numeric: tabular-nums; letter-spacing: 0.2px;
+}
 
 /* PRO upsell overlay inside cards (F4) */
 .pro-upsell {
