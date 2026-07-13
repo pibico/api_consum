@@ -210,6 +210,16 @@ async def current_power(slugs: Sequence[str]) -> Dict[str, Any]:
     return {"total_w": round(total, 1), "devices": sorted(devices.values(), key=lambda d: -d["power_w"])}
 
 
+# Hybrid read boundary: buckets older than this come from the PERMANENT
+# `sensor_hourly` continuous aggregate (kept forever, tiny), recent ones from
+# raw sensor_data (which gets columnstore-compressed after 30 days — reading
+# old ranges from the cagg avoids decompressing chunks and is ~200× smaller).
+# Old-part semantics: counter kWh = Σ per-hour GREATEST(max−min) (identical to
+# raw hourly bucketing; a DAY bucket becomes sum-of-hours, losing only the
+# tiny inter-hour counter increments — same trade-off as the billing rollup).
+RAW_WINDOW_DAYS = 21
+
+
 async def energy_series(
     slugs: Sequence[str],
     start: str,
@@ -221,45 +231,80 @@ async def energy_series(
     """kWh per time bucket. `device` filters one hostname (then house_only is
     ignored — you asked for that device); otherwise whole-house (EM channels).
     start/end: ISO dates (YYYY-MM-DD) or timestamps, inclusive start,
-    exclusive end+1d when a bare date is given."""
+    exclusive end+1d when a bare date is given.
+
+    HYBRID: the part of the range older than RAW_WINDOW_DAYS reads
+    `sensor_hourly`; the recent part reads raw. `quarter` granularity does not
+    exist in the cagg — an old range degrades those buckets to hours."""
+    from datetime import date as _date, timedelta as _td
+
     ids = await _slugs_to_ids(slugs)
     if not ids:
         return []
     trunc = {"quarter": "15 minutes", "hour": "1 hour", "day": "1 day"}.get(bucket, "1 hour")
     hours_per_bucket = {"15 minutes": 0.25, "1 hour": 1.0, "1 day": 24.0}[trunc]
-    where = ["customer_id::text = ANY(%s)",
-             "ts >= %s::timestamptz", "ts < (%s::timestamptz + interval '1 day')"]
-    params: List[Any] = [list(ids.values()), start, end]
-    if device:
-        where.append("device_id = %s")
-        params.append(device)
-    elif house_only:
-        where.append(_HOUSE_CHANNEL_SQL)
-    cond = " AND ".join(where)
-    # Counter-based kWh (devices WITH apower_energy — the EM meter) ...
-    sql_counter = f"""
-        SELECT time_bucket(%s::interval, ts) AS bucket, device_id, channel,
-               GREATEST(MAX(value_num) - MIN(value_num), 0) / 1000.0 AS kwh
-        FROM sensor_data
-        WHERE variable = 'apower_energy' AND {cond}
-        GROUP BY bucket, device_id, channel
-    """
-    # ... and power integration for plugs that ONLY publish instantaneous
-    # `apower` (kWh ≈ avg W × bucket hours / 1000; Shellies report ~1/min,
-    # so the approximation is tight while the device is online).
-    sql_power = f"""
-        SELECT time_bucket(%s::interval, ts) AS bucket, device_id, channel,
-               AVG(value_num) * {hours_per_bucket} / 1000.0 AS kwh
-        FROM sensor_data
-        WHERE variable = 'apower' AND {cond}
-        GROUP BY bucket, device_id, channel
-    """
+    boundary = (_date.today() - _td(days=RAW_WINDOW_DAYS)).isoformat()
+
+    counter_rows: List[Any] = []
+    power_rows: List[Any] = []
     async with db.raw_connection() as con:
         async with con.cursor() as cur:
-            await cur.execute(sql_counter, [trunc] + params)
-            counter_rows = await cur.fetchall()
-            await cur.execute(sql_power, [trunc] + params)
-            power_rows = await cur.fetchall()
+            # ── OLD part (start .. min(boundary, end+1d)) from the cagg ──
+            if start < boundary:
+                old_trunc = "1 hour" if trunc == "15 minutes" else trunc
+                cond = ("customer_id::text = ANY(%s) AND bucket >= %s::timestamptz "
+                        "AND bucket < LEAST(%s::timestamptz, %s::timestamptz + interval '1 day')")
+                params = [list(ids.values()), start, boundary, end]
+                if device:
+                    cond += " AND device_id = %s"
+                    params.append(device)
+                elif house_only:
+                    cond += f" AND {_HOUSE_CHANNEL_SQL}"
+                await cur.execute(f"""
+                    SELECT time_bucket(%s::interval, bucket) AS b, device_id, channel,
+                           SUM(GREATEST(max - min, 0)) / 1000.0 AS kwh
+                    FROM sensor_hourly
+                    WHERE variable = 'apower_energy' AND {cond}
+                    GROUP BY b, device_id, channel
+                """, [old_trunc] + params)
+                counter_rows += await cur.fetchall()
+                await cur.execute(f"""
+                    SELECT time_bucket(%s::interval, bucket) AS b, device_id, channel,
+                           SUM(avg) / 1000.0 AS kwh
+                    FROM sensor_hourly
+                    WHERE variable = 'apower' AND {cond}
+                    GROUP BY b, device_id, channel
+                """, [old_trunc] + params)
+                power_rows += await cur.fetchall()
+            # ── RECENT part (boundary .. end) from raw, as always ──
+            if end >= boundary:
+                lo = start if start >= boundary else boundary
+                cond = ("customer_id::text = ANY(%s) AND ts >= %s::timestamptz "
+                        "AND ts < (%s::timestamptz + interval '1 day')")
+                params = [list(ids.values()), lo, end]
+                if device:
+                    cond += " AND device_id = %s"
+                    params.append(device)
+                elif house_only:
+                    cond += f" AND {_HOUSE_CHANNEL_SQL}"
+                sql_counter = f"""
+                    SELECT time_bucket(%s::interval, ts) AS bucket, device_id, channel,
+                           GREATEST(MAX(value_num) - MIN(value_num), 0) / 1000.0 AS kwh
+                    FROM sensor_data
+                    WHERE variable = 'apower_energy' AND {cond}
+                    GROUP BY bucket, device_id, channel
+                """
+                sql_power = f"""
+                    SELECT time_bucket(%s::interval, ts) AS bucket, device_id, channel,
+                           AVG(value_num) * {hours_per_bucket} / 1000.0 AS kwh
+                    FROM sensor_data
+                    WHERE variable = 'apower' AND {cond}
+                    GROUP BY bucket, device_id, channel
+                """
+                await cur.execute(sql_counter, [trunc] + params)
+                counter_rows += await cur.fetchall()
+                await cur.execute(sql_power, [trunc] + params)
+                power_rows += await cur.fetchall()
     # Counter wins per (device, channel); integration only fills the gaps.
     countered = {(r[1], r[2]) for r in counter_rows}
     buckets: Dict[Any, float] = {}
@@ -332,8 +377,14 @@ async def power_peak_hourly(slugs: Sequence[str], date: str,
     ids = await _slugs_to_ids(slugs)
     if not ids:
         return []
+    from datetime import date as _date, timedelta as _td
+    old = date < (_date.today() - _td(days=RAW_WINDOW_DAYS)).isoformat()
+    # Old dates read the permanent hourly cagg (same MAX, hourly-materialized).
+    ts_col, table, val = ("bucket", "sensor_hourly", "max") if old \
+        else ("ts", "sensor_data", "value_num")
     where = ["variable = 'apower'", "customer_id::text = ANY(%s)",
-             "ts >= %s::timestamptz", "ts < (%s::timestamptz + interval '1 day')"]
+             f"{ts_col} >= %s::timestamptz",
+             f"{ts_col} < (%s::timestamptz + interval '1 day')"]
     params: List[Any] = [list(ids.values()), date, date]
     if device:
         where.append("device_id = %s")
@@ -341,8 +392,8 @@ async def power_peak_hourly(slugs: Sequence[str], date: str,
     else:
         where.append(_HOUSE_CHANNEL_SQL)
     sql = f"""
-        SELECT time_bucket('1 hour', ts) AS h, MAX(value_num) AS peak_w
-        FROM sensor_data WHERE {" AND ".join(where)}
+        SELECT time_bucket('1 hour', {ts_col}) AS h, MAX({val}) AS peak_w
+        FROM {table} WHERE {" AND ".join(where)}
         GROUP BY h ORDER BY h
     """
     async with db.raw_connection() as con:
@@ -356,38 +407,24 @@ async def power_peak_hourly(slugs: Sequence[str], date: str,
 async def summary(slugs: Sequence[str]) -> Dict[str, Any]:
     """kWh today / last 7 days / last 30 days (whole house).
 
-    Buckets each day BEFORE the MAX-MIN delta (mirroring energy_series): one
-    GREATEST(MAX-MIN) over a whole week/month window silently undercounts to
-    near-zero when the cumulative counter resets mid-window."""
-    ids = await _slugs_to_ids(slugs)
-    if not ids:
-        return {"today_kwh": 0, "week_kwh": 0, "month_kwh": 0}
-    sql = """
-        SELECT SUM(kwh) FROM (
-            SELECT device_id, channel, time_bucket('1 day', ts) AS bucket,
-                   GREATEST(MAX(value_num) - MIN(value_num), 0) / 1000.0 AS kwh
-            FROM sensor_data
-            WHERE customer_id::text = ANY(%s) AND variable = 'apower_energy'
-              AND {house_channel}
-              AND ts >= {since_expr}
-            GROUP BY device_id, channel, bucket
-        ) sub
-    """
-    out: Dict[str, Any] = {}
-    windows = {
-        "today_kwh": "date_trunc('day', now())",
-        "week_kwh": "now() - interval '7 days'",
-        "month_kwh": "now() - interval '30 days'",
-    }
-    id_list = list(ids.values())
-    async with db.raw_connection() as con:
-        async with con.cursor() as cur:
-            for key, since_expr in windows.items():
-                await cur.execute(
-                    sql.format(house_channel=_HOUSE_CHANNEL_SQL,
-                               since_expr=since_expr),
-                    (id_list,),
-                )
-                row = await cur.fetchone()
-                out[key] = round(float(row[0] or 0), 2)
-    return out
+    Built on the HYBRID day series (energy_series): one 30-day query serves
+    all three windows, day-buckets before the counter delta (reset-proof),
+    reads the permanent hourly cagg for the part older than RAW_WINDOW_DAYS,
+    and inherits the apower fallback for meters without an energy counter."""
+    from datetime import date as _date, timedelta as _td
+
+    today = _date.today()
+    rows = await energy_series(slugs, (today - _td(days=30)).isoformat(),
+                               today.isoformat(), bucket="day")
+    t_iso = today.isoformat()
+    w_iso = (today - _td(days=7)).isoformat()
+    out = {"today_kwh": 0.0, "week_kwh": 0.0, "month_kwh": 0.0}
+    for r in rows:
+        d = r["ts"][:10]
+        k = r["kwh"] or 0.0
+        out["month_kwh"] += k
+        if d >= w_iso:
+            out["week_kwh"] += k
+        if d == t_iso:
+            out["today_kwh"] += k
+    return {k: round(v, 2) for k, v in out.items()}
