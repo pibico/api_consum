@@ -89,12 +89,19 @@ async def playground_extract(
 
     elapsed_ms = round((time.monotonic() - t0) * 1000)
 
-    if tariff is None:
+    if tariff is None and amounts is None:
         raise HTTPException(503, detail="La IA no pudo interpretar el documento.")
 
-    extracted = tariff.model_dump()
+    extracted = tariff.model_dump() if tariff is not None else None
     warning = None
-    if not any(extracted.get(k) is not None for k in _HARD_SIGNALS) and not extracted.get("components"):
+    if tariff is None:
+        # El playground es una herramienta de diagnóstico: si al menos los
+        # importes salieron, se muestran junto con el markdown en vez de
+        # perder toda la lectura con un 503.
+        warning = ("La parte de tarifa no se pudo interpretar (JSON inválido "
+                   "tras reintentos) — revisa el markdown crudo. Los importes "
+                   "sí se extrajeron.")
+    elif not any(extracted.get(k) is not None for k in _HARD_SIGNALS) and not extracted.get("components"):
         # A diferencia de /contracts/extract, NUNCA bloqueamos con 422 aquí: el
         # playground existe precisamente para ver estos casos límite.
         warning = ("El documento no muestra señales eléctricas claras (CUPS, "

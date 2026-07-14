@@ -10,6 +10,7 @@ NEVER breaks because of AI. Contracts use this first; invoices reuse it verbatim
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 from typing import Optional, Type, TypeVar
@@ -57,23 +58,60 @@ class Skill:
             {"role": "system", "content": system or self.system_prompt},
             {"role": "user", "content": user_prompt},
         ]
+        last_text: Optional[str] = None
         for attempt in (1, 2):
             text = await ai_client.llm_chat(messages, temperature=temperature,
                                             max_tokens=max_tokens)
             if not text:
-                return None
+                break
+            last_text = text
             try:
                 return output_model.model_validate_json(_strip_json(text))
             except (ValidationError, ValueError) as e:
                 logger.warning("%s: JSON validation failed (attempt %s): %s",
                                self.name, attempt, str(e)[:200])
                 if attempt == 1:
+                    # Con temperature=0 repetir "devuelve JSON válido" a secas
+                    # reproduce EXACTAMENTE el mismo fallo — hay que decirle QUÉ
+                    # campo no valida para que revise el documento (p. ej. un
+                    # margen publicado en €/MWh o c€/kWh que debe pasar a €/kWh).
                     messages = messages + [
                         {"role": "assistant", "content": text[:2000]},
                         {"role": "user", "content":
-                         "Devuelve SOLO el objeto JSON válido que cumpla el esquema "
-                         "pedido, sin texto adicional, sin explicaciones y sin ```."},
+                         "El JSON anterior NO valida contra el esquema. Errores:\n" +
+                         str(e)[:600] +
+                         "\n\nCorrige SOLO los campos indicados releyendo el "
+                         "documento: si un valor está fuera de rango suele estar "
+                         "en otra unidad (€/MWh → divide entre 1000; c€/kWh → "
+                         "divide entre 100). Si no puedes determinarlo, pon null. "
+                         "Devuelve SOLO el objeto JSON válido, sin texto ni ```."},
                     ]
+        return self._salvage(last_text, output_model)
+
+    def _salvage(self, text: Optional[str], output_model: Type[T]) -> Optional[T]:
+        """Último recurso tras agotar reintentos: descarta SOLO los campos que no
+        validan y conserva el resto — una extracción parcial es mucho más útil
+        que perderlo todo por un único valor fuera de rango."""
+        if not text:
+            return None
+        try:
+            data = json.loads(_strip_json(text))
+        except ValueError:
+            return None
+        if not isinstance(data, dict):
+            return None
+        for _ in range(8):  # cota: cada vuelta elimina ≥1 campo
+            try:
+                inst = output_model.model_validate(data)
+                logger.warning("%s: extracción rescatada descartando campos "
+                               "inválidos", self.name)
+                return inst
+            except ValidationError as e:
+                bad = {err["loc"][0] for err in e.errors() if err.get("loc")}
+                if not bad:
+                    return None
+                for k in bad:
+                    data.pop(k, None)
         return None
 
     async def run_text(self, user_prompt: str, system: Optional[str] = None,
