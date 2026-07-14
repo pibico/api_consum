@@ -18,7 +18,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 from app.api.v1.dependencies.rbac import ConsumContext, consum_context, require_ai
-from app.api.v1.endpoints.consumption import _slugs
+from app.api.v1.endpoints.consumption import _slugs, _sp
 from app.core.config import settings
 from app.services import ai_client, consumption, exo_client, oe3
 
@@ -39,13 +39,13 @@ _SYSTEM = (
 )
 
 
-async def _aggregate_context(slugs: list[str]) -> dict:
+async def _aggregate_context(slugs: list[str], sp: Optional[dict] = None) -> dict:
     """The ONLY payload the LLM sees — aggregates, no raw rows / PII."""
     summ, power, shift, thermal, window, pvpc, carbon = await asyncio.gather(
-        consumption.summary(slugs),
-        consumption.current_power(slugs),
-        oe3.shift_analysis(slugs),
-        oe3.thermal_analysis(slugs),
+        consumption.summary(slugs, sp=sp),
+        consumption.current_power(slugs, sp=sp),
+        oe3.shift_analysis(slugs, sp=sp),
+        oe3.thermal_analysis(slugs, sp=sp),
         oe3.green_window(),
         exo_client.pvpc_day("today"),
         exo_client.carbon_current(),
@@ -96,22 +96,24 @@ async def status(ctx: ConsumContext = Depends(require_ai())):
 @router.get("/narrative")
 async def narrative(customer: Optional[str] = Query(None),
                     refresh: bool = Query(False),
+                    supply: Optional[int] = Query(None),
                     ctx: ConsumContext = Depends(require_ai())):
-    """Today's narrative for the household — cached per scope for the day."""
+    """Today's narrative for the household — cached per scope·supply for the day."""
     if not ai_client.configured():
         raise HTTPException(503, detail={"code": "AI_NOT_CONFIGURED",
                                          "message": "La IA aún no está configurada en el servidor."})
     slugs = await _slugs(ctx, customer)
     if not slugs:
         raise HTTPException(404, detail="no household in scope")
-    scope = "|".join(sorted(slugs))
+    sp = await _sp(slugs, supply)
+    scope = "|".join(sorted(slugs)) + (":" + str(sp["id"]) if sp else "")
     today = date.today().isoformat()
     hit = _narrative_cache.get(scope)
     if hit and hit[0] == today and not refresh:
         return {"date": today, "narrative": hit[1], "cached": True}
 
     import json
-    context = await _aggregate_context(slugs)
+    context = await _aggregate_context(slugs, sp=sp)
     _audit_context(scope, "narrative", context)
     text = await ai_client.llm_chat([
         {"role": "system", "content": _SYSTEM},
@@ -132,6 +134,7 @@ async def narrative(customer: Optional[str] = Query(None),
 async def ask(question: str = Body(..., embed=True, max_length=6000),
               history: List[dict] = Body(default=[], embed=True),
               customer: Optional[str] = Body(None, embed=True),
+              supply: Optional[int] = Body(None, embed=True),
               ctx: ConsumContext = Depends(require_ai())):
     """One Q&A turn about the household's consumption. `history` is the
     client-side transcript (last few turns), re-sent each call — stateless."""
@@ -141,6 +144,7 @@ async def ask(question: str = Body(..., embed=True, max_length=6000),
     slugs = await _slugs(ctx, customer)
     if not slugs:
         raise HTTPException(404, detail="no household in scope")
+    sp = await _sp(slugs, supply)
     scope = "|".join(sorted(slugs))
     today = date.today().isoformat()
 
@@ -260,7 +264,7 @@ async def ask(question: str = Body(..., embed=True, max_length=6000),
             name = call["name"]
             if name.startswith("tool_"):
                 name = name[5:]
-            result = await datatools.run_tool(slugs, name, call.get("args") or {})
+            result = await datatools.run_tool(slugs, name, call.get("args") or {}, sp=sp)
             blob = json.dumps(result, ensure_ascii=False)[:6000]
             logger.info("AI-AUDIT scope=%s kind=tool:%s bytes=%d",
                         scope, name, len(blob))

@@ -20,7 +20,8 @@ logger = logging.getLogger("consum.contracts")
 
 # Column list shared by every SELECT/INSERT/UPDATE — keep in lockstep with the DDL.
 _COLS = (
-    "customer_id", "contract_type", "label", "retailer", "cups", "access_tariff",
+    "customer_id", "contract_type", "label", "retailer", "cups", "supply_point_id",
+    "access_tariff",
     "start_date", "end_date",
     "energy_p1_eur_kwh", "energy_p2_eur_kwh", "energy_p3_eur_kwh",
     "margin_eur_kwh",
@@ -84,34 +85,51 @@ async def get(contract_id: int) -> Optional[Dict[str, Any]]:
     return _row_to_dict(row) if row else None
 
 
-async def get_active(customer_id: str, on_date: str) -> Optional[Dict[str, Any]]:
-    """The contract covering `on_date` (YYYY-MM-DD), if any."""
+async def get_active(customer_id: str, on_date: str,
+                     supply_point_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    """The contract covering `on_date` (YYYY-MM-DD), if any. Con
+    `supply_point_id` (F3) prima el contrato de ESE punto; un contrato legado
+    (supply_point_id NULL) sigue valiendo como fallback."""
+    extra, params = "", [customer_id, on_date, on_date]
+    if supply_point_id is not None:
+        extra = " AND (c.supply_point_id = %s OR c.supply_point_id IS NULL)"
+        params.append(supply_point_id)
+    order = " ORDER BY (c.supply_point_id IS NOT NULL) DESC" if supply_point_id else ""
     async with db.raw_connection() as con:
         async with con.cursor() as cur:
             await cur.execute(
                 _SELECT + """ WHERE c.customer_id = %s AND c.start_date <= %s
-                              AND (c.end_date IS NULL OR c.end_date >= %s) LIMIT 1""",
-                (customer_id, on_date, on_date),
+                              AND (c.end_date IS NULL OR c.end_date >= %s)"""
+                + extra + order + " LIMIT 1",
+                params,
             )
             row = await cur.fetchone()
     return _row_to_dict(row) if row else None
 
 
-async def contracts_covering(customer_id: str, start: str, end: str) -> List[Dict[str, Any]]:
+async def contracts_covering(customer_id: str, start: str, end: str,
+                             supply_point_id: Optional[int] = None
+                             ) -> List[Dict[str, Any]]:
     """All contracts intersecting [start, end], ordered — feeds pricing.price_map
-    when a contract changes mid-range."""
+    when a contract changes mid-range. Con `supply_point_id` (F3): los del
+    punto + los legados sin punto (fallback pre-F3)."""
+    extra, params = "", [customer_id, end, start]
+    if supply_point_id is not None:
+        extra = " AND (c.supply_point_id = %s OR c.supply_point_id IS NULL)"
+        params.append(supply_point_id)
     async with db.raw_connection() as con:
         async with con.cursor() as cur:
             await cur.execute(
                 _SELECT + """ WHERE c.customer_id = %s AND c.start_date <= %s
-                              AND (c.end_date IS NULL OR c.end_date >= %s)
-                              ORDER BY c.start_date""",
-                (customer_id, end, start),
+                              AND (c.end_date IS NULL OR c.end_date >= %s)"""
+                + extra + " ORDER BY c.start_date",
+                params,
             )
             return [_row_to_dict(r) for r in await cur.fetchall()]
 
 
-async def resolve_for_slugs(slugs: Sequence[str], start: str, end: str
+async def resolve_for_slugs(slugs: Sequence[str], start: str, end: str,
+                            supply_point_id: Optional[int] = None
                             ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
     """(customer_id, contracts) — only when the slugs resolve to EXACTLY ONE
     customer. Multi-household aggregates cannot be costed per-contract (the
@@ -121,7 +139,7 @@ async def resolve_for_slugs(slugs: Sequence[str], start: str, end: str
     if len(ids) != 1:
         return None, []
     cid = ids.pop()
-    return cid, await contracts_covering(cid, start, end)
+    return cid, await contracts_covering(cid, start, end, supply_point_id)
 
 
 def _http_409() -> HTTPException:
@@ -135,6 +153,13 @@ async def create(customer_slug: str, payload: Dict[str, Any],
     cid = ids.get(customer_slug)
     if not cid:
         raise HTTPException(404, detail=f"Hogar desconocido: {customer_slug}")
+    # Auto-vinculación por CUPS (F3, decisión 13-07): sin punto explícito,
+    # el CUPS del contrato decide su punto de suministro (o lo adopta si hay
+    # exactamente un punto sin CUPS). None → contrato legado (sin punto).
+    if payload.get("supply_point_id") is None and payload.get("cups"):
+        from app.services import supply_points as _sps
+        payload["supply_point_id"] = await _sps.bind_contract_cups(
+            cid, payload.get("cups"))
     cols = [c for c in _MUTABLE if payload.get(c) is not None]
     values = [_adapt(c, payload[c]) for c in cols]
     sql = (
@@ -157,6 +182,16 @@ async def create(customer_slug: str, payload: Dict[str, Any],
 async def update(contract_id: int, payload: Dict[str, Any]) -> Dict[str, Any]:
     # NULLs are meaningful (e.g. clearing end_date reactivates a contract), so
     # the payload dict carries exactly the fields the caller wants to set.
+    # Re-vinculación por CUPS (F3): si cambia el cups sin punto explícito,
+    # el match decide (igual que en create).
+    if payload.get("cups") and "supply_point_id" not in payload:
+        existing = await get(contract_id)
+        if existing:
+            from app.services import supply_points as _sps
+            bound = await _sps.bind_contract_cups(existing["customer_id"],
+                                                  payload["cups"])
+            if bound is not None:
+                payload["supply_point_id"] = bound
     cols = [c for c in _MUTABLE if c in payload]
     if not cols:
         raise HTTPException(422, detail="Nada que actualizar")

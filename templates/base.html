@@ -377,6 +377,13 @@
              pages that only override page_title keep their static text. #}
           <span class="topbar-title" id="topbar-title" data-i18n="{% block page_title_key %}{% endblock %}">{% block page_title %}Panel{% endblock %}</span>
           <div class="topbar-actions">
+            <!-- Selector GLOBAL de punto de suministro (multi-CUPS F3): visible
+                 solo cuando el contexto trae 2+ puntos. App.initSupplySelector
+                 lo puebla ("Todos" + nombre — localización), persiste en
+                 localStorage y recarga la página con ?supply=<id>. -->
+            <select id="supply-select" class="pibico-select" style="display:none;max-width:230px;"
+                    onchange="App.onSupplyChange(this.value)"
+                    data-i18n-title="supply.label" title="Punto de suministro"></select>
             {% block topbar_actions %}{% endblock %}
             <span id="topbar-clock" style="font-family:var(--font-mono);font-size:0.8rem;color:rgba(255,255,255,0.7);margin-left:12px;white-space:nowrap;">--:--:--</span>
           </div>

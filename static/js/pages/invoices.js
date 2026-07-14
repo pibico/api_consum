@@ -41,6 +41,12 @@
   }
 
   function custQS(sep) { return customer ? ((sep || '?') + 'customer=' + encodeURIComponent(customer)) : ''; }
+  /* F3: punto de suministro — custQS + &supply= (o ?supply= si no hay query previa) */
+  function supQS(sep) {
+    var base = custQS(sep), s = App.supplyQS();
+    if (!s) return base;
+    return base ? base + s : ((sep || '?') === '?' ? '?' + s.slice(1) : s);
+  }
   function canWrite() {
     if (!ctx) return false;
     if (ctx.is_superadmin) return true;
@@ -96,9 +102,11 @@
         ? '<button class="btn btn-sm pnl-day-btn" onclick="IvPage.explain(' + iv.id + ')" data-i18n="inv.explainBtn">Explicar</button> '
         : '';
       if (uploaded) {
-        // The user's own document — always downloadable, no PRO gate.
+        // The user's own document — always downloadable, no PRO gate; and
+        // deletable (a bad upload is a file mistake, not an accounting record).
         actions = explainBtn +
-          '<button class="btn btn-sm pnl-day-btn" onclick="IvPage.file(' + iv.id + ')">PDF</button>';
+          '<button class="btn btn-sm pnl-day-btn" onclick="IvPage.file(' + iv.id + ')">PDF</button>' +
+          ' <button class="btn btn-sm btn-danger" onclick="IvPage.remove(' + iv.id + ')" data-i18n="inv.deleteBtn">Eliminar</button>';
       } else {
         actions = explainBtn +
           '<button class="btn btn-sm pnl-day-btn" onclick="IvPage.detail(' + iv.id + ')" data-i18n="inv.view">Ver</button>';
@@ -286,6 +294,20 @@
       });
   }
 
+  // ── Delete (uploaded bills only) ─────────────────────────────────────────
+  function removeInvoice(id) {
+    AppUI.confirm(__t('inv.confirmDelete', '¿Eliminar esta factura subida? Se borra también el documento. Esta acción no se puede deshacer.'))
+      .then(function (ok) {
+        if (!ok) return;
+        cfetch('/invoices/' + id, { method: 'DELETE' }).then(function () {
+          App.showNotification(__t('inv.deleted', 'Factura eliminada'), '', 'success');
+          loadAll();
+        }).catch(function (e) {
+          App.showNotification(__t('common.error', 'Error'), e.message, 'danger');
+        });
+      });
+  }
+
   // ── Close-period form ────────────────────────────────────────────────────
   // The OPENING day is not a question — it is the day after the household's
   // last (non-void) invoice, same anchor the "factura en curso" KPIs use.
@@ -350,7 +372,7 @@
   // ── Load ─────────────────────────────────────────────────────────────────
   function loadAll() {
     loadBillingPeriod();
-    return cfetch('/invoices' + custQS()).then(function (r) { list = r.values || []; })
+    return cfetch('/invoices' + supQS()).then(function (r) { list = r.values || []; })
       .catch(function () { list = []; })
       .then(function () { renderTable(); renderCharts(); renderSummary(true); });
   }
@@ -551,7 +573,7 @@
   function loadBillingPeriod() {
     var row = q('iv-bp-row');
     if (!row) return;
-    cfetch('/invoices/billing-period' + custQS()).then(function (bp) {
+    cfetch('/invoices/billing-period' + supQS()).then(function (bp) {
       if (!bp || bp.status !== 'ok') { row.style.display = 'none'; return; }
       row.style.display = '';
       _bp = bp;
@@ -623,12 +645,15 @@
       var gateways = (c.devices || []).filter(function (d) {
         return (d.device_type || '') === 'gateway' || !d.device_type;
       });
-      if (gateways.length > 1) {
+      var multiSp = ((c && c.supply_points) || []).length > 1;
+      if (gateways.length > 1 && !multiSp) {   /* F3: con 2+ puntos manda el selector global */
         sel.innerHTML = gateways.map(function (d) {
           return '<option value="' + d.customer + '">' + (d.hostname || d.customer) + '</option>';
         }).join('');
         sel.style.display = '';
         customer = gateways[0].customer;
+      } else if (multiSp) {
+        customer = '';   /* el punto global escopa; no fijar slug (multi-org) */
       } else if (gateways.length === 1) {
         customer = gateways[0].customer;
       } else if (homes.length === 1) {
@@ -675,7 +700,7 @@
   }
 
   function loadTariffCard() {
-    return cfetch('/contracts/active' + custQS()).then(function (r) {
+    return cfetch('/contracts/active' + supQS()).then(function (r) {
       activeContract = r.contract || null;
       var el = q('iv-tariff-body');
       if (!el) return;
@@ -1103,7 +1128,7 @@
     },
     openForm: openForm, closeForm: closeForm, save: save,
     detail: detail, closeDetail: function () { AppUI.closePanel('invoiceDetail'); },
-    pdf: pdf, void: voidInvoice, presetLastMonth: presetLastMonth,
+    pdf: pdf, void: voidInvoice, remove: removeInvoice, presetLastMonth: presetLastMonth,
     openUpload: openUpload, closeUpload: closeUpload, readInvoice: readInvoice,
     answerType: answerType, saveTariff: saveTariff, file: fileDownload,
     openFix: openFix, closeFix: closeFix, fixType: fixType, saveFix: saveFix,

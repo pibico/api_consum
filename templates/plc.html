@@ -29,7 +29,8 @@
 </div>
 
 <!-- Floating controls (only shown when needed: several PLCs / offline retry) -->
-<div id="plc-controls" style="position:fixed;top:8px;right:14px;z-index:200;display:none;gap:6px;">
+<!-- Centrado: a la derecha tapaba los botones del header del webui embebido -->
+<div id="plc-controls" style="position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:200;display:none;gap:6px;">
   <select id="plc-select" class="pibico-select" style="width:auto;min-width:160px;display:none;" onchange="PlcPage.change()"></select>
   <button class="btn btn-sm" id="plc-reload" data-i18n="plc.reload" style="display:none;">Recargar</button>
 </div>

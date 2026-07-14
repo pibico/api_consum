@@ -437,7 +437,7 @@
   function loadAll() {
     var pActive = cfetch('/contracts/active' + custQS()).then(function (r) { active = r; })
       .catch(function () { active = null; });
-    var pList = cfetch('/contracts' + custQS()).then(function (r) { list = r.values || []; })
+    var pList = cfetch('/contracts' + custQS() + (custQS() ? App.supplyQS() : App.supplyQS().replace('&', '?'))).then(function (r) { list = r.values || []; })
       .catch(function () { list = []; });
     return Promise.all([pActive, pList]).then(function () {
       renderActive();
@@ -456,12 +456,15 @@
       var gateways = (c.devices || []).filter(function (d) {
         return (d.device_type || '') === 'gateway' || !d.device_type;
       });
-      if (gateways.length > 1) {
+      var multiSp = ((c && c.supply_points) || []).length > 1;
+      if (gateways.length > 1 && !multiSp) {   /* F3: con 2+ puntos manda el selector global */
         sel.innerHTML = gateways.map(function (d) {
           return '<option value="' + d.customer + '">' + (d.hostname || d.customer) + '</option>';
         }).join('');
         sel.style.display = '';
         customer = gateways[0].customer;
+      } else if (multiSp) {
+        customer = '';   /* el punto global escopa; no fijar slug (multi-org) */
       } else if (gateways.length === 1) {
         customer = gateways[0].customer;
       } else if (homes.length === 1) {

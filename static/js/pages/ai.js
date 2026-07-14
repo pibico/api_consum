@@ -70,7 +70,8 @@
     var box = q('ai-narrative');
     box.innerHTML = '<span class="spinner"></span> <span class="text-muted" style="font-size:0.8rem;">' +
       __t('ai.generating', 'Generando narrativa…') + '</span>';
-    App.apiFetch('/ai/narrative' + (refresh ? '?refresh=true' : '')).then(function (r) {
+    App.apiFetch('/ai/narrative?refresh=' + (refresh ? 'true' : 'false') +
+                 (App.supplyQS ? App.supplyQS() : '')).then(function (r) {
       box.innerHTML = renderProse(r.narrative || '');
       q('ai-narr-date').textContent = '· ' + (r.date || '');
     }).catch(function (e) {
@@ -96,7 +97,8 @@
     App.apiFetch('/ai/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: question, history: history.slice(-6) }),
+      body: JSON.stringify({ question: question, history: history.slice(-6),
+        supply: (App.getSupply && App.getSupply()) ? parseInt(App.getSupply(), 10) : null }),
     }).then(function (r) {
       addTurn('assistant', r.answer || '', r.meta);
       history.push({ role: 'user', content: question });

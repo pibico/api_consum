@@ -83,13 +83,20 @@ HERRAMIENTAS DISPONIBLES (responde SOLO el JSON {"tool": ..., "args": {...}} par
 
 
 async def run_tool(slugs: Sequence[str], name: str,
-                   args: Dict[str, Any]) -> Dict[str, Any]:
+                   args: Dict[str, Any], sp: Dict[str, Any] = None) -> Dict[str, Any]:
     """Execute one tool, household-scoped. Returns {"error": ...} on misuse —
-    the model reads it and corrects itself."""
+    the model reads it and corrects itself. `sp` (F3) restringe consumo/
+    sensores/facturas al punto de suministro seleccionado en la UI."""
     args = args or {}
+    sp_keys = None
+    if sp is not None:
+        from app.services import supply_points as _sps
+        sp_keys = {d for d, _c in await _sps.subtree(sp)}
     try:
         if name == "list_sensors":
             rows = await consumption.sensor_devices(slugs)
+            if sp_keys is not None:
+                rows = [r for r in rows if r["id"] in sp_keys]
             return {"sensors": [{"id": r["id"], "name": r["name"]} for r in rows]}
 
         if name == "energy":
@@ -104,7 +111,7 @@ async def run_tool(slugs: Sequence[str], name: str,
                 return {"error": "máximo 3 días con bucket=hour"}
             rows = await consumption.energy_series(
                 slugs, start, end, bucket=bucket,
-                device=args.get("device") or None)
+                device=args.get("device") or None, sp=sp)
             total = round(sum(r["kwh"] for r in rows), 2)
             out = {"bucket": bucket, "total_kwh": total,
                    "series": [{"ts": r["ts"][:13 if bucket == "hour" else 10],
@@ -116,7 +123,7 @@ async def run_tool(slugs: Sequence[str], name: str,
             return out
 
         if name == "power_now":
-            cur = await consumption.current_power(slugs)
+            cur = await consumption.current_power(slugs, sp=sp)
             names = {r["id"]: r["name"] for r in await consumption.sensor_devices(slugs)}
             return {"total_w": cur.get("total_w"),
                     "devices": [{"name": names.get(d["device"], d["device"]),
@@ -128,7 +135,7 @@ async def run_tool(slugs: Sequence[str], name: str,
             if not d:
                 return {"error": "date debe ser YYYY-MM-DD"}
             rows = await consumption.power_peak_hourly(
-                slugs, d, device=args.get("device") or None)
+                slugs, d, device=args.get("device") or None, sp=sp)
             return {"date": d, "peaks": rows}
 
         if name == "peaks":
@@ -195,7 +202,10 @@ async def run_tool(slugs: Sequence[str], name: str,
             return out
 
         if name == "invoices_list":
-            rows = await invoices.list_for(slugs)
+            rows = await invoices.list_for(
+                slugs, cups=(sp or {}).get("cups"))
+            if sp is not None and not sp.get("cups"):
+                rows = []   # punto sin CUPS: ninguna factura atribuible
             return {"invoices": [{
                 "id": r["id"], "periodo": f"{r['period_start']} a {r['period_end']}",
                 "cups": r.get("cups"), "origen": r.get("origin") or "generada",

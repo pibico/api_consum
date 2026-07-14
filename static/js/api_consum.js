@@ -163,6 +163,60 @@ window.AppUI.confirm = function (message) {
   });
 };
 
+/* ==========================================================================
+ * Punto de suministro global (multi-CUPS F3)
+ * El valor elegido vive en la URL (?supply=<id>) — fuente de verdad de la
+ * página actual — y se recuerda en localStorage para las siguientes. Las
+ * páginas añaden App.supplyQS() a sus llamadas y el backend filtra el
+ * sub-árbol del punto (o todo, si vacío = "Todos").
+ * ======================================================================= */
+var SUPPLY_KEY = 'consum_supply';
+
+function getSupply() {
+  // URL manda; sin párametro, la última elección guardada (SÍNCRONO — los
+  // fetches de las páginas salen en su init, antes de que llegue el contexto
+  // async; un replaceState posterior llegaría tarde y mezclaría datos).
+  var m = location.search.match(/[?&]supply=(\d+)/);
+  if (m) return m[1];
+  if (/[?&]supply=($|&)/.test(location.search)) return '';  // ?supply= vacío = Todos explícito
+  try { return localStorage.getItem(SUPPLY_KEY) || ''; } catch (e) { return ''; }
+}
+
+/** '&supply=<id>' o '' — análogo al custQS() de cada página. */
+function supplyQS() {
+  var s = getSupply();
+  return s ? '&supply=' + encodeURIComponent(s) : '';
+}
+
+function onSupplyChange(val) {
+  try { localStorage.setItem(SUPPLY_KEY, val || ''); } catch (e) {}
+  var url = new URL(location.href);
+  // 'Todos' se marca EXPLÍCITO en la URL (?supply=) para que getSupply no
+  // vuelva a caer al valor guardado en esta carga.
+  url.searchParams.set('supply', val || '');
+  location.href = url.toString();   // recarga: cada página relee en su init
+}
+
+function initSupplySelector(ctx) {
+  var sel = document.getElementById('supply-select');
+  var sps = (ctx && ctx.supply_points) || [];
+  if (!sel || sps.length < 2) return;
+  var cur = getSupply();
+  // Elección guardada que ya no existe (punto borrado): limpiar y a Todos.
+  if (cur && !sps.some(function (p) { return String(p.id) === cur; })) {
+    try { localStorage.removeItem(SUPPLY_KEY); } catch (e) {}
+    cur = '';
+  }
+  var t = (window.i18n && window.i18n.t) ? window.i18n.t.bind(window.i18n) : function (k, f) { return f; };
+  sel.innerHTML = '<option value="">' + t('supply.all', 'Todos los puntos') + '</option>' +
+    sps.map(function (p) {
+      var label = p.name + (p.location ? ' — ' + p.location : '');
+      return '<option value="' + p.id + '"' + (String(p.id) === cur ? ' selected' : '') + '>' +
+        label.replace(/</g, '&lt;') + '</option>';
+    }).join('');
+  sel.style.display = '';
+}
+
 /** Init */
 function initApp() {
   // No client-side auth guard: the SERVER gate (superadmin cookie check in
@@ -194,11 +248,13 @@ function initApp() {
   // Reveal it once /consumption/context confirms is_superadmin — every /app/*
   // page shares this shell, so one fetch here covers the whole console.
   var navPg = document.getElementById('nav-playground');
-  if (navPg) {
-    apiFetch('/consumption/context').then(function (c) {
-      if (c && c.is_superadmin) navPg.style.display = '';
-    }).catch(function () { /* not entitled / not logged in yet — stay hidden */ });
-  }
+  apiFetch('/consumption/context').then(function (c) {
+    if (!c) return;
+    if (navPg && c.is_superadmin) navPg.style.display = '';
+    // Selector global de punto de suministro (F3)
+    window.App.supplyPoints = c.supply_points || [];
+    initSupplySelector(c);
+  }).catch(function () { /* not entitled / not logged in yet */ });
 }
 
 if (document.readyState === 'loading') {
@@ -207,4 +263,13 @@ if (document.readyState === 'loading') {
   initApp();
 }
 
-window.App = { apiFetch, showNotification, logout, state: AppState };
+window.App = { apiFetch, showNotification, logout, state: AppState,
+  getSupply: getSupply, supplyQS: supplyQS, onSupplyChange: onSupplyChange,
+  supplyPoints: [], supplyPoint: function () {
+    var s = getSupply();
+    if (!s) return null;
+    for (var i = 0; i < App.supplyPoints.length; i++) {
+      if (String(App.supplyPoints[i].id) === s) return App.supplyPoints[i];
+    }
+    return null;
+  } };

@@ -13,6 +13,15 @@
    and the PLC view) — plus the exogenous environment personalized for the
    home, assembled server-side from api_exo (/consumption/environment). #}
 
+{# Vista de CARTERA (F3): con "Todos los puntos" y 2+ instalaciones el Panel
+   muestra una tarjeta por punto + totales; clicar una entra a su panel.
+   Las cards de ubicación (tiempo/viento/sol) solo existen POR punto. #}
+<div id="portfolio-view" style="display:none;">
+  <div class="kpi-grid-8 kpi-cols-4" id="pf-totals"></div>
+  <div class="pf-grid" id="pf-cards"></div>
+</div>
+
+<div id="panel-view">
 <div class="kpi-grid-8 kpi-cols-6" id="kpi-grid">
   <div class="glass-panel kpi-card">
     <div class="kpi-label" data-i18n="app.powerNow">Potencia ahora</div>
@@ -143,6 +152,21 @@
     <div id="pnl-wx-src"></div>
   </div>
 </div>
+
+</div>{# /panel-view #}
+
+<style>
+  .pf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; }
+  .pf-card { padding: 1rem 1.15rem; cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }
+  .pf-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.12); }
+  .pf-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 0.4rem; }
+  .pf-name { font-family: var(--font-heading); font-weight: 600; font-size: 1rem; color: var(--color-primary-dark, #2c5171); }
+  .pf-loc { font-size: 0.72rem; color: var(--color-text-light); }
+  .pf-nums { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin: 0.5rem 0; text-align: center; }
+  .pf-num b { display: block; font-family: var(--font-mono); font-size: 1.25rem; color: var(--color-primary); }
+  .pf-num span { font-size: 0.66rem; color: var(--color-text-light); text-transform: uppercase; letter-spacing: 0.04em; }
+  .pf-foot { display: flex; justify-content: space-between; gap: 8px; font-size: 0.74rem; color: var(--color-text-light); border-top: 1px solid rgba(0,0,0,0.06); padding-top: 0.45rem; flex-wrap: wrap; }
+</style>
 
 <script src="{{ root }}/static/js/vendor/echarts.min.js" defer></script>
 <script src="{{ root }}/static/js/pages/app.js?v={{ v }}" defer></script>

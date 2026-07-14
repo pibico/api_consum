@@ -69,17 +69,23 @@ _SELECT_LIGHT = ("SELECT id, customer_id, period_start, period_end, status, sett
                  "FROM consum.invoices")
 
 
-async def list_for(slugs: Sequence[str]) -> List[Dict[str, Any]]:
-    """Invoices for the authorized slugs (newest first, no breakdown blob)."""
+async def list_for(slugs: Sequence[str],
+                   cups: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Invoices for the authorized slugs (newest first, no breakdown blob).
+    `cups` (F3) filtra las del punto de suministro seleccionado."""
     ids = await consumption._slugs_to_ids(slugs)
     if not ids:
         return []
+    cond, params = "", [list(ids.values())]
+    if cups:
+        cond = " AND cups = %s"
+        params.append(cups)
     async with db.raw_connection() as con:
         async with con.cursor() as cur:
             await cur.execute(
-                _SELECT_LIGHT + " WHERE customer_id::text = ANY(%s) "
-                "ORDER BY period_start DESC, id DESC",
-                (list(ids.values()),),
+                _SELECT_LIGHT + " WHERE customer_id::text = ANY(%s)" + cond +
+                " ORDER BY period_start DESC, id DESC",
+                params,
             )
             return [_row_to_dict(r, with_breakdown=False) for r in await cur.fetchall()]
 
@@ -256,6 +262,22 @@ async def void(invoice_id: int, voided_by: Optional[str]) -> Dict[str, Any]:
     return await get(invoice_id)
 
 
+async def delete_uploaded(invoice_id: int) -> None:
+    """Hard-delete a WRONGLY UPLOADED retailer bill (status='uploaded' only —
+    a bad upload is a file mistake, not an accounting record). Closed
+    statements keep the void-never-delete rule. The PDF lives inline in the
+    row, so the DELETE removes the document too."""
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                "DELETE FROM consum.invoices WHERE id = %s AND status = 'uploaded' "
+                "RETURNING id", (invoice_id,))
+            row = await cur.fetchone()
+    if not row:
+        raise HTTPException(409, detail="Solo se pueden eliminar facturas subidas; "
+                                        "las cerradas se anulan (void)")
+
+
 async def store_uploaded(customer_slug: str, pdf_bytes: bytes, filename: str,
                          extracted: Optional[Dict[str, Any]],
                          created_by: Optional[str],
@@ -410,12 +432,16 @@ _BP_TTL_S = 300
 _bp_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 
 
-async def billing_period_live(customer_slug: str) -> Dict[str, Any]:
+async def billing_period_live(customer_slug: str,
+                              sp: "Optional[Dict[str, Any]]" = None) -> Dict[str, Any]:
     """The open billing period of one household — status:
     ok | no_invoices (no history to anchor on) | covered (last bill reaches
-    today). Projection only after 3 elapsed days (too noisy before)."""
+    today). Projection only after 3 elapsed days (too noisy before).
+    Con `sp` (F3): historial anclado a las facturas de SU CUPS y consumo
+    acumulado del sub-árbol del punto."""
     import time as _time
-    hit = _bp_cache.get(customer_slug)
+    cache_key = f"{customer_slug}:{(sp or {}).get('id') or ''}"
+    hit = _bp_cache.get(cache_key)
     if hit and _time.monotonic() - hit[0] < _BP_TTL_S:
         return hit[1]
 
@@ -424,23 +450,33 @@ async def billing_period_live(customer_slug: str) -> Dict[str, Any]:
     if not cid:
         raise HTTPException(404, detail=f"Hogar desconocido: {customer_slug}")
 
+    if sp is not None and not sp.get("cups"):
+        # Punto sin CUPS: sin historial propio que anclar — no proyectar con
+        # las facturas de OTRO punto del mismo hogar.
+        out = {"status": "no_invoices"}
+        _bp_cache[cache_key] = (_time.monotonic(), out)
+        return out
+    cups_cond, cups_params = "", []
+    if sp is not None and sp.get("cups"):
+        cups_cond = " AND cups = %s"
+        cups_params = [sp["cups"]]
     async with db.raw_connection() as con:
         async with con.cursor() as cur:
             await cur.execute(
                 "SELECT period_start, period_end FROM consum.invoices "
-                "WHERE customer_id = %s AND status != 'void' "
-                "ORDER BY period_end DESC LIMIT 6", (cid,))
+                "WHERE customer_id = %s AND status != 'void'" + cups_cond +
+                " ORDER BY period_end DESC LIMIT 6", [cid] + cups_params)
             hist = await cur.fetchall()
     if not hist:
         out = {"status": "no_invoices"}
-        _bp_cache[customer_slug] = (_time.monotonic(), out)
+        _bp_cache[cache_key] = (_time.monotonic(), out)
         return out
 
     today = date.today()
     start = hist[0][1] + timedelta(days=1)
     if start > today:
         out = {"status": "covered", "until": hist[0][1].isoformat()}
-        _bp_cache[customer_slug] = (_time.monotonic(), out)
+        _bp_cache[cache_key] = (_time.monotonic(), out)
         return out
 
     lengths = sorted((e - s).days + 1 for s, e in hist)
@@ -478,7 +514,7 @@ async def billing_period_live(customer_slug: str) -> Dict[str, Any]:
     # installed mid-period or offline days would silently understate the
     # accrued total and the projection; the KPI must say so.
     daily = await consumption.energy_series([customer_slug], start.isoformat(),
-                                            today.isoformat(), bucket="day")
+                                            today.isoformat(), bucket="day", sp=sp)
     measured_days = len({r["ts"][:10] for r in daily if (r.get("kwh") or 0) > 0})
     out = {
         "status": "ok",
@@ -503,5 +539,5 @@ async def billing_period_live(customer_slug: str) -> Dict[str, Any]:
         out["projected_eur"] = round(eur_day * days_total, 2)
         out["projected_kwh"] = round(
             totals["energy_kwh"] / days_elapsed * days_total, 1)
-    _bp_cache[customer_slug] = (_time.monotonic(), out)
+    _bp_cache[cache_key] = (_time.monotonic(), out)
     return out

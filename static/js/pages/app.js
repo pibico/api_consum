@@ -37,6 +37,12 @@
       '-' + String(d.getDate()).padStart(2, '0');
   }
   function custQS(sep) { return customer ? ((sep || '?') + 'customer=' + encodeURIComponent(customer)) : ''; }
+  /* F3: punto de suministro — custQS + &supply= (o ?supply= si no hay query previa) */
+  function supQS(sep) {
+    var base = custQS(sep), s = App.supplyQS();
+    if (!s) return base;
+    return base ? base + s : ((sep || '?') === '?' ? '?' + s.slice(1) : s);
+  }
 
   // Local fetch for WRITES: unlike App.apiFetch it does NOT log the user out on
   // 403 (which would happen mid-edit), so a role error surfaces as a message.
@@ -101,26 +107,28 @@
       var gateways = (c.devices || []).filter(function (d) {
         return (d.device_type || '') === 'gateway' || !d.device_type;
       });
-      if (sel && gateways.length > 1) {
+      var multiSp = ((c && c.supply_points) || []).length > 1;
+      if (sel && gateways.length > 1 && !multiSp) {   /* F3: con 2+ puntos manda el selector global */
         sel.innerHTML = '<option value="">' + __t('app.allHomes', 'Todos mis hogares') + '</option>' +
           gateways.map(function (d) {
             return '<option value="' + d.customer + '">' + d.hostname + '</option>';
           }).join('');
         sel.style.display = '';
       }
+      return c;   // F3: el boot decide modo cartera con c.supply_points
     });
   }
 
   // ── General-meter KPIs (always TODAY) ─────────────────────────────────
   function loadPower() {
     // Lightweight live power (last EM reading; the meter publishes ~1/min)
-    return App.apiFetch('/consumption/current' + custQS()).then(function (r) {
+    return App.apiFetch('/consumption/current' + supQS()).then(function (r) {
       q('kpi-power').textContent = fmt(r.total_w, 0);
     });
   }
 
   function loadToday() {
-    return App.apiFetch('/consumption/day?date=' + today() + custQS('&')).then(function (r) {
+    return App.apiFetch('/consumption/day?date=' + today() + supQS('&')).then(function (r) {
       q('kpi-today').textContent = fmt(r.total_kwh);
       q('kpi-cost-today').textContent = fmt(r.total_cost_eur, 2);
       if (houseDate === r.date) { houseData = r; drawHouseChart(); }
@@ -129,7 +137,7 @@
 
   function loadHouseDay() {
     if (houseDate === today()) return;   // loadToday already feeds the chart
-    return App.apiFetch('/consumption/day?date=' + houseDate + custQS('&')).then(function (r) {
+    return App.apiFetch('/consumption/day?date=' + houseDate + supQS('&')).then(function (r) {
       houseData = r;
       drawHouseChart();
     });
@@ -137,7 +145,7 @@
 
   function loadMonth() {
     var m = today().slice(0, 7);
-    return App.apiFetch('/consumption/month?month=' + m + custQS('&')).then(function (r) {
+    return App.apiFetch('/consumption/month?month=' + m + supQS('&')).then(function (r) {
       q('kpi-month').textContent = fmt(r.total_kwh, 1) + ' kWh';
       q('kpi-month-cost').textContent = fmt(r.total_cost_eur, 2) + ' €';
     });
@@ -581,7 +589,7 @@
     el._bound = true;
     // Any authenticated household member may set their own installed kWp (it
     // only scales the estimate) — no role gate, so the input stays editable.
-    cfetch('/consumption/solar-config' + custQS()).then(function (c) {
+    cfetch('/consumption/solar-config' + supQS()).then(function (c) {
       if (c && c.peak_kwp != null && document.activeElement !== el) el.value = c.peak_kwp;
     }).catch(function () {});
     el.onchange = function () {
@@ -591,7 +599,8 @@
       cfetch('/consumption/solar-config', {
         method: 'PUT',
         body: JSON.stringify(Object.assign({ peak_kwp: v },
-          customer ? { customer: customer } : {})),
+          customer ? { customer: customer } : {},
+          App.getSupply() ? { supply_point_id: parseInt(App.getSupply(), 10) } : {})),
       }).then(function () {
         return loadEnvironment();   // refetch solar scaled to the new kWp
       }).then(function () {
@@ -793,7 +802,7 @@
   // data arrives; on show, the grid widens to 7 tracks. cfetch: a 403 (basic
   // tier) must hide the card, never log the user out.
   function loadBillingKpi() {
-    cfetch('/invoices/billing-period' + custQS()).then(function (bp) {
+    cfetch('/invoices/billing-period' + supQS()).then(function (bp) {
       if (!bp || bp.status !== 'ok') return;
       var v = bp.projected_eur != null ? '~' + bp.projected_eur.toFixed(2) + ' €'
                                        : bp.total_eur.toFixed(2) + ' €';
@@ -811,7 +820,7 @@
   }
 
   function loadEnvironment() {
-    return App.apiFetch('/consumption/environment' + custQS()).then(function (r) {
+    return App.apiFetch('/consumption/environment' + supQS()).then(function (r) {
       env = r;
       // KPI: carbon (price KPI follows the market selector)
       if (r.carbon && r.carbon.intensity_gco2_kwh != null) {
@@ -888,13 +897,69 @@
       q('pnl-mkt-omie').onclick = function () { setMarket('omie'); };
       q('pnl-pvpc-today').onclick = function () { setPvpcDay('today'); };
       q('pnl-pvpc-tomorrow').onclick = function () { setPvpcDay('tomorrow'); };
-      loadContext().then(function () { loadContract(); refreshHouse(); loadBillingKpi(); loadEnvironment().catch(function () {}); })
+  function esc(t) { return String(t == null ? '' : t).replace(/</g, '&lt;'); }
+
+  function loadPortfolio() {
+    return App.apiFetch('/consumption/portfolio' + custQS()).then(function (r) {
+      var pts = (r && r.points) || [];
+      var tot = r && r.totals;
+      var totals = q('pf-totals');
+      if (totals && tot) {
+        totals.innerHTML =
+          '<div class="glass-panel kpi-card"><div class="kpi-label">' + __t('pf.totToday', 'Hoy (todos)') + '</div>' +
+          '<div class="kpi-value">' + tot.today_kwh + '</div><div class="kpi-sub">kWh</div></div>' +
+          '<div class="glass-panel kpi-card"><div class="kpi-label">' + __t('pf.totNow', 'Potencia ahora') + '</div>' +
+          '<div class="kpi-value">' + Math.round(tot.current_w) + '</div><div class="kpi-sub">W</div></div>' +
+          '<div class="glass-panel kpi-card"><div class="kpi-label">' + __t('pf.totCost', 'Coste hoy') + '</div>' +
+          '<div class="kpi-value">' + (tot.today_cost_eur != null ? tot.today_cost_eur.toFixed(2) : '—') + '</div>' +
+          '<div class="kpi-sub">€ <span>' + __t('pf.sumPoints', 'Σ por punto, cada uno con su contrato') + '</span></div></div>' +
+          '<div class="glass-panel kpi-card"><div class="kpi-label">' + __t('pf.totMonth', 'Mes (todos)') + '</div>' +
+          '<div class="kpi-value" style="font-size:1.6rem;">' + tot.month_kwh + '</div><div class="kpi-sub">kWh</div></div>';
+      }
+      var cards = q('pf-cards');
+      if (!cards) return;
+      cards.innerHTML = pts.map(function (p) {
+        var wx = p.weather ? (Math.round(p.weather.temperature) + '°C' +
+          (p.weather.description ? ' · ' + esc(p.weather.description) : '')) : '';
+        var bill = p.billing && p.billing.projected_eur != null
+          ? __t('pf.bill', 'Factura en curso') + ' ~' + p.billing.projected_eur.toFixed(0) + ' €'
+          : (p.cups ? '' : __t('pf.noContract', 'Sin contrato/CUPS aún'));
+        return '<div class="glass-panel pf-card" onclick="App.onSupplyChange(\'' + p.id + '\')" ' +
+          'title="' + __t('pf.open', 'Abrir este punto') + '">' +
+          '<div class="pf-head"><span class="pf-name">' + esc(p.name) + '</span>' +
+          '<span class="pf-loc">' + esc(p.location || '') + '</span></div>' +
+          '<div class="pf-nums">' +
+          '<div class="pf-num"><b>' + p.today_kwh + '</b><span>kWh ' + __t('pf.today', 'hoy') + '</span></div>' +
+          '<div class="pf-num"><b>' + Math.round(p.current_w) + '</b><span>W ' + __t('pf.now', 'ahora') + '</span></div>' +
+          '<div class="pf-num"><b>' + (p.today_cost_eur != null ? p.today_cost_eur.toFixed(2) : '—') + '</b>' +
+          '<span>€ ' + __t('pf.today', 'hoy') + ' · ' + esc(p.price_source || '') + '</span></div>' +
+          '</div>' +
+          '<div class="pf-foot"><span>' + bill + '</span><span>' + wx + '</span></div>' +
+          '</div>';
+      }).join('');
+    }).catch(function () { /* portfolio best-effort */ });
+  }
+
+      loadContext().then(function (c) {
+        // F3: en "Todos" con 2+ puntos, el Panel es la VISTA DE CARTERA —
+        // una tarjeta por instalación + totales. Las cards de ubicación
+        // (tiempo/viento/sol) solo tienen sentido POR punto.
+        var multi = ((c && c.supply_points) || []).length > 1;
+        if (multi && !(App.getSupply && App.getSupply())) {
+          q('panel-view').style.display = 'none';
+          q('portfolio-view').style.display = '';
+          loadPortfolio();
+          setInterval(loadPortfolio, 60000);
+          return;
+        }
+        loadContract(); refreshHouse(); loadBillingKpi(); loadEnvironment().catch(function () {});
+        setInterval(function () { loadPower().catch(function () {}); }, 5000);   // live watts tick
+        setInterval(refreshHouse, 60000);    // kWh / € of the day+month
+        setInterval(refreshEnv, 300000);     // exogenous environment
+      })
         .catch(function (e) {
           App.showNotification(__t('common.error', 'Error'), e.message, 'danger');
         });
-      setInterval(function () { loadPower().catch(function () {}); }, 5000);   // live watts tick
-      setInterval(refreshHouse, 60000);    // kWh / € of the day+month
-      setInterval(refreshEnv, 300000);     // exogenous environment
     });
   });
 })();

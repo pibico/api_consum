@@ -122,6 +122,12 @@
   function renderTable() {}
 
   function custQS(sep) { return device ? ((sep || '&') + 'device=' + encodeURIComponent(device)) : ''; }
+  /* F3: punto de suministro — custQS + &supply= (o ?supply= si no hay query previa) */
+  function supQS(sep) {
+    var base = custQS(sep), s = App.supplyQS();
+    if (!s) return base;
+    return base ? base + s : (sep === '?' ? '?' + s.slice(1) : s);
+  }
 
   // apiFetch clone that only logs out on 401 — App.apiFetch logs out on 403
   // too, which BOOTS a basic-tier user instead of showing the PRO upsell.
@@ -157,7 +163,7 @@
   }
 
   function loadForecast() {
-    return cfetch('/consumption/forecast-month' + custQS('?')).then(function (r) {
+    return cfetch('/consumption/forecast-month' + supQS('?')).then(function (r) {
       q('cons-forecast').innerHTML =
         '<div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:baseline;">' +
         '<div><div class="kpi-value" style="font-size:1.7rem;color:#e67e22;">' + fmt(r.forecast_cost_eur) + ' €</div>' +
@@ -176,7 +182,7 @@
 
   function loadBands() {
     var m = (q('cons-date').value || today()).slice(0, 7);
-    return cfetch('/consumption/bands?month=' + m + custQS()).then(function (r) {
+    return cfetch('/consumption/bands?month=' + m + supQS()).then(function (r) {
       q('cons-bands-month').textContent = '· ' + m;
       var total = r.total_kwh || 0;
       q('cons-bands').innerHTML = (r.values || []).map(function (v) {
@@ -195,7 +201,7 @@
   function exportCsv() {
     var d = q('cons-date').value || today();
     var start = d.slice(0, 7) + '-01';
-    var url = (window.__ROOT__ || '') + '/api/v1/consumption/export.csv?start=' + start + '&end=' + d + custQS();
+    var url = (window.__ROOT__ || '') + '/api/v1/consumption/export.csv?start=' + start + '&end=' + d + supQS();
     // Cookie-authenticated GET — a 403 (basic tier) lands as JSON in a tab
     fetch(url, { credentials: 'same-origin' }).then(function (res) {
       if (!res.ok) {
@@ -217,7 +223,7 @@
 
   function loadDay() {
     var d = q('cons-date').value || today();
-    return App.apiFetch('/consumption/day?date=' + d + custQS()).then(function (r) {
+    return App.apiFetch('/consumption/day?date=' + d + supQS()).then(function (r) {
       day = r;
       q('ck-kwh').textContent = fmt(r.total_kwh);
       q('ck-cost').textContent = fmt(r.total_cost_eur);
@@ -230,7 +236,7 @@
 
   function loadMonth() {
     var d = (q('cons-date').value || today()).slice(0, 7);
-    return App.apiFetch('/consumption/month?month=' + d + custQS()).then(function (r) {
+    return App.apiFetch('/consumption/month?month=' + d + supQS()).then(function (r) {
       month = r;
       q('ck-month').textContent = fmt(r.total_kwh, 1) + ' kWh';
       q('ck-month-cost').textContent = fmt(r.total_cost_eur) + ' €';
@@ -242,7 +248,7 @@
   function loadDevices() {
     // Real reporting sensors (sensor_data device_ids) — NOT the gateway,
     // which never reports power and would filter everything to zero.
-    return App.apiFetch('/consumption/sensors').then(function (r) {
+    return App.apiFetch('/consumption/sensors' + App.supplyQS().replace('&', '?')).then(function (r) {
       var sel = q('cons-device');
       var opts = ['<option value="">' + __t('cons.wholeHouse', 'Toda la casa') + '</option>'];
       (r.data || []).forEach(function (o) {
@@ -272,7 +278,7 @@
   // ── Peak power per hour (household demand curve) ──────────────────────
   function loadPowerPeak() {
     var date = q('cons-date').value || today();
-    return App.apiFetch('/consumption/power-peak?date=' + date + custQS('&')).then(function (r) {
+    return App.apiFetch('/consumption/power-peak?date=' + date + supQS('&')).then(function (r) {
       drawPeakChart(r);
       q('cons-peak-max').textContent = r.peak_w
         ? '· ' + __t('cons.peakMax', 'máx') + ' ' + (r.peak_w / 1000).toFixed(2) + ' kW' : '';
@@ -307,7 +313,7 @@
 
   // ── Live wiring Sankey (casa → dispositivos, from the PLC topology) ────
   function loadSankey() {
-    return App.apiFetch('/consumption/topology' + custQS('?')).then(function (r) {
+    return App.apiFetch('/consumption/topology' + supQS('?')).then(function (r) {
       if (!r || !r.root) {
         q('cons-sankey-note').textContent = __t('cons.sankeyOffline', 'Sin conexión con el PLC y sin cableado guardado todavía.');
         var c0 = chart('cons-sankey'); if (c0) c0.clear(); skSig = '';

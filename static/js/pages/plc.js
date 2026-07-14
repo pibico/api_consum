@@ -8,6 +8,7 @@
   'use strict';
 
   var customer = '';   // selected household (its gateway) — '' = first/only
+  var gateway = '';    // hostname del PLC elegido (F3) — '' = primero
   var retryTimer = null;
 
   function q(id) { return document.getElementById(id); }
@@ -51,15 +52,25 @@
     clearTimeout(retryTimer);
     showState('<span class="spinner"></span> <span class="text-muted" style="font-size:0.85rem;">' +
       __t('plc.connecting', 'Conectando con tu PLC…') + '</span>');
-    cfetch('/plc/session' + (customer ? '?customer=' + encodeURIComponent(customer) : '')).then(function (r) {
-      // Multi-PLC: one gateway per household — selector only when >1
+    // F3: el punto de suministro global manda — el server resuelve
+    // supply → gateway (sin carrera con el fetch async del contexto).
+    var supplyId = (window.App && App.getSupply) ? App.getSupply() : '';
+    var hasSupply = !!supplyId;
+    var parts = [];
+    if (customer) parts.push('customer=' + encodeURIComponent(customer));
+    if (gateway && !hasSupply) parts.push('gateway=' + encodeURIComponent(gateway));
+    if (hasSupply) parts.push('supply=' + encodeURIComponent(supplyId));
+    cfetch('/plc/session' + (parts.length ? '?' + parts.join('&') : '')).then(function (r) {
+      // Multi-PLC: selector propio solo cuando hay >1 Y no hay punto global
       var gws = (r && r.gateways) || [];
       var sel = q('plc-select');
-      if (gws.length > 1 && !sel.options.length) {
+      if (hasSupply) {
+        sel.style.display = 'none';   // cascada: el selector global decide
+      } else if (gws.length > 1 && !sel.options.length) {
         sel.innerHTML = gws.map(function (g) {
-          return '<option value="' + g.customer + '">' + g.hostname + '</option>';
+          return '<option value="' + g.hostname + '">' + g.hostname + '</option>';
         }).join('');
-        sel.value = gws[0].customer;
+        sel.value = gateway || gws[0].hostname;
         sel.style.display = '';
         q('plc-controls').style.display = 'flex';
       }
@@ -93,7 +104,7 @@
 
   window.PlcPage = {
     change: function () {
-      customer = q('plc-select').value || '';
+      gateway = q('plc-select').value || '';
       load();
     },
   };

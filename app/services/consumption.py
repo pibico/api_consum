@@ -51,10 +51,18 @@ async def _mains_rows(ids: Dict[str, str]) -> List[Any]:
             return list(await cur.fetchall())
 
 
-async def _house_cond(ids: Dict[str, str]) -> tuple:
+async def _house_cond(ids: Dict[str, str],
+                      sp: Optional[Dict[str, Any]] = None) -> tuple:
     """(sql, params) selecting whole-house rows: customers WITH a registered
     main count ONLY that (device, channel); the rest keep the numeric-channel
-    heuristic. Column names match both sensor_data and sensor_hourly."""
+    heuristic. Column names match both sensor_data and sensor_hourly.
+
+    With `sp` (supply point, multi-CUPS F3) the house is THAT installation:
+    solo su main (device, channel) — los descendientes son subcircuitos
+    dentro de esa lectura, sumarlos doble-contaría."""
+    if sp is not None:
+        return ("(customer_id::text = %s AND device_id = %s AND channel = %s)",
+                [sp["customer_id"], sp["main_sensor_key"], sp["main_channel"]])
     mains = await _mains_rows(ids)
     if not mains:
         return _HOUSE_CHANNEL_SQL, []
@@ -90,10 +98,17 @@ async def all_slugs() -> List[str]:
             return [r[0] for r in await cur.fetchall()]
 
 
-async def location_for(slugs: Sequence[str]) -> Optional[Dict[str, Any]]:
+async def location_for(slugs: Sequence[str],
+                       sp: Optional[Dict[str, Any]] = None
+                       ) -> Optional[Dict[str, Any]]:
     """The household's coords (customers.latitude/longitude, mig 020 —
     api_edge owns the column; set at onboarding). First slug with coords
-    wins (one home per org in the family model); None → caller defaults."""
+    wins (one home per org in the family model); None → caller defaults.
+    With `sp` (F3), the supply point's own coords win when set."""
+    if sp is not None and sp.get("latitude") is not None \
+            and sp.get("longitude") is not None:
+        return {"lat": sp["latitude"], "lon": sp["longitude"],
+                "municipality": sp.get("location")}
     if not slugs:
         return None
     async with db.raw_connection() as con:
@@ -112,20 +127,26 @@ async def location_for(slugs: Sequence[str]) -> Optional[Dict[str, Any]]:
     return {"lat": float(row[0]), "lon": float(row[1]), "municipality": row[2]}
 
 
-async def solar_config_for(slugs: Sequence[str]) -> Optional[Dict[str, Any]]:
-    """The household's rooftop-PV config (consum.solar_config, mig 003) — the
-    installed kWp (+ optional tilt/azimuth/loss) that scales the Panel solar
-    estimate. First slug with a row wins (one home per org). None → the caller
-    lets api_exo apply its 3 kWp default."""
+async def solar_config_for(slugs: Sequence[str],
+                           sp: Optional[Dict[str, Any]] = None
+                           ) -> Optional[Dict[str, Any]]:
+    """The household's rooftop-PV config (consum.solar_config, mig 003/012).
+    With `sp` (F3) the point's own row wins, falling back to the household
+    row (supply_point_id IS NULL); without sp, the household row is preferred
+    over per-point rows. None → the caller lets api_exo apply its default."""
     ids = await _slugs_to_ids(slugs)
     if not ids:
         return None
+    sp_id = sp["id"] if sp else None
     async with db.raw_connection() as con:
         async with con.cursor() as cur:
             await cur.execute(
                 """SELECT peak_kwp, tilt, azimuth, loss FROM consum.solar_config
-                    WHERE customer_id = ANY(%s) ORDER BY customer_id LIMIT 1""",
-                (list(ids.values()),),
+                    WHERE customer_id = ANY(%s)
+                    ORDER BY (supply_point_id = %s) DESC NULLS LAST,
+                             (supply_point_id IS NULL) DESC, customer_id
+                    LIMIT 1""",
+                (list(ids.values()), sp_id),
             )
             row = await cur.fetchone()
     if not row:
@@ -140,9 +161,10 @@ async def set_solar_config(slug: str, peak_kwp: float,
                            tilt: Optional[float] = None,
                            azimuth: Optional[float] = None,
                            loss: Optional[float] = None,
-                           updated_by: Optional[str] = None) -> Dict[str, Any]:
-    """Upsert the household's rooftop-PV config. Only the fields provided are
-    written; tilt/azimuth/loss default to NULL (→ api_exo defaults)."""
+                           updated_by: Optional[str] = None,
+                           supply_point_id: Optional[int] = None) -> Dict[str, Any]:
+    """Upsert the PV config — household-wide (supply_point_id NULL) or per
+    supply point (F3, mig 012: unique on (customer_id, COALESCE(sp,0)))."""
     ids = await _slugs_to_ids([slug])
     cid = ids.get(slug)
     if not cid:
@@ -151,16 +173,19 @@ async def set_solar_config(slug: str, peak_kwp: float,
         async with con.cursor() as cur:
             await cur.execute(
                 """INSERT INTO consum.solar_config
-                       (customer_id, peak_kwp, tilt, azimuth, loss, updated_by)
-                   VALUES (%s, %s, %s, %s, %s, %s)
-                   ON CONFLICT (customer_id) DO UPDATE SET
+                       (customer_id, peak_kwp, tilt, azimuth, loss, updated_by,
+                        supply_point_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (customer_id, COALESCE(supply_point_id, 0))
+                   DO UPDATE SET
                        peak_kwp = EXCLUDED.peak_kwp,
                        tilt = EXCLUDED.tilt, azimuth = EXCLUDED.azimuth,
                        loss = EXCLUDED.loss, updated_by = EXCLUDED.updated_by,
                        updated_at = now()""",
-                (cid, peak_kwp, tilt, azimuth, loss, updated_by),
+                (cid, peak_kwp, tilt, azimuth, loss, updated_by, supply_point_id),
             )
-    return {"peak_kwp": peak_kwp, "tilt": tilt, "azimuth": azimuth, "loss": loss}
+    return {"peak_kwp": peak_kwp, "tilt": tilt, "azimuth": azimuth, "loss": loss,
+            "supply_point_id": supply_point_id}
 
 
 async def devices_for(slugs: Sequence[str]) -> List[Dict[str, Any]]:
@@ -212,18 +237,29 @@ async def sensor_devices(slugs: Sequence[str]) -> List[Dict[str, Any]]:
                     for r in await cur.fetchall()]
 
 
-async def current_power(slugs: Sequence[str]) -> Dict[str, Any]:
+async def current_power(slugs: Sequence[str],
+                        sp: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Latest instantaneous power per device (+ whole-house total). The total
     counts ONLY the registered role='main' sensor of each household — the EM's
     second clamp can be a subcircuit (pibico ch '1' = lavadoras) and summing
     it double-counts; households without topology fall back to the numeric-
-    channel heuristic. Looks at the last 10 minutes."""
+    channel heuristic. Looks at the last 10 minutes.
+
+    With `sp` (F3): devices restringidos al sub-árbol del punto; total = su
+    main (fallback: suma de sus enchufes si el main no emite/lee 0)."""
     ids = await _slugs_to_ids(slugs)
     if not ids:
         return {"total_w": 0, "devices": []}
-    mains_by_cid: Dict[str, set] = {}
-    for cid, dev, ch in await _mains_rows(ids):
-        mains_by_cid.setdefault(cid, set()).add((dev, ch))
+    sp_pairs: Optional[set] = None
+    if sp is not None:
+        from app.services import supply_points as _sps
+        sp_pairs = set(await _sps.subtree(sp))
+        mains_by_cid = {sp["customer_id"]:
+                        {(sp["main_sensor_key"], sp["main_channel"])}}
+    else:
+        mains_by_cid = {}
+        for cid, dev, ch in await _mains_rows(ids):
+            mains_by_cid.setdefault(cid, set()).add((dev, ch))
     async with db.raw_connection() as con:
         async with con.cursor() as cur:
             await cur.execute(
@@ -242,6 +278,8 @@ async def current_power(slugs: Sequence[str]) -> Dict[str, Any]:
     devices: Dict[str, Dict[str, Any]] = {}
     total = 0.0
     for device_id, channel, value, ts, cid in rows:
+        if sp_pairs is not None and (device_id, channel) not in sp_pairs:
+            continue   # fuera del sub-árbol del punto seleccionado (F3)
         d = devices.setdefault(device_id, {"device": device_id, "power_w": 0.0,
                                            "channels": {}, "ts": ts.isoformat()})
         d["channels"][channel] = value
@@ -252,8 +290,9 @@ async def current_power(slugs: Sequence[str]) -> Dict[str, Any]:
                 total += value or 0.0
         elif channel and channel.isdigit():
             total += value or 0.0
-    # No EM present → fall back to the sum of everything (plug-only homes)
-    if total == 0.0 and rows:
+    # No EM present (or its clamps read 0 on a bench install) → fall back to
+    # the sum of everything visible (plug-only homes / sp sin acometida)
+    if total == 0.0 and devices:
         total = sum(d["power_w"] for d in devices.values())
     return {"total_w": round(total, 1), "devices": sorted(devices.values(), key=lambda d: -d["power_w"])}
 
@@ -275,9 +314,11 @@ async def energy_series(
     bucket: str = "hour",
     device: Optional[str] = None,
     house_only: bool = True,
+    sp: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """kWh per time bucket. `device` filters one hostname (then house_only is
     ignored — you asked for that device); otherwise whole-house (EM channels).
+    `sp` (F3) narrows the house to ONE supply point (its main).
     start/end: ISO dates (YYYY-MM-DD) or timestamps, inclusive start,
     exclusive end+1d when a bare date is given.
 
@@ -292,7 +333,7 @@ async def energy_series(
     trunc = {"quarter": "15 minutes", "hour": "1 hour", "day": "1 day"}.get(bucket, "1 hour")
     hours_per_bucket = {"15 minutes": 0.25, "1 hour": 1.0, "1 day": 24.0}[trunc]
     boundary = (_date.today() - _td(days=RAW_WINDOW_DAYS)).isoformat()
-    house_sql, house_params = (await _house_cond(ids)) if (house_only and not device) \
+    house_sql, house_params = (await _house_cond(ids, sp)) if (house_only and not device) \
         else ("", [])
 
     counter_rows: List[Any] = []
@@ -371,11 +412,18 @@ async def energy_series(
     ]
 
 
-async def topology_from_sensors(slugs: Sequence[str]) -> Dict[str, Any]:
+async def topology_from_sensors(slugs: Sequence[str],
+                                sp: Optional[Dict[str, Any]] = None
+                                ) -> Dict[str, Any]:
     """Offline fallback for the wiring Sankey: rebuild the tree from the
     persisted `sensors` topology (name/parent/role/kind, synced from the PLC)
     + live power from Timescale — same shape as the CM4's diagram(), so the
-    frontend renders it identically when the PLC is unreachable."""
+    frontend renders it identically when the PLC is unreachable.
+
+    Multi-CUPS F3: devuelve `roots` (UN árbol por cada role='main'); `root`
+    se mantiene como el primero por compatibilidad. Los huérfanos (sin parent
+    resoluble) cuelgan del root de SU instalación si es único, o del primero.
+    Con `sp` solo el árbol de ese punto."""
     ids = await _slugs_to_ids(slugs)
     if not ids:
         return {"status": "offline", "reason": "no_household"}
@@ -402,25 +450,27 @@ async def topology_from_sensors(slugs: Sequence[str]) -> Dict[str, Any]:
         nodes[nid] = {"key": nid, "name": name or nid, "kind": kind or "",
                       "role": role or "", "online": True,
                       "power": pmap.get((sk, ch)), "children": []}
-    root = None
-    for sk, ch, name, parent, role, kind in rows:
-        nid = f"{sk}/{ch}"
-        if role == "main":
-            root = nodes[nid]
+    roots = [nodes[f"{r[0]}/{r[1]}"] for r in rows if r[4] == "main"]
     for sk, ch, name, parent, role, kind in rows:
         nid = f"{sk}/{ch}"
         if role == "main":
             continue
         if parent and parent in nodes:
             nodes[parent]["children"].append(nodes[nid])
-        elif root is not None:
-            root["children"].append(nodes[nid])
+        elif roots:
+            roots[0]["children"].append(nodes[nid])
+    if sp is not None:
+        want = f"{sp['main_sensor_key']}/{sp['main_channel']}"
+        roots = [r for r in roots if r["key"] == want] or roots[:1]
     return {"status": "offline_fallback", "source": "persisted",
-            "root": root, "unplaced": [], "net": None, "ts": 0}
+            "root": roots[0] if roots else None, "roots": roots,
+            "unplaced": [], "net": None, "ts": 0}
 
 
 async def power_peak_hourly(slugs: Sequence[str], date: str,
-                            device: Optional[str] = None) -> List[Dict[str, Any]]:
+                            device: Optional[str] = None,
+                            sp: Optional[Dict[str, Any]] = None
+                            ) -> List[Dict[str, Any]]:
     """Peak instantaneous power (W) reached in each hour of one local day.
     Whole-house = MAX over the EM mains channels (the mains dominates, so its
     peak IS the household demand — no channel summing to avoid double-counting
@@ -442,7 +492,7 @@ async def power_peak_hourly(slugs: Sequence[str], date: str,
         where.append("device_id = %s")
         params.append(device)
     else:
-        house_sql, house_params = await _house_cond(ids)
+        house_sql, house_params = await _house_cond(ids, sp)
         where.append(house_sql)
         params += house_params
     sql = f"""
@@ -458,8 +508,10 @@ async def power_peak_hourly(slugs: Sequence[str], date: str,
             for r in rows if r[0].date().isoformat() == date]
 
 
-async def summary(slugs: Sequence[str]) -> Dict[str, Any]:
-    """kWh today / last 7 days / last 30 days (whole house).
+async def summary(slugs: Sequence[str],
+                  sp: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """kWh today / last 7 days / last 30 days (whole house, or one supply
+    point with `sp` — F3).
 
     Built on the HYBRID day series (energy_series): one 30-day query serves
     all three windows, day-buckets before the counter delta (reset-proof),
@@ -469,7 +521,7 @@ async def summary(slugs: Sequence[str]) -> Dict[str, Any]:
 
     today = _date.today()
     rows = await energy_series(slugs, (today - _td(days=30)).isoformat(),
-                               today.isoformat(), bucket="day")
+                               today.isoformat(), bucket="day", sp=sp)
     t_iso = today.isoformat()
     w_iso = (today - _td(days=7)).isoformat()
     out = {"today_kwh": 0.0, "week_kwh": 0.0, "month_kwh": 0.0}

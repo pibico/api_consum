@@ -12,7 +12,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.v1.dependencies.rbac import ConsumContext, consum_context
-from app.api.v1.endpoints.consumption import _slugs
+from app.api.v1.endpoints.consumption import _slugs, _sp
 from app.services import oe3
 
 router = APIRouter(prefix="/savings", tags=["savings"])
@@ -24,6 +24,7 @@ _TTL = 900  # 15 min
 @router.get("/insights")
 async def insights(customer: Optional[str] = Query(None),
                    device: Optional[str] = Query(None),
+                   supply: Optional[int] = Query(None),
                    refresh: bool = Query(False),
                    ctx: ConsumContext = Depends(consum_context)):
     """The three OE3 insights in one call: shift (real vs optimal cost),
@@ -32,18 +33,19 @@ async def insights(customer: Optional[str] = Query(None),
     slugs = await _slugs(ctx, customer)
     if not slugs:
         raise HTTPException(404, detail="no household in scope")
-    key = ("|".join(sorted(slugs)), device or "")
+    sp = await _sp(slugs, supply)
+    key = ("|".join(sorted(slugs)), device or "", supply or 0)
     now = time.time()
     hit = _cache.get(key)
     if hit and now < hit[0] and not refresh:
         return hit[1]
 
     shift, thermal, window, achieved, appliances = await asyncio.gather(
-        oe3.shift_analysis(slugs, device=device),
-        oe3.thermal_analysis(slugs, device=device),
+        oe3.shift_analysis(slugs, device=device, sp=sp),
+        oe3.thermal_analysis(slugs, device=device, sp=sp),
         oe3.green_window(),
-        oe3.achieved_savings(slugs, device=device),
-        oe3.appliance_costs(slugs),
+        oe3.achieved_savings(slugs, device=device, sp=sp),
+        oe3.appliance_costs(slugs, sp=sp),
     )
     out = {"shift": shift, "thermal": thermal, "window": window,
            "achieved": achieved, "appliances": appliances}

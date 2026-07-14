@@ -57,15 +57,16 @@ def _daily_hourly(rows: List[Dict[str, Any]]) -> Dict[str, Dict[int, float]]:
 
 
 async def shift_analysis(slugs: Sequence[str], device: Optional[str] = None,
-                         days: int = 30) -> Dict[str, Any]:
+                         days: int = 30, sp=None) -> Dict[str, Any]:
     end = date.today() - timedelta(days=1)          # complete days only
     start = end - timedelta(days=days - 1)
     rows = await consumption.energy_series(slugs, start.isoformat(),
                                            end.isoformat(), bucket="hour",
-                                           device=device)
+                                           device=device, sp=sp)
     from app.services import pricing
-    prices, _ = await pricing.hourly_price_map_for_slugs(slugs, start.isoformat(),
-                                                         end.isoformat())
+    prices, _ = await pricing.hourly_price_map_for_slugs(
+        slugs, start.isoformat(), end.isoformat(),
+        supply_point_id=(sp or {}).get("id"))
     per_day = _daily_hourly(rows)
 
     real_total = optimal_total = 0.0
@@ -142,12 +143,12 @@ def _ols3(X: List[List[float]], y: List[float]) -> Optional[List[float]]:
 
 
 async def thermal_analysis(slugs: Sequence[str], device: Optional[str] = None,
-                           days: int = 45) -> Dict[str, Any]:
+                           days: int = 45, sp=None) -> Dict[str, Any]:
     end = date.today() - timedelta(days=1)
     start = end - timedelta(days=days - 1)
     rows_task = consumption.energy_series(slugs, start.isoformat(),
                                           end.isoformat(), bucket="hour",
-                                          device=device)
+                                          device=device, sp=sp)
     dd_task = exo_client.degree_days(settings.DEFAULT_LAT, settings.DEFAULT_LON,
                                      start.isoformat(), end.isoformat())
     rows, dd = await asyncio.gather(rows_task, dd_task)
@@ -310,7 +311,7 @@ async def persist_insights(scope: str, shift: dict, thermal: dict, window: dict)
 
 
 async def achieved_savings(slugs: Sequence[str],
-                           device: Optional[str] = None) -> Dict[str, Any]:
+                           device: Optional[str] = None, sp=None) -> Dict[str, Any]:
     from app.services import pricing
 
     today = date.today()
@@ -320,9 +321,10 @@ async def achieved_savings(slugs: Sequence[str],
     end = today - timedelta(days=1)
     rows = await consumption.energy_series(slugs, start.isoformat(),
                                            end.isoformat(), bucket="hour",
-                                           device=device)
+                                           device=device, sp=sp)
     prices, source = await pricing.hourly_price_map_for_slugs(
-        slugs, start.isoformat(), end.isoformat())
+        slugs, start.isoformat(), end.isoformat(),
+        supply_point_id=(sp or {}).get("id"))
     real = kwh_tot = 0.0
     p1_prices: List[float] = []
     for r in rows:
@@ -362,12 +364,16 @@ async def achieved_savings(slugs: Sequence[str],
 # ---------------------------------------------------------------------------
 
 
-async def appliance_costs(slugs: Sequence[str]) -> Dict[str, Any]:
+async def appliance_costs(slugs: Sequence[str], sp=None) -> Dict[str, Any]:
     from app.core import db
 
     ids = await consumption._slugs_to_ids(slugs)
     if not ids:
         return {"status": "no_data", "items": []}
+    sp_keys = None
+    if sp is not None:
+        from app.services import supply_points as _sps
+        sp_keys = {d for d, _c in await _sps.subtree(sp)}
     today = date.today()
     start = today.replace(day=1)
     hours_elapsed = max(int((today - start).days) * 24, 1)
@@ -388,6 +394,8 @@ async def appliance_costs(slugs: Sequence[str]) -> Dict[str, Any]:
                 GROUP BY h.device_id ORDER BY kwh DESC
             """, (list(ids.values()), start.isoformat()))
             rows = await cur.fetchall()
+    if sp_keys is not None:
+        rows = [r for r in rows if r[0] in sp_keys]   # F3: solo el punto
     names = {d["id"]: d.get("name") or d["id"]
              for d in await consumption.sensor_devices(slugs)}
 

@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.api.v1.dependencies.rbac import (ConsumContext, consum_context,
                                           require_role, require_tier)
-from app.api.v1.endpoints.consumption import _slugs
+from app.api.v1.endpoints.consumption import _slugs, _sp
 from app.services import (ai_client, consumption, contracts, convert_client,
                           exo_client, pricing, tariff_catalog)
 from app.services.ai import registry
@@ -106,22 +106,34 @@ class ContractUpdate(ContractIn):
 
 @router.get("")
 async def list_contracts(customer: Optional[str] = Query(None),
+                         supply: Optional[int] = Query(None),
                          ctx: ConsumContext = Depends(consum_context)):
-    """All contracts (history included) in the caller's scope."""
+    """All contracts (history included) in the caller's scope. `supply`
+    (F3) filtra los del punto (los legados sin punto solo salen en Todos)."""
     slugs = await _slugs(ctx, customer)
-    return {"values": await contracts.list_for(slugs)}
+    values = await contracts.list_for(slugs)
+    sp = await _sp(slugs, supply)
+    if sp is not None:
+        values = [v for v in values if v.get("supply_point_id") == sp["id"]]
+    return {"values": values}
 
 
 @router.get("/active")
 async def active(customer: Optional[str] = Query(None),
                  date: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+                 supply: Optional[int] = Query(None),
                  ctx: ConsumContext = Depends(consum_context)):
     """The contract covering `date` (default today) + the current-hour price.
-    Feeds the Panel. Multi-household scopes → contract: null, fallback pvpc."""
+    Feeds the Panel. Multi-household scopes → contract: null, fallback pvpc.
+    `supply` (F3): el contrato de ESE punto (sin contrato → pvpc)."""
     slugs = await _slugs(ctx, customer)
     on = date or _date.today().isoformat()
-    cid, _ = await contracts.resolve_for_slugs(slugs, on, on)
-    contract = await contracts.get_active(cid, on) if cid else None
+    sp = await _sp(slugs, supply)
+    sp_id = (sp or {}).get("id")
+    cid, _ = await contracts.resolve_for_slugs(slugs, on, on, supply_point_id=sp_id)
+    contract = await contracts.get_active(cid, on, supply_point_id=sp_id) if cid else None
+    if sp is not None and contract is not None and contract.get("supply_point_id") != sp_id:
+        contract = None   # el fallback legado NULL no aplica: el punto no tiene contrato
     return {
         "contract": contract,
         "fallback": None if contract else "pvpc",

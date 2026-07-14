@@ -19,7 +19,7 @@ from pydantic import BaseModel, model_validator
 
 from app.api.v1.dependencies.rbac import (ConsumContext, consum_context,
                                           require_ai, require_role, require_tier)
-from app.api.v1.endpoints.consumption import _slugs
+from app.api.v1.endpoints.consumption import _slugs, _sp
 from app.services import contracts, invoices
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
@@ -54,21 +54,32 @@ class CloseIn(BaseModel):
 
 @router.get("")
 async def list_invoices(customer: Optional[str] = Query(None),
+                        supply: Optional[int] = Query(None),
                         ctx: ConsumContext = Depends(consum_context)):
-    """Invoices in the caller's scope (newest first, no breakdown blob)."""
+    """Invoices in the caller's scope (newest first, no breakdown blob).
+    `supply` (F3) filtra por el CUPS del punto; sin CUPS asignado devuelve
+    todas (no hay forma de atribuirlas todavía)."""
     slugs = await _slugs(ctx, customer)
-    return {"values": await invoices.list_for(slugs)}
+    sp = await _sp(slugs, supply)
+    if sp is not None and not sp.get("cups"):
+        # Punto sin CUPS asignado: NINGUNA factura es atribuible a él —
+        # devolver todas confundiría (visto en el piloto oficina 14-07).
+        return {"values": []}
+    return {"values": await invoices.list_for(slugs,
+                                              cups=(sp or {}).get("cups"))}
 
 
 @router.get("/billing-period")
 async def billing_period(customer: Optional[str] = Query(None),
+                         supply: Optional[int] = Query(None),
                          ctx: ConsumContext = Depends(require_tier("pro"))):
     """PRO — the OPEN billing period (anchored on the invoice history) costed
     live + projection to the expected close. The 'factura en curso' KPI."""
     slugs = await _slugs(ctx, customer, min_tier="pro")
     if not slugs:
         raise HTTPException(400, detail="no household in scope")
-    return await invoices.billing_period_live(slugs[0])
+    return await invoices.billing_period_live(slugs[0],
+                                              sp=await _sp(slugs, supply))
 
 
 class NextCloseIn(BaseModel):
@@ -197,6 +208,22 @@ async def void(invoice_id: int,
         raise HTTPException(404, detail="Factura no encontrada")
     await _check_invoice_scope(ctx, inv, min_role="admin")
     return await invoices.void(invoice_id, (ctx.user or {}).get("email"))
+
+
+@router.delete("/{invoice_id}")
+async def delete_uploaded(invoice_id: int,
+                          ctx: ConsumContext = Depends(consum_context)):
+    """Delete a WRONGLY UPLOADED bill (status='uploaded' only). Self-service,
+    symmetric with /upload: any household member can remove their own bad
+    upload; closed statements still go through /void (admin+)."""
+    if ctx.is_service and not ctx.is_superadmin:
+        raise HTTPException(403, detail="read-only service key")
+    inv = await invoices.get(invoice_id)
+    if not inv:
+        raise HTTPException(404, detail="Factura no encontrada")
+    await _check_invoice_scope(ctx, inv)
+    await invoices.delete_uploaded(invoice_id)
+    return {"status": "deleted", "id": invoice_id}
 
 
 @router.get("/{invoice_id}/pdf")

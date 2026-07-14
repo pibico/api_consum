@@ -44,19 +44,24 @@ async def devices(customer_slug: str) -> Optional[List[dict]]:
         return None
 
 
-async def topology(customer_slug: str) -> Optional[dict]:
-    """GET api_edge /topology?customer=<slug> — the CM4 wiring tree with live
-    watts. Returns the payload (may be {status:"offline"}) or None if api_edge
-    is unreachable. Short TTL since the watts are live."""
-    key = f"topology:{customer_slug}"
+async def topology(customer_slug: str,
+                   gateway: Optional[str] = None) -> Optional[dict]:
+    """GET api_edge /topology?customer=<slug>[&gateway=<hostname>] — the CM4
+    wiring tree with live watts; `gateway` picks ONE PLC when the customer
+    has several (multi-CUPS F3). Returns the payload (may be
+    {status:"offline"}) or None if api_edge is unreachable."""
+    key = f"topology:{customer_slug}:{gateway or ''}"
     now = time.time()
     hit = _cache.get(key)
     if hit and now < hit[0]:
         return hit[1]
     url = f"{settings.EDGE_BASE_URL.rstrip('/')}/api/v1/topology"
+    params = {"customer": customer_slug}
+    if gateway:
+        params["gateway"] = gateway
     try:
         client = http_client.get_client()
-        r = await client.get(url, params={"customer": customer_slug},
+        r = await client.get(url, params=params,
                              headers={"X-API-Key": settings.EDGE_API_KEY}, timeout=12.0)
         if r.status_code != 200:
             logger.warning("api_edge /topology?customer=%s -> %s", customer_slug, r.status_code)

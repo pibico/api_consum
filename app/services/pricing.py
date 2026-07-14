@@ -220,12 +220,15 @@ def hourly_rollup(pmap: dict) -> dict:
             for k, v in acc.items() if v["n"]}
 
 
-async def price_map_for_slugs(slugs: Sequence[str], start: str, end: str
+async def price_map_for_slugs(slugs: Sequence[str], start: str, end: str,
+                              supply_point_id: Optional[int] = None
                               ) -> Tuple[dict, str]:
     """(QUARTER price map, source label). Source label is the ACTIVE
     contract's type today-or-range-end (what the UI badges); 'pvpc' when no
-    contract applies."""
-    _, contract_list = await contracts_svc.resolve_for_slugs(slugs, start, end)
+    contract applies. `supply_point_id` (F3) cuesta con el contrato de ESE
+    punto (fallback: contrato legado sin punto)."""
+    _, contract_list = await contracts_svc.resolve_for_slugs(
+        slugs, start, end, supply_point_id)
     pmap = await price_map(contract_list, start, end)
     label = FALLBACK_SOURCE
     if contract_list:
@@ -234,11 +237,12 @@ async def price_map_for_slugs(slugs: Sequence[str], start: str, end: str
     return pmap, label
 
 
-async def hourly_price_map_for_slugs(slugs: Sequence[str], start: str, end: str
+async def hourly_price_map_for_slugs(slugs: Sequence[str], start: str, end: str,
+                                     supply_point_id: Optional[int] = None
                                      ) -> Tuple[dict, str]:
     """(HOURLY settlement price map, source label) — the drop-in for every
     billing-faithful consumer (month/bands/forecast/CSV/savings)."""
-    pmap, label = await price_map_for_slugs(slugs, start, end)
+    pmap, label = await price_map_for_slugs(slugs, start, end, supply_point_id)
     return hourly_rollup(pmap), label
 
 

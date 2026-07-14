@@ -66,7 +66,7 @@
 
   // Semáforo "ahora" — needs the live price/period (same source as Panel).
   function renderNow() {
-    App.apiFetch('/consumption/summary').then(function (r) {
+    App.apiFetch('/consumption/summary' + App.supplyQS().replace('&', '?')).then(function (r) { /* F3: punto de suministro */
       var period = r.price_period || r.pvpc_period;
       var price = r.price_now_eur_kwh != null ? r.price_now_eur_kwh : r.pvpc_now_eur_kwh;
       var LBL = { P1: ['CARA', '#e74c3c'], P2: ['NORMAL', '#f39c12'], P3: ['BARATA', '#2ecc71'] };
@@ -261,6 +261,7 @@
   // ── Load ─────────────────────────────────────────────────────────────
   function load() {
     var qs = device ? '?device=' + encodeURIComponent(device) : '';
+    qs += qs ? App.supplyQS() : App.supplyQS().replace('&', '?');
     return App.apiFetch('/savings/insights' + qs).then(function (r) {
       data = r;
       renderCards();
@@ -276,7 +277,7 @@
 
   function loadDevices() {
     // Real reporting sensors — not the gateway (see consumption.js).
-    return App.apiFetch('/consumption/sensors').then(function (r) {
+    return App.apiFetch('/consumption/sensors' + App.supplyQS().replace('&', '?')).then(function (r) {
       var sel = q('sav-device');
       var opts = ['<option value="">' + __t('cons.wholeHouse', 'Toda la casa') + '</option>'];
       (r.data || []).forEach(function (o) {

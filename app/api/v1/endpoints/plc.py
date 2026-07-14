@@ -25,7 +25,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
 from app.api.v1.dependencies.rbac import ConsumContext, consum_context, require_tier
-from app.api.v1.endpoints.consumption import _slugs
+from app.api.v1.endpoints.consumption import _slugs, _sp
 from app.services import consumption, edge_client
 
 router = APIRouter(prefix="/plc", tags=["plc"])
@@ -42,11 +42,15 @@ async def _tcp_open(port: int, timeout: float = 2.0) -> bool:
         return False
 
 
-async def _gateway(ctx: ConsumContext, customer: Optional[str]) -> Dict[str, Any]:
-    """The caller's gateway device row (one gateway per household)."""
+async def _gateway(ctx: ConsumContext, customer: Optional[str],
+                   hostname: Optional[str] = None) -> Dict[str, Any]:
+    """The caller's gateway device row. `hostname` (F3) elige UN PLC cuando el
+    hogar tiene varios — con el mismo slug, ?customer= no distingue."""
     slugs = await _slugs(ctx, customer, min_tier="pro")
     for d in await consumption.devices_for(slugs):
         if (d.get("device_type") or "gateway") == "gateway" and d.get("ssh_port"):
+            if hostname and d.get("hostname") != hostname:
+                continue
             return d
     raise HTTPException(404, detail="no gateway enrolled for this household")
 
@@ -67,19 +71,25 @@ async def _authorized_ports(ctx: ConsumContext) -> set[int]:
 
 @router.get("/session")
 async def session(customer: Optional[str] = Query(None),
+                  gateway: Optional[str] = Query(None, description="hostname del PLC (F3)"),
+                  supply: Optional[int] = Query(None),
                   ctx: ConsumContext = Depends(require_tier("pro"))):
     """Resolve the caller's PLC and make sure the proxy path is live.
     Returns the /plc/<port>/ URL for the page's iframe, plus the full
     gateway list (one PLC per household — a user with several households
     picks theirs in the page selector; `?customer=` selects one)."""
     slugs = await _slugs(ctx, None, min_tier="pro")
+    if supply and not gateway:
+        # Cascada F3: el punto de suministro global decide el PLC.
+        sp = await _sp(slugs, supply)
+        gateway = (sp or {}).get("gateway_hostname")
     gateways = [
         {"id": g["id"], "hostname": g["hostname"], "customer": g["customer"],
          "webui_port": _webui_port(int(g["ssh_port"]))}
         for g in await consumption.devices_for(slugs)
         if g.get("ssh_port") and (g.get("device_type") or "gateway") == "gateway"
     ]
-    d = await _gateway(ctx, customer)
+    d = await _gateway(ctx, customer, hostname=gateway)
     ssh_port = int(d["ssh_port"])
     port = _webui_port(ssh_port)
     online = await _tcp_open(ssh_port)
