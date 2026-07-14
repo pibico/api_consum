@@ -355,9 +355,23 @@
       .then(function () { renderTable(); renderCharts(); renderSummary(true); });
   }
 
-  // ── "Resumen entre fechas" — invoiced kWh + € summed over the invoices
-  // whose period overlaps the picked range (an invoice counts whole; the
-  // settlement is atomic). Pure client-side over the loaded list.
+  // ── "Resumen entre fechas" — invoiced kWh + € over the invoices whose
+  // period overlaps the picked range; partially-covered invoices are
+  // pro-rated by days. Pure client-side over the loaded list.
+  // User-picked dates WIN: once touched they survive list reloads (void/
+  // close/slow first load) and page reloads (sessionStorage per household);
+  // only switching household resets them to the full span.
+  var _sumTouched = false;
+  function _sumKey() { return 'iv.sumDates.' + (customer || ''); }
+  function sumDatesChanged() {
+    _sumTouched = true;
+    try {
+      sessionStorage.setItem(_sumKey(), JSON.stringify({
+        from: q('iv-sum-from').value, to: q('iv-sum-to').value,
+      }));
+    } catch (e) { /* storage full/blocked — keep going */ }
+    renderSummary();
+  }
   function renderSummary(resetDates) {
     var card = q('iv-sum-card');
     if (!card) return;
@@ -365,14 +379,21 @@
     if (!rows.length) { card.style.display = 'none'; return; }
     card.style.display = '';
     var fromEl = q('iv-sum-from'), toEl = q('iv-sum-to');
-    if (resetDates === true || !fromEl.value || !toEl.value) {
-      // Default to the loaded history's full span (rows come newest first).
-      var minS = rows[rows.length - 1].period_start, maxE = rows[0].period_end;
-      rows.forEach(function (iv) {
-        if (iv.period_start < minS) minS = iv.period_start;
-        if (iv.period_end > maxE) maxE = iv.period_end;
-      });
-      fromEl.value = minS; toEl.value = maxE;
+    if (!_sumTouched && (resetDates === true || !fromEl.value || !toEl.value)) {
+      var saved = null;
+      try { saved = JSON.parse(sessionStorage.getItem(_sumKey()) || 'null'); } catch (e) { /* ignore */ }
+      if (saved && saved.from && saved.to) {
+        fromEl.value = saved.from; toEl.value = saved.to;
+        _sumTouched = true;
+      } else {
+        // Default to the loaded history's full span (rows come newest first).
+        var minS = rows[rows.length - 1].period_start, maxE = rows[0].period_end;
+        rows.forEach(function (iv) {
+          if (iv.period_start < minS) minS = iv.period_start;
+          if (iv.period_end > maxE) maxE = iv.period_end;
+        });
+        fromEl.value = minS; toEl.value = maxE;
+      }
     }
     var from = fromEl.value, to = toEl.value;
     var sel = rows.filter(function (iv) {
@@ -382,8 +403,8 @@
     // covered fraction of the period scales its kWh and €.
     var kwh = 0, tot = 0, days = 0, costed = 0, partial = 0;
     sel.forEach(function (iv) {
-      var e = iv.energy_kwh != null ? iv.energy_kwh
-        : ((iv.energy_p1_kwh || 0) + (iv.energy_p2_kwh || 0) + (iv.energy_p3_kwh || 0));
+      var e = iv.energy_kwh ||
+        ((iv.energy_p1_kwh || 0) + (iv.energy_p2_kwh || 0) + (iv.energy_p3_kwh || 0));
       var invDays = daysBetween(iv.period_start, iv.period_end) || 1;
       var ovDays = daysBetween(iv.period_start > from ? iv.period_start : from,
                                iv.period_end < to ? iv.period_end : to);
@@ -1075,7 +1096,11 @@
   }
 
   window.IvPage = {
-    onCustomerChange: function () { customer = q('iv-customer').value || ''; loadAll(); loadTariffCard(); },
+    onCustomerChange: function () {
+      customer = q('iv-customer').value || '';
+      _sumTouched = false;   // new household → summary back to its full span (or its saved dates)
+      loadAll(); loadTariffCard();
+    },
     openForm: openForm, closeForm: closeForm, save: save,
     detail: detail, closeDetail: function () { AppUI.closePanel('invoiceDetail'); },
     pdf: pdf, void: voidInvoice, presetLastMonth: presetLastMonth,
@@ -1086,6 +1111,7 @@
     explain: explain, closeExplain: closeExplain, explainPdf: explainPdf,
     ask: ask, editBpEnd: editBpEnd, saveBpEnd: saveBpEnd, setRange: setRange,
     cost: cost, closeCost: closeCost, renderSummary: renderSummary,
+    sumDatesChanged: sumDatesChanged,
   };
 
   document.addEventListener('i18n:changed', renderTable);

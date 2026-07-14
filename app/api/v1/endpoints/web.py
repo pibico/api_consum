@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "91"  # 91: kpi-cols-* responsive (adios inline grids), legibilidad KPI movil, gutter 6px
+ASSET_VERSION = "93"  # 93: resumen entre fechas — fechas del usuario persisten (no las machaca loadAll/recarga)
 
 
 def render_template(template_name: str, **context) -> str:
