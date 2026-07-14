@@ -7,6 +7,7 @@ closing needs role editor+, void needs admin+, the PDF is a PRO feature.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections import OrderedDict
 from datetime import date as _date
 from typing import Optional
@@ -23,6 +24,7 @@ from app.api.v1.endpoints.consumption import _slugs, _sp
 from app.services import contracts, invoices
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
+logger = logging.getLogger(__name__)
 
 
 class _LRUCache(OrderedDict):
@@ -157,11 +159,27 @@ async def upload_invoice(
 
 
 async def _fill_band_kwh(invoice_id: int, markdown: str) -> None:
-    """Best-effort: AI amounts extraction → energy_p1/2/3_kwh columns."""
+    """Best-effort: AI amounts extraction → energy_p1/2/3_kwh columns.
+
+    Sanity guard: noisy bill OCR makes the LLM sometimes pick the € amount of
+    the 'X kWh x Y €/kWh' breakdown lines instead of X (seen live: 3.85/4.88/
+    0.84 stored as kWh). A Spanish domestic bill's all-in price sits well
+    inside 0.03–2.5 €/kWh — outside that, the "kWh" are almost certainly
+    euros, so store nothing (the list shows '—') rather than garbage."""
     try:
         from app.services.ai import registry
         got = await registry.get("invoice").extract_bill_amounts(markdown)
         if got and (got.kwh_horas_caras or got.kwh_horas_normales or got.kwh_horas_baratas):
+            total_kwh = ((got.kwh_horas_caras or 0) + (got.kwh_horas_normales or 0)
+                         + (got.kwh_horas_baratas or 0))
+            inv = await invoices.get(invoice_id)
+            total_eur = (inv or {}).get("total_eur")
+            if total_eur and total_kwh and not (0.03 <= float(total_eur) / total_kwh <= 2.5):
+                logger.warning("band kWh REJECTED for invoice %s: %.2f kWh vs %.2f EUR "
+                               "(%.2f EUR/kWh implausible — likely EUR-as-kWh mixup)",
+                               invoice_id, total_kwh, float(total_eur),
+                               float(total_eur) / total_kwh)
+                return
             await invoices.set_band_kwh(invoice_id, got.kwh_horas_caras,
                                         got.kwh_horas_normales, got.kwh_horas_baratas)
     except Exception:                                    # noqa: BLE001

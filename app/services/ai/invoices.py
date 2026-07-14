@@ -147,6 +147,12 @@ _AMOUNTS_SYSTEM = (
     "(columnas P1/P2/P3 o punta/llano/valle): P1/punta→kwh_horas_caras, "
     "P2/llano→kwh_horas_normales, P3/valle→kwh_horas_baratas — extráelos "
     "SIEMPRE que aparezcan, junto a sus precios €/kWh.\n"
+    "CUIDADO con el desglose 'X kWh x Y €/kWh': el kWh de la franja es X (el "
+    "número ANTES de 'kWh'), NUNCA el importe resultante en € (X·Y). Ejemplo: "
+    "'P1 (Punta): 46,00 kWh x 0,083647 €/kWh' → kwh_horas_caras=46.0 y "
+    "precio_horas_caras=0.083647 (no 3.85, que es el importe). Si la factura "
+    "declara el consumo total del periodo, la suma P1+P2+P3 debe aproximarse "
+    "a ese total — si no cuadra, revisa que no hayas cogido importes en €.\n"
     "Coma decimal → punto. null para lo que NO aparezca — no inventes NADA. "
     "Responde SOLO el objeto JSON."
 )
