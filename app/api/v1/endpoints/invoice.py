@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from collections import OrderedDict
 from datetime import date as _date
 from typing import Optional
@@ -16,7 +17,7 @@ import json
 
 from fastapi import (APIRouter, Depends, File, Form, HTTPException, Query,
                      UploadFile)
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from app.api.v1.dependencies.rbac import (ConsumContext, consum_context,
                                           require_ai, require_role, require_tier)
@@ -158,14 +159,37 @@ async def upload_invoice(
     return inv
 
 
-async def _fill_band_kwh(invoice_id: int, markdown: str) -> None:
-    """Best-effort: AI amounts extraction → energy_p1/2/3_kwh columns.
+_CONSUMOS_RE = re.compile(
+    r"consumos\s+han\s+sido\s+punta:\s*([\d.,]+)\s*kWh,\s*llano:\s*([\d.,]+)"
+    r"\s*kWh,\s*valle:\s*([\d.,]+)\s*kWh", re.IGNORECASE)
 
-    Sanity guard: noisy bill OCR makes the LLM sometimes pick the € amount of
-    the 'X kWh x Y €/kWh' breakdown lines instead of X (seen live: 3.85/4.88/
-    0.84 stored as kWh). A Spanish domestic bill's all-in price sits well
-    inside 0.03–2.5 €/kWh — outside that, the "kWh" are almost certainly
-    euros, so store nothing (the list shows '—') rather than garbage."""
+
+def _es_num(s: str) -> float:
+    return float(s.replace(".", "").replace(",", "."))
+
+
+async def _fill_band_kwh(invoice_id: int, markdown: str) -> None:
+    """Best-effort: band kWh (P1/P2/P3) → energy_p1/2/3_kwh columns.
+
+    Deterministic fast path FIRST: TotalEnergies (and others) print the split
+    literally — 'Los consumos han sido punta: X kWh, llano: Y kWh, valle: Z
+    kWh'. When that sentence exists, regex beats the LLM (seen live: the LLM
+    summing billed-line groups instead of the canonical split). Only without
+    it do we fall back to the AI amounts extraction.
+
+    Sanity guard (LLM path): noisy bill OCR makes the LLM sometimes pick the
+    € amount of the 'X kWh x Y €/kWh' breakdown lines instead of X (seen
+    live: 3.85/4.88/0.84 stored as kWh). A Spanish domestic bill's all-in
+    price sits well inside 0.03–2.5 €/kWh — outside that, the "kWh" are
+    almost certainly euros, so store nothing rather than garbage."""
+    m = _CONSUMOS_RE.search(markdown)
+    if m:
+        try:
+            await invoices.set_band_kwh(invoice_id, _es_num(m.group(1)),
+                                        _es_num(m.group(2)), _es_num(m.group(3)))
+            return
+        except Exception:                                # noqa: BLE001
+            pass                                         # fall through to the LLM
     try:
         from app.services.ai import registry
         got = await registry.get("invoice").extract_bill_amounts(markdown)
@@ -242,6 +266,40 @@ async def delete_uploaded(invoice_id: int,
     await _check_invoice_scope(ctx, inv)
     await invoices.delete_uploaded(invoice_id)
     return {"status": "deleted", "id": invoice_id}
+
+
+class UploadedPatch(BaseModel):
+    """Editable fields of an UPLOADED bill — for when OCR/AI couldn't read
+    them (old layouts without a text table). Whitelist only; the PDF and the
+    extraction blob stay untouched."""
+    total_eur: Optional[float] = Field(None, ge=0, lt=100000)
+    energy_p1_kwh: Optional[float] = Field(None, ge=0, lt=100000)
+    energy_p2_kwh: Optional[float] = Field(None, ge=0, lt=100000)
+    energy_p3_kwh: Optional[float] = Field(None, ge=0, lt=100000)
+    period_start: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    period_end: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    cups: Optional[str] = Field(None, max_length=22)
+
+
+@router.patch("/{invoice_id}")
+async def patch_uploaded(invoice_id: int, body: UploadedPatch,
+                         ctx: ConsumContext = Depends(consum_context)):
+    """Edit a bill the reader couldn't parse (status='uploaded' only).
+    Self-service, symmetric with /upload and DELETE: any household member
+    fixes their own document; closed statements are immutable (void+reclose)."""
+    if ctx.is_service and not ctx.is_superadmin:
+        raise HTTPException(403, detail="read-only service key")
+    inv = await invoices.get(invoice_id)
+    if not inv:
+        raise HTTPException(404, detail="Factura no encontrada")
+    await _check_invoice_scope(ctx, inv)
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not fields:
+        raise HTTPException(400, detail="nada que actualizar")
+    updated = await invoices.update_uploaded(invoice_id, fields)
+    if not updated:
+        raise HTTPException(409, detail="Solo se pueden editar facturas subidas")
+    return updated
 
 
 @router.get("/{invoice_id}/pdf")

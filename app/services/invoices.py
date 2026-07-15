@@ -15,6 +15,7 @@ invoices are voided, never deleted.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -78,7 +79,10 @@ async def list_for(slugs: Sequence[str],
         return []
     cond, params = "", [list(ids.values())]
     if cups:
-        cond = " AND cups = %s"
+        # CUPS español = 20 chars base + 2 opcionales (frontera/punto de
+        # medida): la misma instalación aparece como ...PK y ...PK0F según
+        # el documento — comparar SIEMPRE sobre la base de 20.
+        cond = " AND left(cups, 20) = left(%s, 20)"
         params.append(cups)
     async with db.raw_connection() as con:
         async with con.cursor() as cur:
@@ -262,6 +266,32 @@ async def void(invoice_id: int, voided_by: Optional[str]) -> Dict[str, Any]:
     return await get(invoice_id)
 
 
+_UPLOADED_PATCHABLE = {"total_eur", "energy_p1_kwh", "energy_p2_kwh",
+                       "energy_p3_kwh", "period_start", "period_end", "cups"}
+
+
+async def update_uploaded(invoice_id: int,
+                          fields: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Edit an UPLOADED bill's readable fields (OCR gaps: totals/bands/period/
+    cups). Whitelisted columns only; status='uploaded' only — closed
+    statements stay immutable. Returns the fresh row or None if not uploaded."""
+    cols = {k: v for k, v in fields.items() if k in _UPLOADED_PATCHABLE}
+    if not cols:
+        return None
+    sets = ", ".join(f"{k} = %s" for k in cols)
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                f"UPDATE consum.invoices SET {sets} "
+                "WHERE id = %s AND status = 'uploaded' RETURNING id",
+                [*cols.values(), invoice_id])
+            row = await cur.fetchone()
+        await con.commit()
+    if not row:
+        return None
+    return await get(invoice_id)
+
+
 async def delete_uploaded(invoice_id: int) -> None:
     """Hard-delete a WRONGLY UPLOADED retailer bill (status='uploaded' only —
     a bad upload is a file mistake, not an accounting record). Closed
@@ -310,6 +340,19 @@ async def store_uploaded(customer_slug: str, pdf_bytes: bytes, filename: str,
         start, end = end, start
     total = ex.get("total_eur")
     cups = ex.get("cups") if isinstance(ex.get("cups"), str) else None
+    # Deterministic fallbacks from the bill TEXT when the LLM missed them —
+    # TotalEnergies prints both literally ('IMPORTE TOTAL ... 264,91 €',
+    # 'CUPS: ES...'). Regex beats a null.
+    if markdown:
+        if not isinstance(total, (int, float)):
+            m = re.search(r"IMPORTE\s+TOTAL[^|\n]*?([\d.]+,\d{2})\s*€", markdown,
+                          re.IGNORECASE)
+            if m:
+                total = float(m.group(1).replace(".", "").replace(",", "."))
+        if not cups:
+            m = re.search(r"CUPS:\s*(ES[0-9A-Z]{18,20})", markdown)
+            if m:
+                cups = m.group(1)
     async with db.raw_connection() as con:
         async with con.cursor() as cur:
             await cur.execute(
@@ -458,7 +501,8 @@ async def billing_period_live(customer_slug: str,
         return out
     cups_cond, cups_params = "", []
     if sp is not None and sp.get("cups"):
-        cups_cond = " AND cups = %s"
+        # Base de 20 chars — ver list_for (ES...PK vs ES...PK0F son el mismo punto)
+        cups_cond = " AND left(cups, 20) = left(%s, 20)"
         cups_params = [sp["cups"]]
     async with db.raw_connection() as con:
         async with con.cursor() as cur:

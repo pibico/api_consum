@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "98"  # 98: fix /ai/narrative supply (NameError 500) + borrar facturas erróneas
+ASSET_VERSION = "103"  # 103: editar facturas subidas + rango 36m en gráficas + enlace editor avanzado
 
 
 def render_template(template_name: str, **context) -> str:

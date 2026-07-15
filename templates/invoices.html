@@ -74,6 +74,7 @@
       <button type="button" data-months="6"  onclick="IvPage.setRange(6)"  style="border:0;background:none;padding:3px 12px;font-size:0.75rem;cursor:pointer;">6 m</button>
       <button type="button" data-months="12" onclick="IvPage.setRange(12)" style="border:0;background:none;padding:3px 12px;font-size:0.75rem;cursor:pointer;">12 m</button>
       <button type="button" data-months="24" onclick="IvPage.setRange(24)" style="border:0;background:none;padding:3px 12px;font-size:0.75rem;cursor:pointer;">24 m</button>
+      <button type="button" data-months="36" onclick="IvPage.setRange(36)" style="border:0;background:none;padding:3px 12px;font-size:0.75rem;cursor:pointer;">36 m</button>
     </div>
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;">
@@ -119,6 +120,37 @@
 
 <!-- Fix-your-tariff panel: the plain-language essentials (no jargon, no page
      navigation — pibiCo rule). Full editor stays a small operator link. -->
+<!-- Editar factura subida — campos que el lector no pudo sacar del PDF -->
+<aside class="slide-panel" id="invoiceEditPanel" aria-hidden="true">
+  <div class="slide-panel-header">
+    <h2 data-i18n="inv.editTitle">Editar factura subida</h2>
+    <button type="button" class="panel-close" onclick="IvPage.closeEdit()" aria-label="Cerrar">&times;</button>
+  </div>
+  <div class="slide-panel-body" style="padding:16px 20px;overflow-y:auto;display:flex;flex-direction:column;gap:12px;font-size:0.85rem;">
+    <p class="text-muted" style="margin:0;font-size:0.78rem;" data-i18n="inv.editHint">Corrige lo que el lector no pudo sacar del PDF: importe, consumos por franja, periodo o CUPS. El documento no cambia.</p>
+    <div style="display:flex;gap:10px;">
+      <div style="flex:1;"><label style="font-weight:600;" data-i18n="inv.editStart">Inicio</label>
+        <input class="pibico-input" type="date" id="iv-ed-start"></div>
+      <div style="flex:1;"><label style="font-weight:600;" data-i18n="inv.editEnd">Fin</label>
+        <input class="pibico-input" type="date" id="iv-ed-end"></div>
+    </div>
+    <div><label style="font-weight:600;" data-i18n="inv.editTotal">Importe total (€, con impuestos)</label>
+      <input class="pibico-input" type="number" step="0.01" min="0" id="iv-ed-total"></div>
+    <div>
+      <label style="font-weight:600;" data-i18n="inv.editBands">Consumo por franjas (kWh)</label>
+      <div style="display:flex;gap:10px;">
+        <input class="pibico-input" type="number" step="0.01" min="0" id="iv-ed-p1" placeholder="P1 caras" title="P1 (punta)">
+        <input class="pibico-input" type="number" step="0.01" min="0" id="iv-ed-p2" placeholder="P2 normales" title="P2 (llano)">
+        <input class="pibico-input" type="number" step="0.01" min="0" id="iv-ed-p3" placeholder="P3 baratas" title="P3 (valle)">
+      </div>
+    </div>
+    <div><label style="font-weight:600;">CUPS</label>
+      <input class="pibico-input" id="iv-ed-cups" maxlength="22" style="font-family:monospace;"></div>
+    <div id="iv-ed-status" style="font-size:0.8rem;"></div>
+    <button class="btn btn-primary" id="iv-ed-save" onclick="IvPage.saveEdit()" data-i18n="inv.editSave">Guardar cambios</button>
+  </div>
+</aside>
+
 <aside class="slide-panel" id="tariffFixPanel" aria-hidden="true">
   <div class="slide-panel-header">
     <h2 data-i18n="inv.fixTitle">Corregir tu tarifa</h2>

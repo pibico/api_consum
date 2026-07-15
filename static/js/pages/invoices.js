@@ -102,10 +102,12 @@
         ? '<button class="btn btn-sm pnl-day-btn" onclick="IvPage.explain(' + iv.id + ')" data-i18n="inv.explainBtn">Explicar</button> '
         : '';
       if (uploaded) {
-        // The user's own document — always downloadable, no PRO gate; and
-        // deletable (a bad upload is a file mistake, not an accounting record).
+        // The user's own document — always downloadable, no PRO gate;
+        // editable (OCR gaps: totals/bands/period) and deletable (a bad
+        // upload is a file mistake, not an accounting record).
         actions = explainBtn +
           '<button class="btn btn-sm pnl-day-btn" onclick="IvPage.file(' + iv.id + ')">PDF</button>' +
+          ' <button class="btn btn-sm pnl-day-btn" onclick="IvPage.edit(' + iv.id + ')" data-i18n="inv.editBtn">Editar</button>' +
           ' <button class="btn btn-sm btn-danger" onclick="IvPage.remove(' + iv.id + ')" data-i18n="inv.deleteBtn">Eliminar</button>';
       } else {
         actions = explainBtn +
@@ -459,7 +461,7 @@
 
   // ── Per-invoice charts (above the table): kWh/day and band split ─────────
   var _ivCharts = {};
-  var _ivRange = 12;   // months back shown in the charts (6/12/24 selector)
+  var _ivRange = 12;   // months back shown in the charts (6/12/24/36 selector)
   function _chart(id) {
     var el = q(id);
     if (!el || typeof echarts === 'undefined') return null;
@@ -706,7 +708,10 @@
       if (!el) return;
       if (!activeContract) {
         el.innerHTML = '<span class="text-muted">' + __t('inv.noTariff',
-          'Aún no sabemos tu tarifa. Sube tu última factura y lo configuramos por ti — tus números en € pasarán a ser los de verdad.') + '</span>';
+          'Aún no sabemos tu tarifa. Sube tu última factura y lo configuramos por ti — tus números en € pasarán a ser los de verdad.') + '</span>' +
+          ' <a href="' + (window.__ROOT__ || '') + '/app/contract"' +
+          ' style="font-size:0.76rem;color:#2c5171;text-decoration:underline;white-space:nowrap;"' +
+          ' data-i18n="inv.advancedLink">' + __t('inv.advancedLink', 'Corregir (avanzado)') + '</a>';
         return;
       }
       var c = activeContract;
@@ -721,7 +726,12 @@
       var now = pn.price_eur_kwh != null
         ? ' · ' + __t('inv.tfNow', 'ahora mismo') + ' <b>' + pn.price_eur_kwh.toFixed(4).replace('.', ',') + ' €/kWh</b>'
         : '';
-      el.innerHTML = '<div style="font-size:0.9rem;">' + bits.join(' · ') + now + '</div>';
+      // The advanced/operator editor (/app/contract) left the nav on purpose
+      // (2026-07-12) — this discreet link is its ONLY entry point in the UI.
+      var advanced = ' &nbsp;<a href="' + (window.__ROOT__ || '') + '/app/contract"' +
+        ' style="font-size:0.76rem;color:#2c5171;text-decoration:underline;white-space:nowrap;"' +
+        ' data-i18n="inv.advancedLink">' + __t('inv.advancedLink', 'Corregir (avanzado)') + '</a>';
+      el.innerHTML = '<div style="font-size:0.9rem;">' + bits.join(' · ') + now + advanced + '</div>';
     }).catch(function () {
       var el = q('iv-tariff-body');
       if (el) el.innerHTML = '<span class="text-muted">—</span>';
@@ -862,8 +872,13 @@
       p.energy_p2_eur_kwh = ex.energy_p2_eur_kwh != null ? ex.energy_p2_eur_kwh : cat.energy_p2_eur_kwh;
       p.energy_p3_eur_kwh = ex.energy_p3_eur_kwh != null ? ex.energy_p3_eur_kwh : cat.energy_p3_eur_kwh;
       if (p.energy_p1_eur_kwh == null) {
-        setUpStatus('iv-up-save-status', __t('inv.errNoPrice',
-          'No pudimos leer tu precio en el documento — usa el editor avanzado.'), 'err');
+        // "Editor avanzado" = la página Contrato — enlaza, no lo menciones a secas.
+        var st = q('iv-up-save-status');
+        st.innerHTML = __t('inv.errNoPrice',
+          'No pudimos leer tu precio en el documento — usa el editor avanzado.') +
+          ' <a href="' + (window.__ROOT__ || '') + '/app/contract" style="color:#2c5171;text-decoration:underline;">' +
+          __t('inv.advancedLink', 'Corregir (avanzado)') + '</a>';
+        st.style.color = '#c0392b';
         return;
       }
     } else if (chosenType === 'indexed') {
@@ -1120,6 +1135,57 @@
       .finally(function () { btn.disabled = false; });
   }
 
+  // ── Edit an uploaded bill (OCR gaps: total/bands/period/cups) ────────────
+  var _editId = null;
+  function openEdit(id) {
+    var iv = (list || []).filter(function (x) { return x.id === id; })[0];
+    if (!iv) return;
+    _editId = id;
+    q('iv-ed-start').value = iv.period_start || '';
+    q('iv-ed-end').value = iv.period_end || '';
+    q('iv-ed-total').value = iv.total_eur != null && +iv.total_eur !== 0 ? iv.total_eur : '';
+    q('iv-ed-p1').value = iv.energy_p1_kwh != null ? iv.energy_p1_kwh : '';
+    q('iv-ed-p2').value = iv.energy_p2_kwh != null ? iv.energy_p2_kwh : '';
+    q('iv-ed-p3').value = iv.energy_p3_kwh != null ? iv.energy_p3_kwh : '';
+    q('iv-ed-cups').value = iv.cups || '';
+    q('iv-ed-status').textContent = '';
+    AppUI.openPanel('invoiceEditPanel');
+  }
+  function saveEdit() {
+    if (_editId == null) return;
+    function numOrNull(id) {
+      var v = q(id).value;
+      return v === '' ? null : +v;
+    }
+    var body = {
+      period_start: q('iv-ed-start').value || null,
+      period_end: q('iv-ed-end').value || null,
+      total_eur: numOrNull('iv-ed-total'),
+      energy_p1_kwh: numOrNull('iv-ed-p1'),
+      energy_p2_kwh: numOrNull('iv-ed-p2'),
+      energy_p3_kwh: numOrNull('iv-ed-p3'),
+      cups: (q('iv-ed-cups').value || '').trim().toUpperCase() || null,
+    };
+    Object.keys(body).forEach(function (k) { if (body[k] == null) delete body[k]; });
+    if (body.period_start && body.period_end && body.period_end < body.period_start) {
+      q('iv-ed-status').textContent = __t('inv.errDates', 'Indica ambas fechas.');
+      q('iv-ed-status').style.color = '#c0392b';
+      return;
+    }
+    q('iv-ed-save').disabled = true;
+    cfetch('/invoices/' + _editId, { method: 'PATCH', body: JSON.stringify(body) })
+      .then(function () {
+        AppUI.closePanel('invoiceEditPanel');
+        App.showNotification(__t('inv.editSaved', 'Factura corregida'), '', 'success');
+        loadAll();
+      })
+      .catch(function (e) {
+        q('iv-ed-status').textContent = e.message;
+        q('iv-ed-status').style.color = '#c0392b';
+      })
+      .finally(function () { q('iv-ed-save').disabled = false; });
+  }
+
   window.IvPage = {
     onCustomerChange: function () {
       customer = q('iv-customer').value || '';
@@ -1137,6 +1203,8 @@
     ask: ask, editBpEnd: editBpEnd, saveBpEnd: saveBpEnd, setRange: setRange,
     cost: cost, closeCost: closeCost, renderSummary: renderSummary,
     sumDatesChanged: sumDatesChanged,
+    edit: openEdit, closeEdit: function () { AppUI.closePanel('invoiceEditPanel'); },
+    saveEdit: saveEdit,
   };
 
   document.addEventListener('i18n:changed', renderTable);

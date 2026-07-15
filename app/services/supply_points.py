@@ -171,7 +171,10 @@ async def bind_contract_cups(customer_id: str, cups: Optional[str]
                 (str(customer_id),),
             )
             pts = await cur.fetchall()
-            match = [p for p in pts if (p[1] or "").strip().upper() == cups]
+            # Base de 20 chars: ES...PK y ES...PK0F son la MISMA instalación
+            # (los 2 últimos chars del CUPS son opcionales)
+            match = [p for p in pts
+                     if (p[1] or "").strip().upper()[:20] == cups[:20]]
             if match:
                 return match[0][0]
             empty = [p for p in pts if not p[1]]
