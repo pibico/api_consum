@@ -147,11 +147,22 @@ async def _ecoflow_rules_for(ctx: ConsumContext, slugs: list[str]) -> list[dict]
 
 
 @router.get("/ecoflow")
-async def ecoflow(ctx: ConsumContext = Depends(require_tier("pro"))):
+async def ecoflow(gateway: Optional[str] = Query(None),
+                  supply: Optional[int] = Query(None),
+                  ctx: ConsumContext = Depends(require_tier("pro"))):
     """EcoFlow card payload: devices + rules + recent decisions. Empty when
-    the caller's households own no EcoFlow rule (feature not contracted)."""
+    the caller's households own no EcoFlow rule (feature not contracted).
+    Scoped to ONE PLC: the units live at a site — a rule tagged with
+    params.gateway_hostname only shows on that PLC (rules without the tag
+    show everywhere, legacy)."""
     slugs = await _slugs(ctx, None, min_tier="pro")
+    if supply and not gateway:
+        sp = await _sp(slugs, supply)
+        gateway = (sp or {}).get("gateway_hostname")
     rules = await _ecoflow_rules_for(ctx, slugs)
+    if gateway:
+        rules = [r for r in rules
+                 if (r.get("params") or {}).get("gateway_hostname") in (None, gateway)]
     if not rules:
         return {"devices": [], "rules": [], "log": []}
     devs = await exo_client.ecoflow_devices() or {}

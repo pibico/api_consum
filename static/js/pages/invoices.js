@@ -772,7 +772,13 @@
     if (slug) fd.append('customer', slug);
     upfetch('/invoices/upload', fd).then(function () {
       loadAll();   // the bill appears in the list right away
-    }).catch(function () { /* archiving is best-effort — tariff flow continues */ });
+    }).catch(function (e) {
+      // Duplicado (409): avisa sin romper el flujo de tarifa; el resto de
+      // fallos de archivado siguen siendo best-effort silencioso.
+      if (/ya está subida/i.test(e.message || '')) {
+        App.showNotification(__t('inv.dupTitle', 'Factura repetida'), e.message, 'warning');
+      }
+    });
   }
 
   function readInvoice() {

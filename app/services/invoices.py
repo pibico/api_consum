@@ -334,8 +334,9 @@ async def store_uploaded(customer_slug: str, pdf_bytes: bytes, filename: str,
         return None
 
     today = date.today().isoformat()
-    start = _d("billing_period_start") or today
-    end = _d("billing_period_end") or start
+    ex_start, ex_end = _d("billing_period_start"), _d("billing_period_end")
+    start = ex_start or today
+    end = ex_end or start
     if end < start:
         start, end = end, start
     total = ex.get("total_eur")
@@ -353,6 +354,32 @@ async def store_uploaded(customer_slug: str, pdf_bytes: bytes, filename: str,
             m = re.search(r"CUPS:\s*(ES[0-9A-Z]{18,20})", markdown)
             if m:
                 cups = m.group(1)
+
+    # Duplicados: (1) mismo FICHERO (md5 del PDF, nativo en Postgres) para
+    # cualquier factura del hogar; (2) misma factura por CONTENIDO — mismo
+    # CUPS (base 20) y mismo periodo extraído entre las subidas (una foto y
+    # un PDF del mismo recibo no comparten bytes, pero sí periodo+CUPS).
+    import hashlib
+    pdf_md5 = hashlib.md5(pdf_bytes).hexdigest()
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                "SELECT id FROM consum.invoices "
+                "WHERE customer_id = %s AND md5(pdf) = %s LIMIT 1",
+                (cid, pdf_md5))
+            dup = await cur.fetchone()
+            if not dup and cups and ex_start and ex_end:
+                await cur.execute(
+                    "SELECT id FROM consum.invoices "
+                    "WHERE customer_id = %s AND status = 'uploaded' "
+                    "AND left(cups, 20) = left(%s, 20) "
+                    "AND period_start = %s AND period_end = %s LIMIT 1",
+                    (cid, cups, ex_start, ex_end))
+                dup = await cur.fetchone()
+    if dup:
+        raise HTTPException(
+            409, detail=f"Esta factura ya está subida (nº {dup[0]}) — no se ha duplicado.")
+
     async with db.raw_connection() as con:
         async with con.cursor() as cur:
             await cur.execute(

@@ -86,6 +86,12 @@
       </ul>
       <p>Las tarjetas del <b>periodo en curso</b> muestran lo que llevas acumulado (con sus franjas), y el <b>estimado a cierre</b>. Con el <b>lápiz</b> puedes fijar tu día de lectura para que el cierre sea exacto. Las gráficas de arriba comparan tus periodos: <b>kWh por día</b> y <b>franjas</b> de cada factura.</p>
       <p><b>«Cerrar periodo»</b> genera tu propia factura con lo que midió tu caja — para contrastarla con la de tu compañía cuando llegue.</p>
+      <ul>
+        <li>Si subes <b>la misma factura dos veces</b>, el sistema lo detecta (mismo documento o mismo CUPS y periodo) y no la duplica.</li>
+        <li>¿El lector no pudo sacar el importe o las franjas de un PDF antiguo? Pulsa <b>«Editar»</b> en esa factura y complétalo a mano — o bórrala con <b>«Eliminar»</b> y súbela de nuevo con la casilla de <b>visión</b> marcada.</li>
+        <li>Las gráficas comparan hasta <b>36 meses</b> de periodos (selector 6/12/24/36 m) — sube tu histórico y verás la evolución completa.</li>
+        <li>El enlace <b>«Corregir (avanzado)»</b> de la tarjeta Tu tarifa abre el editor completo del contrato, para afinar precios a mano.</li>
+      </ul>
       <figure class="guia-fig">
         <img src="{{ root }}/static/images/guia/03-facturas.png" alt="La página Facturas">
         <figcaption>Facturas: tu tarifa en llano, el periodo en curso con estimado, las gráficas por periodo y la lista con CUPS y franjas.</figcaption>
@@ -133,6 +139,8 @@
         <li>En <b>Sensores</b> puedes renombrar aparatos y fijar su <b>rango de pico</b> (mín/máx W) para afinar el etiquetado automático.</li>
         <li>En <b>Cableado</b> está el plano de tu casa: arrastra las habitaciones con el asa ⠿ y colócalo a tu gusto.</li>
         <li>En <b>Eventos ⚡</b> puedes corregir a qué aparato pertenece un consumo — cada corrección enseña a la caja.</li>
+        <li>En <b>Hogar</b> puedes fijar la <b>ubicación de la instalación</b> (con tu posición 📍 o eligiendo en el mapa 🗺) y el <b>CUPS</b> del suministro — alimentan el tiempo, el sol y la información del equipo.</li>
+        <li>Si tu instalación tiene <b>baterías EcoFlow</b>, arriba aparece un botón con su % de carga: ábrelo para ver el estado de cada equipo y la <b>regla de carga automática</b> (carga en horas baratas y corta al llegar al máximo). Solo se muestra en el PLC donde viven los equipos.</li>
       </ul>
       <figure class="guia-fig">
         <img src="{{ root }}/static/images/guia/07-plc.png" alt="El mini-panel del PLC">
@@ -207,6 +215,12 @@
       </ul>
       <p>The <b>current period</b> cards show what you have accrued (with its bands) and the <b>projection at close</b>. The <b>pencil</b> lets you set your meter-reading day so the close is exact. The charts above compare your periods: <b>kWh per day</b> and <b>bands</b> of each bill.</p>
       <p><b>“Close period”</b> generates your own invoice from what your box measured — to check against your retailer's bill when it arrives.</p>
+      <ul>
+        <li>If you upload <b>the same bill twice</b>, the system detects it (same document, or same CUPS and period) and won't duplicate it.</li>
+        <li>Couldn't the reader pull the total or the bands from an old PDF? Press <b>“Edit”</b> on that bill and fill them in — or <b>“Delete”</b> it and re-upload with the <b>vision</b> checkbox on.</li>
+        <li>The charts compare up to <b>36 months</b> of periods (6/12/24/36 m selector) — upload your history and see the full picture.</li>
+        <li>The <b>“Fix (advanced)”</b> link on the Your-tariff card opens the full contract editor for manual fine-tuning.</li>
+      </ul>
       <figure class="guia-fig">
         <img src="{{ root }}/static/images/guia/03-facturas-en.png" alt="The Invoices page">
         <figcaption>Invoices: your tariff in plain words, the current period with its projection, per-period charts and the list with CUPS and bands.</figcaption>
@@ -254,6 +268,8 @@
         <li>In <b>Sensors</b> you can rename appliances and set their <b>spike range</b> (min/max W) to sharpen auto-tagging.</li>
         <li>In <b>Wiring</b> lives your floor plan: drag rooms with the ⠿ handle and lay it out your way.</li>
         <li>In <b>Events ⚡</b> you can correct which appliance a consumption belongs to — every correction teaches the box.</li>
+        <li>In <b>Household</b> you can set the site's <b>location</b> (your position 📍 or picking on the map 🗺) and the supply's <b>CUPS</b> — they feed weather, solar and the device info.</li>
+        <li>If your site has <b>EcoFlow batteries</b>, a button with their charge % appears at the top: open it for each unit's status and the <b>automatic charge rule</b> (charges in cheap hours, stops at the max). It only shows on the PLC where the units live.</li>
       </ul>
       <figure class="guia-fig">
         <img src="{{ root }}/static/images/guia/07-plc-en.png" alt="The PLC mini-panel">

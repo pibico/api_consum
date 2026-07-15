@@ -61,6 +61,10 @@
     if (gateway && !hasSupply) parts.push('gateway=' + encodeURIComponent(gateway));
     if (hasSupply) parts.push('supply=' + encodeURIComponent(supplyId));
     cfetch('/plc/session' + (parts.length ? '?' + parts.join('&') : '')).then(function (r) {
+      // EcoFlow escopado al PLC resuelto (los equipos viven en UN sitio) —
+      // refrescar SIEMPRE tras conocer la pasarela, también al cambiarla.
+      efGateway = r.hostname || '';
+      efRefresh();
       // Multi-PLC: selector propio solo cuando hay >1 Y no hay punto global
       var gws = (r && r.gateways) || [];
       var sel = q('plc-select');
@@ -178,15 +182,6 @@
       '</div>';
   }
 
-  function efPlugRow(plug) {
-    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;margin-bottom:6px;border-radius:8px;background:rgba(44,81,113,0.06);">' +
-      '<span style="font-size:0.82rem;">' + efDot(true) + esc(plug.name || plug.sensor_key) + '</span>' +
-      '<span style="display:flex;gap:6px;">' +
-      '<button class="btn btn-sm" onclick="EcoflowPanel.plug(\'' + esc(plug.sensor_key) + '\', true)">ON</button>' +
-      '<button class="btn btn-sm" onclick="EcoflowPanel.plug(\'' + esc(plug.sensor_key) + '\', false)">OFF</button>' +
-      '</span></div>';
-  }
-
   function efLog(entries) {
     if (!entries || !entries.length) return '';
     var items = entries.slice(0, 6).map(function (e) {
@@ -203,28 +198,27 @@
     if (!body || !efData) return;
     var html = '';
     (efData.devices || []).forEach(function (d) { html += efDeviceCard(d); });
-    var plugs = [];
-    (efData.rules || []).forEach(function (r) {
-      html += efRuleBlock(r);
-      ((r.params || {}).plugs || []).forEach(function (pl) { plugs.push(pl); });
-    });
-    if (plugs.length) {
-      html += '<div style="font-size:0.74rem;font-weight:600;margin:6px 0 4px;" data-i18n="ecoflow.plugsTitle">Enchufes</div>' +
-        plugs.map(efPlugRow).join('');
-    }
+    // Solo info de EcoFlow (decisión 15-07): los enchufes ya se manejan en
+    // Cableado — aquí solo equipos + regla de carga + decisiones.
+    (efData.rules || []).forEach(function (r) { html += efRuleBlock(r); });
     html += efLog(efData.log);
     if (!html) html = '<span class="text-muted" style="font-size:0.8rem;" data-i18n="ecoflow.none">Sin equipos EcoFlow en este hogar.</span>';
     body.innerHTML = html;
     if (window.i18n && i18n.apply) i18n.apply(body);
   }
 
+  var efGateway = '';   // PLC resuelto por /plc/session — escopa el EcoFlow
+
   function efRefresh() {
-    return cfetch('/plc/ecoflow').then(function (r) {
+    return cfetch('/plc/ecoflow' + (efGateway ? '?gateway=' + encodeURIComponent(efGateway) : '')).then(function (r) {
       efData = r || {};
       var devs = efData.devices || [];
       var btn = q('plc-ecoflow-btn');
       if (btn) {
         btn.style.display = devs.length ? 'inline-flex' : 'none';
+        // The button lives inside the centered floating cluster (top-right
+        // would cover the embedded webui's own header buttons).
+        if (devs.length) q('plc-controls').style.display = 'flex';
         var main = devs.filter(function (d) { return d.model === 'delta3plus'; })[0] || devs[0];
         var soc = main && main.snapshot ? (main.snapshot.cms_batt_soc != null ? main.snapshot.cms_batt_soc : main.snapshot.bms_batt_soc) : null;
         q('plc-ecoflow-soc').textContent = soc != null ? Math.round(soc) + '%' : '';
@@ -243,14 +237,6 @@
     close: function () {
       if (window.AppUI && AppUI.closePanel) AppUI.closePanel('ecoflowPanel');
       clearInterval(efTimer);
-    },
-    plug: function (sensorKey, on) {
-      cfetch('/plc/shelly/' + encodeURIComponent(sensorKey) + '/switch',
-        { method: 'POST', body: JSON.stringify({ on: on }) })
-        .then(function () {
-          App.showNotification(__t('ecoflow.sent', 'Orden enviada'), '', 'success');
-        })
-        .catch(function (e) { App.showNotification(__t('common.error', 'Error'), e.message, 'danger'); });
     },
     saveRule: function (ruleId) {
       var body = {
@@ -278,8 +264,7 @@
   document.addEventListener('DOMContentLoaded', function () {
     window.onAppReady(function () {
       q('plc-reload').onclick = load;
-      load();
-      efRefresh();
+      load();   // efRefresh se dispara al resolverse /plc/session (escopado por PLC)
     });
   });
 })();
