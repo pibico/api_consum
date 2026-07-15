@@ -87,3 +87,23 @@ async def webui_ensure(webui_port: int) -> bool:
     except httpx.RequestError as e:
         logger.error("api_edge webui/ensure unreachable: %s", e)
         return False
+
+
+async def shelly_switch(customer_slug: str, sensor_key: str, on: bool) -> Optional[dict]:
+    """POST api_edge /mqtt/sensors/{key}/switch — Switch.Set over MQTT.
+    Admin service key, server-side only; tenancy re-checked by api_edge."""
+    url = f"{settings.EDGE_BASE_URL.rstrip('/')}/api/v1/mqtt/sensors/{sensor_key}/switch"
+    try:
+        client = http_client.get_client()
+        r = await client.post(url, params={"customer": customer_slug},
+                              json={"on": bool(on)},
+                              headers={"X-API-Key": settings.EDGE_API_KEY},
+                              timeout=10.0)
+        if r.status_code != 200:
+            logger.warning("api_edge switch %s -> %s: %s", sensor_key,
+                           r.status_code, r.text[:200])
+            return None
+        return r.json()
+    except httpx.RequestError as e:
+        logger.error("api_edge switch unreachable: %s", e)
+        return None

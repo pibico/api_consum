@@ -201,3 +201,37 @@ async def tariff_schedule_week(day: str) -> Optional[dict]:
     return await _get(
         f"/tariffs/schedule/week?start_date={day}&access_tariff=2.0TD", ttl=86400
     )
+
+
+# ── EcoFlow connector (read: service key; rule writes: admin key) ──
+
+async def ecoflow_devices() -> Optional[dict]:
+    """Registry + latest snapshots of the org's EcoFlow units (short cache —
+    live SoC/W)."""
+    return await _get("/ecoflow/devices", ttl=8)
+
+
+async def ecoflow_rules() -> Optional[dict]:
+    return await _get("/ecoflow/rules", ttl=8)
+
+
+async def ecoflow_rule_log(hours: int = 48) -> Optional[dict]:
+    return await _get(f"/ecoflow/rules/log?hours={hours}", ttl=15)
+
+
+async def ecoflow_rule_update(rule_id: int, payload: dict) -> Optional[dict]:
+    """PUT /ecoflow/rules/{id} — api_exo requires admin (EXO_ADMIN_API_KEY)."""
+    url = f"{settings.EXO_BASE_URL.rstrip('/')}/api/v1/ecoflow/rules/{rule_id}"
+    try:
+        client = http_client.get_client()
+        r = await client.put(url, json=payload, timeout=15.0,
+                             headers={"X-API-Key": settings.EXO_ADMIN_API_KEY})
+        if r.status_code != 200:
+            logger.warning("api_exo PUT /ecoflow/rules/%s -> %s", rule_id, r.status_code)
+            return None
+        # rule state changed → drop cached reads
+        _cache.pop("/ecoflow/rules", None)
+        return r.json()
+    except httpx.RequestError as e:
+        logger.error("api_exo unreachable (ecoflow rule update): %s", e)
+        return None

@@ -23,10 +23,11 @@ import logging
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from app.api.v1.dependencies.rbac import ConsumContext, consum_context, require_tier
 from app.api.v1.endpoints.consumption import _slugs, _sp
-from app.services import consumption, edge_client
+from app.services import consumption, edge_client, exo_client
 
 router = APIRouter(prefix="/plc", tags=["plc"])
 logger = logging.getLogger("consum.plc")
@@ -126,3 +127,104 @@ async def ensure(x_webui_port: int = Header(...),
     if not await edge_client.webui_ensure(x_webui_port):
         raise HTTPException(503, detail="PLC offline")
     return {"ok": True}
+
+
+# ── EcoFlow (baterías del hogar via api_exo) + conmutación de sus Shellys ──
+#
+# api_exo's EcoFlow registry is platform-global (one vendor account), so the
+# household gate is the RULES layer: a rule's params.customer names the owning
+# slug — only households named there (or superadmin) see the card.
+
+_ECOFLOW_PARAM_KEYS = {"soc_min", "soc_max", "price_quantile", "min_toggle_minutes"}
+
+
+async def _ecoflow_rules_for(ctx: ConsumContext, slugs: list[str]) -> list[dict]:
+    data = await exo_client.ecoflow_rules() or {}
+    rules = data.get("rules") or []
+    if ctx.is_superadmin:
+        return rules
+    return [r for r in rules if (r.get("params") or {}).get("customer") in slugs]
+
+
+@router.get("/ecoflow")
+async def ecoflow(ctx: ConsumContext = Depends(require_tier("pro"))):
+    """EcoFlow card payload: devices + rules + recent decisions. Empty when
+    the caller's households own no EcoFlow rule (feature not contracted)."""
+    slugs = await _slugs(ctx, None, min_tier="pro")
+    rules = await _ecoflow_rules_for(ctx, slugs)
+    if not rules:
+        return {"devices": [], "rules": [], "log": []}
+    devs = await exo_client.ecoflow_devices() or {}
+    log = await exo_client.ecoflow_rule_log(48) or {}
+    return {
+        "connected": devs.get("connected"),
+        "devices": devs.get("devices") or [],
+        "rules": rules,
+        "log": (log.get("log") or [])[:12],
+    }
+
+
+class SwitchBody(BaseModel):
+    on: bool
+
+
+@router.post("/shelly/{sensor_key}/switch")
+async def shelly_switch(sensor_key: str, body: SwitchBody,
+                        ctx: ConsumContext = Depends(require_tier("pro"))):
+    """Switch one of the household's own smart plugs (EcoFlow charge lines).
+    Tenancy: the sensor must be a registered plug of one of the caller's
+    slugs; api_edge re-validates and publishes the MQTT Switch.Set."""
+    from app.core import db
+
+    slugs = await _slugs(ctx, None, min_tier="pro")
+    ids = await consumption._slugs_to_ids(slugs)
+    if not ids:
+        raise HTTPException(404, detail="sin hogares")
+    async with db.raw_connection() as con:
+        cur = await con.execute(
+            "SELECT customer_id::text FROM sensors "
+            "WHERE sensor_key = %s AND customer_id = ANY(%s::uuid[]) "
+            "AND (kind = 'plug' OR sensor_type = 'switch') LIMIT 1",
+            (sensor_key, list(ids.values())),
+        )
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(404, detail="ese enchufe no pertenece a tu hogar")
+    slug = next(s for s, i in ids.items() if i == row[0])
+    res = await edge_client.shelly_switch(slug, sensor_key, body.on)
+    if not res:
+        raise HTTPException(502, detail="no se pudo conmutar (api_edge)")
+    return res
+
+
+class EcoflowRuleBody(BaseModel):
+    enabled: bool | None = None
+    mode: str | None = Field(None, pattern="^(auto|manual)$")
+    params: dict | None = None  # whitelist: soc_min/soc_max/price_quantile/min_toggle_minutes
+
+
+@router.put("/ecoflow/rule/{rule_id}")
+async def ecoflow_rule(rule_id: int, body: EcoflowRuleBody,
+                       ctx: ConsumContext = Depends(require_tier("pro"))):
+    """Auto/manual + thresholds of the household's charge rule (proxied to
+    api_exo with the admin key — target/customer fields are NOT editable
+    from here, only the whitelisted tuning knobs)."""
+    slugs = await _slugs(ctx, None, min_tier="pro")
+    rules = await _ecoflow_rules_for(ctx, slugs)
+    if not any(r.get("id") == rule_id for r in rules):
+        raise HTTPException(404, detail="regla no encontrada")
+    payload: dict = {}
+    if body.enabled is not None:
+        payload["enabled"] = body.enabled
+    if body.mode:
+        payload["mode"] = body.mode
+    if body.params:
+        clean = {k: v for k, v in body.params.items() if k in _ECOFLOW_PARAM_KEYS}
+        if clean:
+            payload["params"] = clean
+    if not payload:
+        raise HTTPException(400, detail="nada que actualizar")
+    res = await exo_client.ecoflow_rule_update(rule_id, payload)
+    if not res:
+        raise HTTPException(502, detail="api_exo no pudo actualizar la regla")
+    return res

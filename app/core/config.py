@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     # ── Peer services (per-box, .env) ──
     EXO_BASE_URL: str = "https://app.pibico.es/apiexo"
     EXO_API_KEY: str = ""      # api_exo's regular service key (reads are gated)
+    EXO_ADMIN_API_KEY: str = ""  # api_exo admin key — EcoFlow rule writes only
     EDGE_BASE_URL: str = "https://app.pibico.es/apiedge"
     EDGE_API_KEY: str = ""     # api_edge service key (device listing)
     CHAT_BASE_URL: str = "https://api.pibico.es/chat"

@@ -35,5 +35,24 @@
   <button class="btn btn-sm" id="plc-reload" data-i18n="plc.reload" style="display:none;">Recargar</button>
 </div>
 
+<!-- EcoFlow — floating battery button (only when the household owns EcoFlow units) -->
+<button class="btn btn-sm" id="plc-ecoflow-btn" onclick="EcoflowPanel.open()"
+        data-i18n-title="ecoflow.title" title="Baterías EcoFlow"
+        style="display:none;position:fixed;top:8px;right:14px;z-index:200;align-items:center;gap:6px;">
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="16" height="10" rx="2"/><line x1="22" y1="11" x2="22" y2="13"/><line x1="6" y1="10" x2="6" y2="14"/><line x1="10" y1="10" x2="10" y2="14"/></svg>
+  <span id="plc-ecoflow-soc" style="font-variant-numeric:tabular-nums;"></span>
+</button>
+
+<!-- EcoFlow slide panel (never a modal) -->
+<aside class="slide-panel" id="ecoflowPanel" aria-hidden="true">
+  <div class="slide-panel-header">
+    <h2 data-i18n="ecoflow.title">Baterías EcoFlow</h2>
+    <button type="button" class="panel-close" onclick="EcoflowPanel.close()" aria-label="Cerrar">&times;</button>
+  </div>
+  <div class="slide-panel-body" style="padding:14px 18px;overflow-y:auto;">
+    <div id="ecoflow-body"><span class="spinner"></span></div>
+  </div>
+</aside>
+
 <script src="{{ root }}/static/js/pages/plc.js?v={{ v }}" defer></script>
 {% endblock %}
