@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "107"  # 107: detección de facturas duplicadas (hash PDF + CUPS/periodo) con aviso
+ASSET_VERSION = "108"  # 108: purga de ?supply= ajeno/obsoleto (cambio de cuenta en el mismo navegador)
 
 
 def render_template(template_name: str, **context) -> str:

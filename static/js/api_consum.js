@@ -200,13 +200,20 @@ function onSupplyChange(val) {
 function initSupplySelector(ctx) {
   var sel = document.getElementById('supply-select');
   var sps = (ctx && ctx.supply_points) || [];
-  if (!sel || sps.length < 2) return;
   var cur = getSupply();
-  // Elección guardada que ya no existe (punto borrado): limpiar y a Todos.
+  // Elección guardada/URL que no es de este usuario (punto borrado, o cambio
+  // de cuenta en el MISMO navegador — localStorage es por origen, no por
+  // usuario): limpiar y recargar limpio. Sin esto, todas las páginas
+  // arrastran un ?supply= ajeno y el backend (tenancy) responde 404 en todo
+  // — visto en vivo con info@alztech.es heredando el supply de pibico.
   if (cur && !sps.some(function (p) { return String(p.id) === cur; })) {
     try { localStorage.removeItem(SUPPLY_KEY); } catch (e) {}
-    cur = '';
+    var url = new URL(location.href);
+    url.searchParams.delete('supply');
+    location.replace(url.toString());   // una sola recarga: cur queda vacío
+    return;
   }
+  if (!sel || sps.length < 2) return;
   var t = (window.i18n && window.i18n.t) ? window.i18n.t.bind(window.i18n) : function (k, f) { return f; };
   sel.innerHTML = '<option value="">' + t('supply.all', 'Todos los puntos') + '</option>' +
     sps.map(function (p) {
