@@ -13,7 +13,8 @@ from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Sequence
 
 from app.core import db
-from app.services import consumption, contracts, invoices
+from app.core.config import settings
+from app.services import consumption, contracts, exo_client, invoices
 
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")
 
@@ -65,6 +66,15 @@ NATIVE_TOOLS: List[Dict[str, Any]] = [
         {"query": {"type": "string"}}, ["query"]),
     _fn("billing_period", "El periodo de facturación ABIERTO: acumulado, franjas, estimado a cierre."),
     _fn("tariff", "La tarifa/contrato vigente del hogar."),
+    # ── Contexto exógeno (api_exo: AEMET/OpenMeteo, REE/ESIOS) ──
+    _fn("weather_forecast", "Previsión meteorológica DIARIA (AEMET, hasta 7 días) para la localidad del hogar: temperatura máx/mín, estado del cielo y probabilidad de lluvia por día. Úsala para preguntas sobre el tiempo/clima a nivel de día."),
+    _fn("weather_hourly", "Previsión meteorológica HORARIA (hasta 7 días) para la localidad del hogar: temperatura, sensación térmica, probabilidad de lluvia y nubosidad por hora. Úsala cuando pidan el tiempo a una hora o franja concreta (p.ej. de 9 a 12 h).",
+        {"days": {"type": "integer", "description": "días a futuro a incluir (1-7)"},
+         "from_hour": {"type": "integer", "description": "hora inicial 0-23 para acotar la franja (opcional)"},
+         "to_hour": {"type": "integer", "description": "hora final 0-23 para acotar la franja (opcional)"}}, []),
+    _fn("weather_now", "El tiempo AHORA en la localidad del hogar (estación AEMET más cercana): temperatura, humedad y descripción."),
+    _fn("electricity_prices", "Precio de la luz PVPC por horas para hoy o mañana (€/kWh y periodo P1/P2/P3). El de mañana solo está publicado tras ~20:15.",
+        {"day": {"type": "string", "enum": ["today", "tomorrow"], "description": "hoy o mañana"}}, []),
 ]
 
 
@@ -79,6 +89,10 @@ HERRAMIENTAS DISPONIBLES (responde SOLO el JSON {"tool": ..., "args": {...}} par
 - invoice_search {"query": "texto"} → busca ese texto dentro de los documentos de las facturas y devuelve fragmentos.
 - billing_period {} → el periodo de facturación ABIERTO: acumulado, franjas, estimado a cierre.
 - tariff {} → la tarifa/contrato vigente del hogar.
+- weather_forecast {} → previsión meteorológica DIARIA (AEMET, hasta 7 días) de la localidad del hogar: máx/mín, cielo, prob. de lluvia.
+- weather_hourly {"days": 1-7, "from_hour": 0-23 opcional, "to_hour": 0-23 opcional} → previsión HORARIA de la localidad del hogar (temperatura, sensación, prob. lluvia, nubes). Para franjas concretas (p.ej. 9-12 h).
+- weather_now {} → el tiempo AHORA en la localidad del hogar (temperatura, humedad, descripción).
+- electricity_prices {"day": "today"|"tomorrow"} → precio PVPC por horas (€/kWh y periodo). El de mañana solo tras ~20:15.
 """.strip()
 
 
@@ -302,6 +316,84 @@ async def run_tool(slugs: Sequence[str], name: str,
             else:
                 out["origen_renovable"] = None      # bills don't state it
             return out
+
+        if name == "weather_hourly":
+            loc = await consumption.location_for(slugs, sp)
+            lat = loc["lat"] if loc else settings.DEFAULT_LAT
+            lon = loc["lon"] if loc else settings.DEFAULT_LON
+
+            def _hh(v: Any) -> Optional[int]:
+                try:
+                    return int(v)
+                except (TypeError, ValueError):
+                    return None
+
+            days = _hh(args.get("days")) or 3
+            days = max(1, min(days, 7))
+            data = await exo_client.weather_hourly(lat, lon, days=days)
+            rows = (data or {}).get("hourly") or []
+            if not rows:
+                return {"error": "previsión horaria no disponible ahora mismo"}
+            fh, th = _hh(args.get("from_hour")), _hh(args.get("to_hour"))
+            out: List[Dict[str, Any]] = []
+            for r in rows:
+                ts = str(r.get("ts") or "")          # "YYYY-MM-DDTHH:MM"
+                hh = _hh(ts[11:13]) if len(ts) >= 13 else None
+                if fh is not None and th is not None and hh is not None \
+                        and not (fh <= hh <= th):
+                    continue
+                out.append({"ts": ts[:16], "temp_c": r.get("temp_c"),
+                            "sensacion_c": r.get("feels_c"),
+                            "prob_lluvia_pct": r.get("precip_prob_pct"),
+                            "nubes_pct": r.get("cloud_pct")})
+            return {"municipio": (loc or {}).get("municipality"),
+                    "horas": out[:96],
+                    "nota": "previsión HORARIA (Open-Meteo) de la localidad del hogar"}
+
+        if name in ("weather_forecast", "weather_now"):
+            loc = await consumption.location_for(slugs, sp)
+            lat = loc["lat"] if loc else settings.DEFAULT_LAT
+            lon = loc["lon"] if loc else settings.DEFAULT_LON
+            muni = (loc or {}).get("municipality")
+            if name == "weather_forecast":
+                data = await exo_client.weather_forecast(lat, lon)
+                fc = (data or {}).get("forecast") or []
+                if not fc:
+                    return {"error": "previsión no disponible ahora mismo"}
+                return {
+                    "municipio": muni or fc[0].get("municipality"),
+                    "prevision": [{"fecha": d.get("date"),
+                                   "temp_max_c": d.get("temp_max"),
+                                   "temp_min_c": d.get("temp_min"),
+                                   "cielo": d.get("description"),
+                                   "prob_lluvia_pct": d.get("precipitation_prob")}
+                                  for d in fc],
+                    "nota": ("previsión DIARIA de AEMET; no hay desglose por horas "
+                             "concretas — si piden una franja horaria, da el dato "
+                             "del día y acláralo"),
+                }
+            data = await exo_client.weather_observations(lat, lon)
+            d = (data or {}).get("data") or {}
+            if not d:
+                return {"error": "observación no disponible ahora mismo"}
+            return {"municipio": muni, "temperatura_c": d.get("temperature"),
+                    "humedad_pct": d.get("humidity"),
+                    "descripcion": d.get("description"),
+                    "estacion": d.get("station")}
+
+        if name == "electricity_prices":
+            day = "tomorrow" if args.get("day") == "tomorrow" else "today"
+            data = await exo_client.pvpc_day(day)
+            prices = (data or {}).get("prices") or []
+            if not prices:
+                return {"error": ("el PVPC de mañana aún no está publicado "
+                                  "(disponible tras ~20:15)" if day == "tomorrow"
+                                  else "precios no disponibles ahora mismo")}
+            return {"dia": day, "precios": [
+                {"hora": p.get("hour"),
+                 "eur_kwh": p.get("price_eur_kwh")
+                 or ((p.get("price_eur_mwh") or 0) / 1000.0),
+                 "periodo": p.get("period")} for p in prices]}
 
         return {"error": f"herramienta desconocida: {name}"}
     except Exception as exc:                       # noqa: BLE001

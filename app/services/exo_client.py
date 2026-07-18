@@ -89,6 +89,14 @@ async def weather_forecast(lat: float, lon: float) -> Optional[dict]:
     return await _get(f"/weather/forecast?lat={lat}&lon={lon}", ttl=1800)
 
 
+async def weather_hourly(lat: float, lon: float, days: int = 3) -> Optional[dict]:
+    """Open-Meteo HOURLY forecast for the coming `days` (max 7) → {hourly:
+    [{ts, temp_c, feels_c, precip_prob_pct, cloud_pct, humidity_pct}]}.
+    AEMET only offers daily at this horizon, so this is Open-Meteo-sourced."""
+    return await _get(f"/weather/hourly-forecast?lat={lat}&lon={lon}&days={days}",
+                      ttl=1800)
+
+
 async def daylight(lat: float, lon: float) -> Optional[dict]:
     """Sunrise/sunset/daylight per day → {daily: [{date, sunrise, sunset,
     daylight_seconds}], hourly: [...]} (Panel solar card)."""
