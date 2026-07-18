@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "108"  # 108: purga de ?supply= ajeno/obsoleto (cambio de cuenta en el mismo navegador)
+ASSET_VERSION = "109"  # 109: spinner IA (burbuja "pensando" + .spinner real en narrativa)
 
 
 def render_template(template_name: str, **context) -> str:

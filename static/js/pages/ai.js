@@ -66,6 +66,42 @@
     log.scrollTop = log.scrollHeight;
   }
 
+  // Pending "thinking" bubble shown while /ai/ask is in flight — local
+  // inference can take several seconds, so give the wait some life: bouncing
+  // dots + a rotating hint. Returns the element (carries its own rotator).
+  function addThinking() {
+    var log = q('ai-chat-log');
+    var div = document.createElement('div');
+    div.className = 'ai-turn ai-turn-assistant ai-turn-pending';
+    div.setAttribute('aria-live', 'polite');
+    div.innerHTML = '<div class="ai-thinking">' +
+      '<span class="ai-dots"><span></span><span></span><span></span></span>' +
+      '<span class="ai-thinking-hint"></span></div>';
+    var hint = div.querySelector('.ai-thinking-hint');
+    var msgs = [
+      __t('ai.think1', 'AIDA está pensando…'),
+      __t('ai.think2', 'Revisando tu consumo…'),
+      __t('ai.think3', 'Consultando tus tarifas…'),
+      __t('ai.think4', 'Analizando tus datos…'),
+      __t('ai.think5', 'Redactando la respuesta…'),
+    ];
+    var i = 0;
+    hint.textContent = msgs[0];
+    div._timer = setInterval(function () {
+      i = (i + 1) % msgs.length;
+      hint.textContent = msgs[i];
+    }, 2200);
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+    return div;
+  }
+
+  function removeThinking(div) {
+    if (!div) return;
+    if (div._timer) clearInterval(div._timer);
+    div.remove();
+  }
+
   function loadNarrative(refresh) {
     var box = q('ai-narrative');
     box.innerHTML = '<span class="spinner"></span> <span class="text-muted" style="font-size:0.8rem;">' +
@@ -94,12 +130,14 @@
     input.value = '';
     addTurn('user', question);
     q('ai-send').disabled = true;
+    var pending = addThinking();
     App.apiFetch('/ai/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question: question, history: history.slice(-6),
         supply: (App.getSupply && App.getSupply()) ? parseInt(App.getSupply(), 10) : null }),
     }).then(function (r) {
+      removeThinking(pending);
       addTurn('assistant', r.answer || '', r.meta);
       history.push({ role: 'user', content: question });
       history.push({ role: 'assistant', content: r.answer || '' });
@@ -113,6 +151,7 @@
         q('ai-quota').textContent = quota;
       }
     }).catch(function (e) {
+      removeThinking(pending);
       addTurn('assistant', msgOf(e));
     }).finally(function () {
       q('ai-send').disabled = false;
