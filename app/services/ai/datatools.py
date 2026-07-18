@@ -328,7 +328,10 @@ async def run_tool(slugs: Sequence[str], name: str,
                 except (TypeError, ValueError):
                     return None
 
-            days = _hh(args.get("days")) or 3
+            # Default to the FULL 7-day window: when the model omits `days`
+            # (common on multi-date questions) it still gets the whole horizon
+            # instead of missing days 4-7 (e.g. "…y el miércoles" beyond 3 days).
+            days = _hh(args.get("days")) or 7
             days = max(1, min(days, 7))
             data = await exo_client.weather_hourly(lat, lon, days=days)
             rows = (data or {}).get("hourly") or []

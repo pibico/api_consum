@@ -230,6 +230,16 @@ async def ask(question: str = Body(..., embed=True, max_length=6000),
                 pass
         return None
 
+    async def _gw(msgs, tools):
+        """One gateway turn, retried once on a transient drop (None). A single
+        dropped hop would otherwise abort the whole answer with a 502."""
+        g = await ai_client.llm_chat_full(msgs, temperature=0.2,
+                                          max_tokens=900, tools=tools)
+        if g is None:
+            g = await ai_client.llm_chat_full(msgs, temperature=0.2,
+                                              max_tokens=900, tools=tools)
+        return g
+
     text = None
     tok_prompt = tok_completion = hops = 0
     started_at = datetime.now().strftime("%H:%M:%S")
@@ -243,8 +253,7 @@ async def ask(question: str = Body(..., embed=True, max_length=6000),
             messages.append({"role": "user", "content":
                              "Responde YA al usuario en texto normal con la "
                              "información obtenida."})
-        got = await ai_client.llm_chat_full(
-            messages, temperature=0.2, max_tokens=900, tools=use_tools)
+        got = await _gw(messages, use_tools)
         if not got:
             break
         u = got.get("usage") or {}
@@ -279,6 +288,22 @@ async def ask(question: str = Body(..., embed=True, max_length=6000),
             # gateway maps it to tool_result.tool_use_id); ollama ignores it.
             messages.append({"role": "tool", "content": blob, "name": name,
                              "tool_call_id": call.get("id") or f"call_{i}"})
+    # Salvage: a gateway turn can drop mid-tool-use and break the loop before
+    # any text is produced. If we ran tools but still have no answer, make one
+    # final tools-off attempt to answer from what was gathered — an honest
+    # (even partial) reply beats a blanket 502.
+    if not text and hops:
+        messages.append({"role": "user", "content":
+                         "Responde YA al usuario en texto normal con la "
+                         "información ya obtenida de las herramientas. Si algún "
+                         "dato no se pudo consultar, dilo con claridad."})
+        got = await _gw(messages, None)
+        if got:
+            u = got.get("usage") or {}
+            tok_prompt += u.get("prompt_tokens") or 0
+            tok_completion += u.get("completion_tokens") or 0
+            text = (got.get("text") or "").strip() or None
+
     email = (ctx.user or {}).get("email")
     await ai_usage.record(scope, email, "ask", tok_prompt, tok_completion,
                           tool_hops=max(hops - 1, 0))
