@@ -36,7 +36,13 @@ async function apiFetch(endpoint, options = {}) {
 
   if (!response.ok) {
     const error = await response.json().catch(function() { return {}; });
-    throw new Error(error.detail || 'API error: ' + response.status);
+    // detail may be a string OR an object {code, message} (our API uses both).
+    // Coerce to a readable string so callers never render "[object Object]".
+    const d = error.detail;
+    const msg = (d && typeof d === 'object')
+      ? (d.message || JSON.stringify(d))
+      : (d || 'API error: ' + response.status);
+    throw new Error(msg);
   }
   return response.json();
 }

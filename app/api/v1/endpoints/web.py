@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "109"  # 109: spinner IA (burbuja "pensando" + .spinner real en narrativa)
+ASSET_VERSION = "110"  # 110: apiFetch muestra detail.message (no "[object Object]" en errores)
 
 
 def render_template(template_name: str, **context) -> str:
