@@ -435,6 +435,25 @@ async def set_uploaded_markdown(invoice_id: int, markdown: str) -> None:
                 (Jsonb({"markdown": markdown[:60000]}), invoice_id))
 
 
+async def open_period_start(customer_slug: str) -> Optional[date]:
+    """First day of the OPEN billing period = day after the last non-void
+    invoice's period_end. None when there is no invoice history to anchor on.
+    Used to validate a user-set close date (it may be in the past, but never
+    before the period it is supposed to close)."""
+    ids = await consumption._slugs_to_ids([customer_slug])
+    cid = ids.get(customer_slug)
+    if not cid:
+        return None
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                "SELECT max(period_end) FROM consum.invoices "
+                "WHERE customer_id = %s AND status != 'void'", (cid,))
+            row = await cur.fetchone()
+    last_end = row[0] if row else None
+    return last_end + timedelta(days=1) if last_end else None
+
+
 async def set_next_close(customer_slug: str, next_close: Optional[str],
                          updated_by: Optional[str]) -> Dict[str, Any]:
     """Persist the household's expected close of the OPEN period (None clears
@@ -452,7 +471,11 @@ async def set_next_close(customer_slug: str, next_close: Optional[str],
                      SET next_close = EXCLUDED.next_close,
                          updated_by = EXCLUDED.updated_by, updated_at = now()""",
                 (cid, next_close, updated_by))
-    _bp_cache.pop(customer_slug, None)      # the KPI must reflect it right away
+    # Drop every cached slice for this slug (keys are "<slug>:<supply_id>") so
+    # the KPI reflects the new close date right away — a bare-slug pop missed
+    # the real keys and left the widget up to _BP_TTL_S stale.
+    for k in [k for k in _bp_cache if k.split(":", 1)[0] == customer_slug]:
+        _bp_cache.pop(k, None)
     return await billing_period_live(customer_slug)
 
 
@@ -564,17 +587,24 @@ async def billing_period_live(customer_slug: str,
             row = await cur.fetchone()
     user_close = row[0] if row else None
     if user_close and user_close >= start:
+        # The household set the close date explicitly — honor it even in the
+        # past (simulating a period that runs "de una fecha a otra"). Only the
+        # ESTIMATE is clamped forward when it lands overdue (bill imminent).
         expected_end = user_close
         source = "user"
     else:
         expected_end = start + timedelta(days=cycle - 1)
-    if expected_end < today:
-        expected_end = today                                # overdue: bill imminent
+        if expected_end < today:
+            expected_end = today                            # overdue: bill imminent
+    # Cost/energy accrue over what actually elapsed within the period — up to
+    # today while it is still open, or to the close date once that date has
+    # passed (a user-set past close makes the window start→expected_end).
+    accrual_end = min(today, expected_end)
     days_total = (expected_end - start).days + 1
-    days_elapsed = (today - start).days + 1
+    days_elapsed = (accrual_end - start).days + 1
 
     segments, totals = await _settle(str(cid), [customer_slug],
-                                     start.isoformat(), today.isoformat())
+                                     start.isoformat(), accrual_end.isoformat())
     # Accrued energy split by band — the Acumulado KPI shows P1·P2·P3 too.
     bp_bands = {p: 0.0 for p in ("P1", "P2", "P3")}
     for s in segments:
@@ -585,7 +615,7 @@ async def billing_period_live(customer_slug: str,
     # installed mid-period or offline days would silently understate the
     # accrued total and the projection; the KPI must say so.
     daily = await consumption.energy_series([customer_slug], start.isoformat(),
-                                            today.isoformat(), bucket="day", sp=sp)
+                                            accrual_end.isoformat(), bucket="day", sp=sp)
     measured_days = len({r["ts"][:10] for r in daily if (r.get("kwh") or 0) > 0})
     out = {
         "status": "ok",

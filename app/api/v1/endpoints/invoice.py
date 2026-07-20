@@ -101,8 +101,16 @@ async def set_expected_end(body: NextCloseIn,
     if not slugs:
         raise HTTPException(400, detail="no household in scope")
     slug = ctx.check_slug(slugs[0])
-    if body.date is not None and body.date < _date.today():
-        raise HTTPException(422, detail="La fecha de cierre no puede ser pasada.")
+    if body.date is not None:
+        # A close date may sit in the PAST (simulating a period that runs "de
+        # una fecha a otra"); the only hard rule is it can't precede the period
+        # it closes — the day after the last issued invoice.
+        start = await invoices.open_period_start(slug)
+        if start is not None and body.date < start:
+            raise HTTPException(
+                422,
+                detail=f"La fecha de cierre no puede ser anterior al inicio "
+                       f"del período en curso ({start.isoformat()}).")
     return await invoices.set_next_close(slug, body.date.isoformat() if body.date else None,
                                          (ctx.user or {}).get("email"))
 
