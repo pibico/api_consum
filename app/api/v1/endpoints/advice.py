@@ -53,6 +53,7 @@ async def forecast(cadence: str = Query("daily", pattern="^(daily|weekly)$"),
     # instead of waiting out the 15-min TTL.
     comfort = await consumption.comfort_flex_for(slugs, sp=sp)
     equipment = comfort.get("equipment")
+    usage_type = comfort.get("usage_type")
     key = (slug, cadence, sp.get("id") if sp else 0, _date.today().isoformat(), comfort.get("updated_at"))
     now = time.time()
     hit = _forecast_cache.get(key)
@@ -64,7 +65,7 @@ async def forecast(cadence: str = Query("daily", pattern="^(daily|weekly)$"),
     region = (prefs or {}).get("region")
     result = await advice_scheduler.forecast_for_member(
         slug, cadence, lang=lang, region=region, sp=sp, user_email=(ctx.user or {}).get("email"),
-        equipment=equipment)
+        equipment=equipment, usage_type=usage_type)
     _forecast_cache[key] = (now + _FORECAST_TTL, result)
     return result
 

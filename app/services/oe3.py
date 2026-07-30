@@ -268,45 +268,58 @@ FEATURE_UNITS = {"hdd": "kWh/HDD", "cdd": "kWh/CDD", "calendar": "kWh"}
 _ALERT_SEV_RANK = {"red": 0, "orange": 1, "yellow": 2, "info": 3}
 
 
-def _apply_calendar_label(attribution: Dict[str, Any], day_type: int) -> Dict[str, Any]:
-    """Bug fix 2026-07-29: the 'calendar' driver's φ = β·(x−x̄) is nonzero on
-    an ORDINARY WEEKDAY too — x=0 while the training-set mean x̄ includes
-    weekends/holidays (~0.3), so a plain Thursday still shows a nonzero
-    'calendar' driver. `FEATURE_LABELS["calendar"]` is a single static
-    string ("Fin de semana / festivo") reused for every day regardless of
-    which day type it actually was — so a Wednesday's forecast for
-    tomorrow (a normal Thursday) narrated "impulsado por fin de semana/
-    festivo", which is simply false.
+def _apply_calendar_label(attribution: Dict[str, Any], day_type: int,
+                         usage_type: Optional[str] = None) -> Dict[str, Any]:
+    """Bug fix 2026-07-29 + reframe 2026-07-30. The 'calendar' driver's
+    φ = β·(x−x̄) is nonzero on an ORDINARY WEEKDAY too — x=0 while the
+    training-set mean x̄ includes weekends/holidays (~0.3) — AND its SIGN
+    depends on the site: a home (β>0, more weekend consumption) has a
+    NEGATIVE weekday φ, but a workplace (β<0, more weekday consumption) has
+    a POSITIVE one. The pre-2026-07-30 code phrased this sign as "eleva/
+    reduce tu gasto por ser día X", which reads as a correct-but-bizarre
+    justification for a workplace ("laborable ELEVA tu gasto" is technically
+    true but sounds like blame) and is actively wrong framing for a member —
+    day-type is background CONTEXT, never the headline reason for the euros.
 
-    Overrides the (already-computed, unchanged) 'calendar' contribution's
-    `label` in place with one that reflects THIS forecast date's actual
-    day_type (`_day_type_series`'s 1=weekend/holiday, 0=weekday), adds a
-    `label_en` (the codebase's other driver labels are Spanish-only — a
-    pre-existing gap out of scope here — but the LLM system prompt now
-    needs a genuine EN calendar label, see advice.py), and a `detail`/
-    `detail_en` human sentence whose DIRECTION matches the sign of phi (a
-    weekday's phi is normally negative — LESS consumption than the
-    weekend-inclusive average — never phrased as if driven BY a holiday).
-    Purely cosmetic: phi/x/x_bar/unit and the base+Σφ==total identity are
-    untouched."""
+    So this now drops the phi-sign-dependent "eleva/reduce" wording
+    ENTIRELY. label/detail become NEUTRAL and are tailored only by
+    `usage_type` (from consumption.comfort_flex_for(), 'vivienda'|'oficina'
+    |'mixto'|None) x day_type (`_day_type_series`'s 1=weekend/holiday,
+    0=weekday) — informative ("patrón habitual de..."), never blame-phrased.
+    `usage_type=None`/'mixto' gets the same plain, non-blaming labels
+    regardless of site type. Adds `label_en`/`detail_en` (EN counterparts —
+    the codebase's other driver labels are Spanish-only, a pre-existing gap
+    out of scope here). Purely cosmetic: phi/x/x_bar/unit and the
+    base+Σφ==total identity are untouched — the caller (AdviceSkill,
+    advice.py) additionally demotes this driver to secondary/omittable
+    context in the narrative, on top of this neutral relabeling."""
     for c in attribution.get("contributions") or []:
         if c["feature"] != "calendar":
             continue
-        phi = c["phi"]
         if day_type == 1:
             c["label"] = "Fin de semana / festivo"
             c["label_en"] = "Weekend / holiday"
-            c["detail"] = ("mayor consumo esperado por ser fin de semana o festivo" if phi >= 0
-                          else "consumo por debajo de la media de fin de semana/festivo")
-            c["detail_en"] = ("higher expected consumption for being a weekend/holiday" if phi >= 0
-                             else "consumption below the weekend/holiday average")
+            if usage_type == "vivienda":
+                c["detail"] = "patrón habitual del hogar (más actividad en fin de semana/festivo)"
+                c["detail_en"] = "usual home pattern (more activity on weekends/holidays)"
+            elif usage_type == "oficina":
+                c["detail"] = "fuera del horario habitual de actividad de este lugar de trabajo"
+                c["detail_en"] = "outside this workplace's usual activity schedule"
+            else:
+                c["detail"] = "fin de semana o festivo (dato de contexto, no la causa principal del gasto)"
+                c["detail_en"] = "weekend or holiday (background context, not the main driver of spend)"
         else:
             c["label"] = "Día laborable"
             c["label_en"] = "Weekday"
-            c["detail"] = ("menor consumo esperado por ser día laborable" if phi <= 0
-                          else "consumo por encima de la media de los laborables")
-            c["detail_en"] = ("lower expected consumption for being a weekday" if phi <= 0
-                             else "consumption above the weekday average")
+            if usage_type == "oficina":
+                c["detail"] = "patrón habitual de un lugar de trabajo"
+                c["detail_en"] = "usual pattern for a workplace"
+            elif usage_type == "vivienda":
+                c["detail"] = "patrón habitual del hogar (menos actividad en día laborable)"
+                c["detail_en"] = "usual home pattern (less activity on weekdays)"
+            else:
+                c["detail"] = "día laborable (dato de contexto, no la causa principal del gasto)"
+                c["detail_en"] = "weekday (background context, not the main driver of spend)"
         break
     return attribution
 
@@ -516,7 +529,8 @@ async def forecast_explained(slugs: Sequence[str], sp=None,
                              days_out: int = 1, region: Optional[str] = None,
                              device: Optional[str] = None,
                              hist_days: int = 45,
-                             equipment: Optional[Dict[str, bool]] = None) -> Dict[str, Any]:
+                             equipment: Optional[Dict[str, bool]] = None,
+                             usage_type: Optional[str] = None) -> Dict[str, Any]:
     """Deterministic explainable forecast, `days_out` days ahead (1 = Cadence
     A / tomorrow; up to 7 = Cadence B). Fuses the forecast-month-style recent
     baseline with the thermal (HDD/CDD) + day-type OLS, attributes every
@@ -533,10 +547,16 @@ async def forecast_explained(slugs: Sequence[str], sp=None,
     behavior (both drivers active) for any caller that hasn't been updated
     yet — always pass it from the read/email paths.
 
+    `usage_type` (2026-07-30, from consumption.comfort_flex_for(), 'vivienda'
+    |'oficina'|'mixto'|None) reframes ONLY the 'calendar' driver's label/
+    detail via `_apply_calendar_label` — the math (phi/base/total) is
+    unaffected either way.
+
     Returns {status, days_used, r2, sigma_kwh, forecasts:[{date, kwh,
     band_lo, band_hi, eur, price_status, attribution, weather_guardrail,
-    periods}], alert, equipment} — `alert` is the single highest-severity
-    orange/red weather alert in the window (S5 proactive advisory), or None.
+    periods}], alert, equipment, usage_type} — `alert` is the single
+    highest-severity orange/red weather alert in the window (S5 proactive
+    advisory), or None.
     """
     end = date.today() - timedelta(days=1)
     start = end - timedelta(days=hist_days - 1)
@@ -565,7 +585,8 @@ async def forecast_explained(slugs: Sequence[str], sp=None,
         y.append(daily_kwh[d])
 
     out: Dict[str, Any] = {"status": "insufficient_data", "days_used": len(y),
-                           "forecasts": [], "alert": None, "equipment": equipment}
+                           "forecasts": [], "alert": None, "equipment": equipment,
+                           "usage_type": usage_type}
     if len(y) < 12:
         return out
     fit = _fit_variance_safe(X, y, equipment=equipment)
@@ -630,9 +651,10 @@ async def forecast_explained(slugs: Sequence[str], sp=None,
         x_active = {k: x_full[k] for k in active_feats}
         attribution = shap_attr.attribute_forecast(
             b0, coefs_active, x_active, x_bar_active, labels=FEATURE_LABELS, units=FEATURE_UNITS)
-        # Bug fix 2026-07-29: relabel 'calendar' for THIS date's actual day
-        # type (weekday vs weekend/holiday) — see _apply_calendar_label.
-        attribution = _apply_calendar_label(attribution, int(day_type_fc.get(d, 0)))
+        # Bug fix 2026-07-29 + reframe 2026-07-30: relabel 'calendar' for
+        # THIS date's actual day type (weekday vs weekend/holiday) AND this
+        # household's usage_type — see _apply_calendar_label.
+        attribution = _apply_calendar_label(attribution, int(day_type_fc.get(d, 0)), usage_type)
         gr = guardrail.get(d) or {}
         weather_hit = bool(gr.get("alert")) or (gr.get("normals_dev_c") is not None
                                                 and abs(gr["normals_dev_c"]) >= 5)

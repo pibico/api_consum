@@ -32,14 +32,19 @@ _SYSTEM = (
     "en kWh, ya ordenados de mayor a menor impacto) y, si aplica, un aviso "
     "meteorológico. Tu trabajo es SOLO redactar, en español o inglés según se "
     "te pida, con calidez y SIN jerga (nunca P1/P2/P3, HDD/CDD, Shapley, "
-    "'atribución'; di 'horas caras/baratas', 'frío/calor'). Para el driver "
-    "'calendario' usa EXACTAMENTE la etiqueta (y el detalle, si te lo doy) "
-    "que te paso — p.ej. 'día laborable' o 'fin de semana / festivo' — y "
-    "NUNCA asumas fin de semana/festivo si la etiqueta dice día laborable "
-    "(ni al revés): la cifra puede ser negativa en un laborable (MENOS "
-    "consumo que la media), nunca lo narres como si fuera festivo.\n"
+    "'atribución'; di 'horas caras/baratas', 'frío/calor').\n"
+    "Puede venir también una línea 'contexto_dia' (día laborable / fin de "
+    "semana o festivo, con una etiqueta y un detalle YA neutros que te paso "
+    "tal cual) — es SOLO información de fondo, NUNCA un driver ni la causa "
+    "principal del gasto: no digas 'sube/baja tu gasto porque es día "
+    "laborable/festivo' ni nada que suene a justificación por el tipo de "
+    "día. Si la mencionas, hazlo como dato de contexto (p.ej. 'un día "
+    "laborable como hoy...'), nunca como el motivo del importe. Si no viene "
+    "'contexto_dia', simplemente no menciones el tipo de día.\n"
     "- summary: 1-2 frases con la cifra clave (kWh y/o €) y la causa "
-    "principal (el primer driver de la lista).\n"
+    "principal, que SIEMPRE es el primer 'driver' de la lista (nunca "
+    "'contexto_dia') — si no hay ningún 'driver', da solo la cifra sin "
+    "inventar una causa.\n"
     "- advice: 1 a 3 consejos concretos e imperativos (mover un "
     "electrodoméstico a una hora barata, prepararse para el aviso "
     "meteorológico si lo hay, etc.), coherentes con los drivers.\n"
@@ -53,13 +58,19 @@ _SYSTEM_EN = (
     "'drivers', with their kWh effect, sorted by impact) and, if applicable, "
     "a weather advisory. Your ONLY job is to phrase it warmly and jargon-free "
     "(never P1/P2/P3, HDD/CDD, Shapley, 'attribution'; say 'expensive/cheap "
-    "hours', 'cold/heat'). For the 'calendar' driver, use EXACTLY the label "
-    "(and detail, if given) I pass you — e.g. 'weekday' or 'weekend/holiday' "
-    "— and NEVER assume weekend/holiday if the label says weekday (or vice "
-    "versa): the figure can be negative on a weekday (LESS consumption than "
-    "average) — never narrate that as if it were a holiday.\n"
-    "- summary: 1-2 sentences with the key figure (kWh and/or €) and the main "
-    "cause (the first driver in the list).\n"
+    "hours', 'cold/heat').\n"
+    "There may also be one 'contexto_dia' line (weekday / weekend or "
+    "holiday, with an already-neutral label and detail I pass verbatim) — "
+    "this is BACKGROUND INFO ONLY, never a driver or the main reason for "
+    "the amount: never say the spend 'goes up/down because it's a weekday/ "
+    "holiday' or anything that reads as a justification by day type. If you "
+    "mention it, do so as background color (e.g. 'on a weekday like "
+    "today...'), never as the reason for the figure. If 'contexto_dia' is "
+    "absent, simply don't mention the day type at all.\n"
+    "- summary: 1-2 sentences with the key figure (kWh and/or €) and the "
+    "main cause, which is ALWAYS the first 'driver' in the list (never "
+    "'contexto_dia') — if there is no 'driver' at all, just state the figure "
+    "without inventing a cause.\n"
     "- advice: 1 to 3 concrete, imperative tips (shift an appliance to a "
     "cheap hour, prepare for the weather advisory if present, etc.), "
     "consistent with the drivers.\n"
@@ -189,6 +200,41 @@ class AdviceNarrative(BaseModel):
 # SAME rule for the SAME comfort_flex profile.
 
 
+# ── Calendar driver demotion (2026-07-30 usage_type reframe) ───────────────
+# `oe3._apply_calendar_label` already neutralizes the label/detail text; this
+# is the SECOND half of the fix, in the narrative layer: the 'calendar'
+# contribution must never be treated as the headline 'driver' (the sorted-
+# by-|phi| order from shap_attr can still put it first numerically, e.g. a
+# strongly weekday-skewed oficina), and when its phi is just the
+# baseline-mean artifact (a plain weekday/weekend against a training-set
+# mean that isn't exactly 0 or 1) it's dropped from the narrative entirely —
+# still counted in the math (attribution/entry are untouched), only excluded
+# from what gets shown to the member/LLM.
+_CALENDAR_TRIVIAL_ABS_KWH = 0.15   # floor: below this, always noise
+_CALENDAR_TRIVIAL_REL = 0.03       # or below 3% of the day's forecast kWh
+
+
+def _calendar_is_trivial(phi: Optional[float], kwh_total: Optional[float]) -> bool:
+    if phi is None:
+        return True
+    threshold = max(_CALENDAR_TRIVIAL_ABS_KWH, _CALENDAR_TRIVIAL_REL * abs(kwh_total or 0.0))
+    return abs(phi) < threshold
+
+
+def _top_actionable_driver(attribution: Dict[str, Any],
+                           kwh_total: Optional[float] = None) -> Optional[Dict[str, Any]]:
+    """The headline driver for the deterministic template fallback — same
+    demotion rule as `_facts_for_forecast`: 'calendar' is never the headline
+    justification. Returns the highest-|phi| NON-calendar contribution, or
+    None if the only driver present is 'calendar' (better to state the bare
+    figure than to headline a day-type 'reason')."""
+    contributions = attribution.get("contributions") or []
+    for c in contributions:
+        if c.get("feature") != "calendar":
+            return c
+    return None
+
+
 def _deterministic_summary(entry: Dict[str, Any], lang: str) -> str:
     """Numbers-only headline, no driver mention — the safe fallback used
     both by `_template_fallback` (AI off/capped) and `_scrub_equipment`'s
@@ -242,7 +288,19 @@ def _facts_for_forecast(entry: Dict[str, Any], alert: Optional[Dict[str, Any]],
     # NOTE: tariff period labels (P1/P2/P3) are deliberately NOT passed to the
     # LLM — they're jargon the system prompt explicitly forbids; the email's
     # "periods" field is rendered separately (deterministic), never narrated.
-    for c in attribution.get("contributions") or []:
+    #
+    # Calendar demotion (2026-07-30): split 'calendar' out of the sorted-by-
+    # |phi| contributions list. Actionable drivers (hdd/cdd/weather) are
+    # always listed as 'driver:' lines, in their existing impact order —
+    # these are what the system prompt tells the LLM to headline. 'calendar'
+    # goes out as a SEPARATE 'contexto_dia:' line, after all drivers, and
+    # only when it isn't a trivial baseline-mean artifact — never as a
+    # 'driver:' line, so it can never be picked as "the first driver" for
+    # the summary's main cause.
+    contributions = attribution.get("contributions") or []
+    calendar = next((c for c in contributions if c.get("feature") == "calendar"), None)
+    actionable = [c for c in contributions if c.get("feature") != "calendar"]
+    for c in actionable:
         # `label_en`/`detail_en` only exist on the `calendar` driver so far
         # (2026-07-29 weekday/weekend fix, oe3.forecast_explained) — every
         # other driver keeps the pre-existing Spanish-only `label`. Prefer
@@ -251,6 +309,13 @@ def _facts_for_forecast(entry: Dict[str, Any], alert: Optional[Dict[str, Any]],
         label = (c.get("label_en") if lang == "en" else None) or c["label"]
         detail = (c.get("detail_en") if lang == "en" else None) or c.get("detail")
         line = f"- driver: {label} | efecto_kwh: {c['phi']:+.2f}"
+        if detail:
+            line += f" | detalle: {detail}"
+        lines.append(line)
+    if calendar is not None and not _calendar_is_trivial(calendar.get("phi"), entry.get("kwh")):
+        label = (calendar.get("label_en") if lang == "en" else None) or calendar["label"]
+        detail = (calendar.get("detail_en") if lang == "en" else None) or calendar.get("detail")
+        line = f"- contexto_dia: {label}"
         if detail:
             line += f" | detalle: {detail}"
         lines.append(line)
@@ -384,9 +449,12 @@ class AdviceSkill(Skill):
         never ships empty. `top` can never be a heating/cooling driver for a
         household lacking that equipment — oe3.forecast_explained already
         excludes it from `contributions` upstream — but the result still
-        passes through `_scrub_equipment` for defense in depth."""
+        passes through `_scrub_equipment` for defense in depth. `top` also
+        never picks 'calendar' (2026-07-30 demotion, same rule as
+        `_facts_for_forecast`/`_top_actionable_driver`) — day-type is never
+        the headline justification, even in the no-AI fallback."""
         attribution = entry.get("attribution") or {}
-        top = (attribution.get("contributions") or [{}])[0]
+        top = _top_actionable_driver(attribution, entry.get("kwh"))
         kwh = entry.get("kwh")
         eur = entry.get("eur")
         if lang == "en":

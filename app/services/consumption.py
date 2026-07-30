@@ -202,11 +202,19 @@ async def set_solar_config(slug: str, peak_kwp: float,
 
 _DEFAULT_COMFORT_FLEX: Dict[str, Any] = {
     "version": 1, "source": None, "updated_at": None,
+    "usage_type": None,
     "equipment": {"electric_heating": False, "electric_cooling": False,
                  "electric_dhw": False, "ev_charger": False},
     "comfort": {"temp_min_c": None, "temp_max_c": None},
     "flexible_loads": [],
 }
+
+# The PLC's "Confort y flexibilidad" capture (source='plc') now also carries
+# `usage_type` — vivienda/oficina/mixto — used by oe3.forecast_explained to
+# reframe the 'calendar' SHAP driver (2026-07-30: a workday raising spend is
+# EXPECTED for an oficina, not a home). Any other/garbage value collapses to
+# None (mixto/unknown framing) rather than raising downstream.
+_ALLOWED_USAGE_TYPES = {"vivienda", "oficina", "mixto"}
 
 
 def _merge_comfort_flex(payload: Optional[Dict[str, Any]], source: Optional[str],
@@ -214,7 +222,10 @@ def _merge_comfort_flex(payload: Optional[Dict[str, Any]], source: Optional[str]
     """Deep-merge a (possibly partial) stored payload onto the conservative
     defaults — a household without electric heating/cooling info at all
     (no row) gets ALL-false equipment, never a KeyError downstream in
-    oe3.forecast_explained / AdviceSkill."""
+    oe3.forecast_explained / AdviceSkill. `usage_type` (2026-07-30) is
+    preserved verbatim when present and valid, else None — it must survive
+    this merge unchanged, since both `set_comfort_flex_sync` (PLC) and
+    `comfort_flex_for` (every reader) funnel through here."""
     import copy
     out = copy.deepcopy(_DEFAULT_COMFORT_FLEX)
     payload = payload or {}
@@ -222,6 +233,8 @@ def _merge_comfort_flex(payload: Optional[Dict[str, Any]], source: Optional[str]
     out["comfort"].update(payload.get("comfort") or {})
     out["flexible_loads"] = payload.get("flexible_loads") or []
     out["version"] = payload.get("version", 1)
+    usage_type = payload.get("usage_type")
+    out["usage_type"] = usage_type if usage_type in _ALLOWED_USAGE_TYPES else None
     out["source"] = source
     out["updated_at"] = updated_at
     return out
@@ -230,7 +243,8 @@ def _merge_comfort_flex(payload: Optional[Dict[str, Any]], source: Optional[str]
 async def comfort_flex_for(slugs: Sequence[str],
                            sp: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The household's comfort_flex profile (consum.comfort_flex, mig 015) —
-    cross-team contract: {version, source, updated_at, equipment{
+    cross-team contract: {version, source, updated_at, usage_type
+    (vivienda|oficina|mixto|None, 2026-07-30), equipment{
     electric_heating, electric_cooling, electric_dhw, ev_charger},
     comfort{temp_min_c, temp_max_c}, flexible_loads[]}. `source='plc'` (the
     CM4 "Confort y flexibilidad" capture, synced via api_edge) is
@@ -280,7 +294,10 @@ async def set_comfort_flex_fallback(slug: str, has_electric_heating: bool,
               "equipment": {**existing["equipment"],
                            "electric_heating": bool(has_electric_heating),
                            "electric_cooling": bool(has_electric_cooling)},
-              "comfort": existing["comfort"], "flexible_loads": existing["flexible_loads"]}
+              "comfort": existing["comfort"], "flexible_loads": existing["flexible_loads"],
+              # Carry the PLC-set usage_type through untouched — this is an
+              # equipment-only fallback save, it must never wipe it (2026-07-30).
+              "usage_type": existing.get("usage_type")}
     async with db.raw_connection() as con:
         async with con.cursor() as cur:
             await cur.execute(

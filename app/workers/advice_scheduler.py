@@ -137,7 +137,8 @@ def _email_context(entry: Dict[str, Any], narrative, alert: Optional[Dict[str, A
 
 async def _build_entry(slug: str, cadence: str, region: Optional[str] = None,
                        sp: Optional[Dict[str, Any]] = None,
-                       equipment: Optional[Dict[str, Any]] = None
+                       equipment: Optional[Dict[str, Any]] = None,
+                       usage_type: Optional[str] = None
                        ) -> tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]],
                                  str, List[Dict[str, Any]]]:
     """forecast_explained -> (entry, alert, status, raw_forecasts). entry/alert
@@ -153,13 +154,17 @@ async def _build_entry(slug: str, cadence: str, region: Optional[str] = None,
     which drops the HDD/CDD driver entirely when the corresponding
     equipment is absent.
 
+    `usage_type` (2026-07-30, consumption.comfort_flex_for()'s top-level
+    `usage_type`) — threaded straight into forecast_explained to reframe the
+    'calendar' driver's label/detail (vivienda/oficina/mixto/None).
+
     Shared by the email path (run_for_household, S7) and the read path
     (forecast_for_member, below) — the ONLY compute difference between them
     is what happens after this point (send email vs. return JSON)."""
     days_out = 1 if cadence == "daily" else 7
     try:
         forecast = await oe3.forecast_explained([slug], sp=sp, days_out=days_out, region=region,
-                                                equipment=equipment)
+                                                equipment=equipment, usage_type=usage_type)
     except Exception as exc:
         logger.error("forecast[%s/%s]: forecast_explained failed: %s", slug, cadence, exc)
         return None, None, "error", []
@@ -199,7 +204,8 @@ async def forecast_for_member(slug: str, cadence: str, lang: str = "es",
                               region: Optional[str] = None,
                               sp: Optional[Dict[str, Any]] = None,
                               user_email: Optional[str] = None,
-                              equipment: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                              equipment: Optional[Dict[str, Any]] = None,
+                              usage_type: Optional[str] = None) -> Dict[str, Any]:
     """Member-facing READ path (UI surfacing, 2026-07-29) — the SAME
     forecast_explained + AdviceSkill.narrate pipeline the S7 advice email
     uses, WITHOUT sending anything. `EMAIL_ADVICE_ENABLED`/opt-in/cooldown
@@ -222,7 +228,7 @@ async def forecast_for_member(slug: str, cadence: str, lang: str = "es",
     week total). `status` is 'ok' | 'insufficient_data' | 'singular' | 'error'.
     """
     entry, alert, status, raw_forecasts = await _build_entry(
-        slug, cadence, region=region, sp=sp, equipment=equipment)
+        slug, cadence, region=region, sp=sp, equipment=equipment, usage_type=usage_type)
     if status != "ok":
         return {"status": status, "cadence": cadence}
 
@@ -322,9 +328,12 @@ async def run_for_household(household: Dict[str, Any], cadence: str,
             return result
 
     from app.services import consumption
-    equipment = (await consumption.comfort_flex_for([slug])).get("equipment")
+    comfort = await consumption.comfort_flex_for([slug])
+    equipment = comfort.get("equipment")
+    usage_type = comfort.get("usage_type")
 
-    entry, alert, status, _raw = await _build_entry(slug, cadence, region=region, equipment=equipment)
+    entry, alert, status, _raw = await _build_entry(
+        slug, cadence, region=region, equipment=equipment, usage_type=usage_type)
     if status != "ok":
         result["reason"] = f"forecast_{status}"
         return result
