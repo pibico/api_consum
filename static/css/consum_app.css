@@ -772,6 +772,20 @@
 .panel-3col > * { margin-bottom: 0 !important; min-width: 0; }
 @media (max-width: 1100px) { .panel-3col { grid-template-columns: 1fr; } }
 
+/* Panel top row (2026-07-30): TWO EQUAL-WIDTH INDEPENDENT vertical flex
+   stacks side by side (mosaic/masonry-by-column effect) — deliberately NOT
+   a row-aligned grid. A grid row stretches both cells to the tallest one,
+   leaving a filler gap under the shorter column; a flex row of two
+   flex-column children lets each stack pack its own cards tight and end
+   wherever its own content ends, with zero effect on the other column's
+   height. Left = Tu previsión; right = Ausencias/Vacaciones + Anomalías.
+   50/50 split. */
+.panel-forecast-row { display: flex; gap: 1rem; margin-bottom: 1rem; align-items: flex-start; }
+.panel-forecast-row > * { margin-bottom: 0 !important; min-width: 0; }
+.panel-forecast-left,
+.panel-forecast-right { display: flex; flex-direction: column; gap: 1rem; min-width: 0; flex: 1 1 0; }
+@media (max-width: 768px) { .panel-forecast-row { flex-direction: column; } }
+
 /* Panel v2 — weather rows + pvpc day toggle */
 .pnl-wx-row {
   display: flex; align-items: baseline; gap: 8px;

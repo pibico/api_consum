@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "117"  # 117: Phase 3a V4 — expected-vs-actual overlay on the Consumo hourly chart (consumption.js/html), reads api_edge's virtual_readings directly, i18n ES/EN
+ASSET_VERSION = "118"  # 118: Panel layout — Tu previsión / Ausencias / Anomalías into a 2-col grid row (.panel-forecast-row, consum_app.css + app.html), no logic change
 
 
 def render_template(template_name: str, **context) -> str:

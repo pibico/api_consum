@@ -64,65 +64,78 @@
   </div>
 </div>
 
-<!-- Forecast & advice card (S2/S3/S6) — tomorrow (daily) + 7-day strip
-     (weekly), SHAP drivers, cheapest-hours tip, explicit period on every
-     figure (owner requirement 2026-07-28). "¿por qué?" opens the full
-     waterfall in forecastWhyPanel (base.html). -->
-<div class="glass-panel" style="padding:0.85rem 1rem;margin-bottom:1rem;">
-  <div class="fc-card-head">
-    <h4 style="margin:0;font-size:0.85rem;" data-i18n="forecast.title">Tu previsión</h4>
-    <div class="fc-tabs">
-      <button class="btn btn-sm pnl-day-btn active" id="fc-tab-daily" data-i18n="forecast.tabDaily">Mañana</button>
-      <button class="btn btn-sm pnl-day-btn" id="fc-tab-weekly" data-i18n="forecast.tabWeekly">7 días</button>
+<!-- Panel top row (2026-07-30): TWO INDEPENDENT vertical stacks side by side
+     (not a row-aligned grid) below the untouched KPI row above. Left stack =
+     Tu previsión (wider); right stack = Ausencias/Vacaciones then Anomalías,
+     packed tight with no filler gap regardless of the other column's
+     height. Collapses to one column (KPIs → previsión → ausencias →
+     anomalías) below the .panel-forecast-row breakpoint. Cards themselves
+     are unchanged — only their container/placement moved. -->
+<div class="panel-forecast-row">
+  <div class="panel-forecast-left">
+    <!-- Forecast & advice card (S2/S3/S6) — tomorrow (daily) + 7-day strip
+         (weekly), SHAP drivers, cheapest-hours tip, explicit period on every
+         figure (owner requirement 2026-07-28). "¿por qué?" opens the full
+         waterfall in forecastWhyPanel (base.html). -->
+    <div class="glass-panel" style="padding:0.85rem 1rem;">
+      <div class="fc-card-head">
+        <h4 style="margin:0;font-size:0.85rem;" data-i18n="forecast.title">Tu previsión</h4>
+        <div class="fc-tabs">
+          <button class="btn btn-sm pnl-day-btn active" id="fc-tab-daily" data-i18n="forecast.tabDaily">Mañana</button>
+          <button class="btn btn-sm pnl-day-btn" id="fc-tab-weekly" data-i18n="forecast.tabWeekly">7 días</button>
+        </div>
+      </div>
+      <div id="fc-body"><span class="spinner"></span></div>
+      <div id="fc-equipment" class="fc-equipment"></div>
     </div>
   </div>
-  <div id="fc-body"><span class="spinner"></span></div>
-  <div id="fc-equipment" class="fc-equipment"></div>
-</div>
 
-<!-- Ausencias / Vacaciones (2026-07-30) — per-CUPS away windows the member
-     declares so the forecast/advice/anomaly/bill channels treat the
-     resulting consumption dip as EXPECTED. ?supply=-aware (an absence is
-     always for ONE installation, never household-wide). -->
-<div class="glass-panel" style="padding:0.85rem 1rem;margin-bottom:1rem;">
-  <div class="fc-card-head">
-    <h4 style="margin:0;font-size:0.85rem;" data-i18n="absence.title">Ausencias / Vacaciones</h4>
-    <button class="btn btn-sm" id="abs-add-btn" data-i18n="absence.addBtn">Añadir ausencia</button>
+  <div class="panel-forecast-right">
+    <!-- Ausencias / Vacaciones (2026-07-30) — per-CUPS away windows the member
+         declares so the forecast/advice/anomaly/bill channels treat the
+         resulting consumption dip as EXPECTED. ?supply=-aware (an absence is
+         always for ONE installation, never household-wide). -->
+    <div class="glass-panel" style="padding:0.85rem 1rem;">
+      <div class="fc-card-head">
+        <h4 style="margin:0;font-size:0.85rem;" data-i18n="absence.title">Ausencias / Vacaciones</h4>
+        <button class="btn btn-sm" id="abs-add-btn" data-i18n="absence.addBtn">Añadir ausencia</button>
+      </div>
+      <p class="text-muted" style="font-size:0.72rem;margin:0.2rem 0 0.5rem;" data-i18n="absence.hint">Declara cuándo tu casa estará vacía — la previsión, los consejos y las anomalías lo tendrán en cuenta.</p>
+      <form id="abs-form" class="abs-form" style="display:none;">
+        <div class="abs-form-row">
+          <label>
+            <span data-i18n="absence.from">Desde</span>
+            <input type="date" id="abs-from-date" required>
+            <input type="time" id="abs-from-time" value="00:00" required>
+          </label>
+          <label>
+            <span data-i18n="absence.to">Hasta</span>
+            <input type="date" id="abs-to-date" required>
+            <input type="time" id="abs-to-time" value="23:59" required>
+          </label>
+        </div>
+        <div class="abs-form-row">
+          <label style="flex:1;">
+            <span data-i18n="absence.label">Etiqueta (opcional)</span>
+            <input type="text" id="abs-label" maxlength="200" data-i18n-placeholder="absence.labelPlaceholder" placeholder="p. ej. Vacaciones de verano">
+          </label>
+        </div>
+        <div class="abs-form-actions">
+          <button type="submit" class="btn btn-sm btn-primary" data-i18n="absence.save">Guardar</button>
+          <button type="button" class="btn btn-sm" id="abs-cancel-btn" data-i18n="absence.cancel">Cancelar</button>
+          <span id="abs-form-status" class="text-muted" style="font-size:0.72rem;"></span>
+        </div>
+      </form>
+      <div id="abs-list"><span class="spinner"></span></div>
+    </div>
+
+    <!-- Member anomaly feed (Phase 2 E4) — read-only, graceful empty state
+         (cold-start: <8 weeks fleet history). No ack/resolve here. -->
+    <div class="glass-panel" style="padding:0.85rem 1rem;">
+      <h4 style="margin:0 0 0.5rem;font-size:0.85rem;" data-i18n="anomaly.title">Anomalías recientes</h4>
+      <div id="anomaly-body"><span class="spinner"></span></div>
+    </div>
   </div>
-  <p class="text-muted" style="font-size:0.72rem;margin:0.2rem 0 0.5rem;" data-i18n="absence.hint">Declara cuándo tu casa estará vacía — la previsión, los consejos y las anomalías lo tendrán en cuenta.</p>
-  <form id="abs-form" class="abs-form" style="display:none;">
-    <div class="abs-form-row">
-      <label>
-        <span data-i18n="absence.from">Desde</span>
-        <input type="date" id="abs-from-date" required>
-        <input type="time" id="abs-from-time" value="00:00" required>
-      </label>
-      <label>
-        <span data-i18n="absence.to">Hasta</span>
-        <input type="date" id="abs-to-date" required>
-        <input type="time" id="abs-to-time" value="23:59" required>
-      </label>
-    </div>
-    <div class="abs-form-row">
-      <label style="flex:1;">
-        <span data-i18n="absence.label">Etiqueta (opcional)</span>
-        <input type="text" id="abs-label" maxlength="200" data-i18n-placeholder="absence.labelPlaceholder" placeholder="p. ej. Vacaciones de verano">
-      </label>
-    </div>
-    <div class="abs-form-actions">
-      <button type="submit" class="btn btn-sm btn-primary" data-i18n="absence.save">Guardar</button>
-      <button type="button" class="btn btn-sm" id="abs-cancel-btn" data-i18n="absence.cancel">Cancelar</button>
-      <span id="abs-form-status" class="text-muted" style="font-size:0.72rem;"></span>
-    </div>
-  </form>
-  <div id="abs-list"><span class="spinner"></span></div>
-</div>
-
-<!-- Member anomaly feed (Phase 2 E4) — read-only, graceful empty state
-     (cold-start: <8 weeks fleet history). No ack/resolve here. -->
-<div class="glass-panel" style="padding:0.85rem 1rem;margin-bottom:1rem;">
-  <h4 style="margin:0 0 0.5rem;font-size:0.85rem;" data-i18n="anomaly.title">Anomalías recientes</h4>
-  <div id="anomaly-body"><span class="spinner"></span></div>
 </div>
 
 <!-- General meter today + PVPC curve, side by side -->
