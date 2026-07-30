@@ -161,6 +161,26 @@ window.I18N_ES = {
   'anomaly.expected': 'Esperado',
   'anomaly.weatherAdj': 'Ajuste clima',
   'anomaly.samples': 'Muestras',
+  'anomaly.expectedAbsence': 'esperado: ausencia',
+
+  // ── Ausencias / Vacaciones (2026-07-30, prior de previsión/consejo/anomalía) ──
+  'absence.title': 'Ausencias / Vacaciones',
+  'absence.hint': 'Declara cuándo tu casa estará vacía — la previsión, los consejos y las anomalías lo tendrán en cuenta.',
+  'absence.empty': 'No tienes ausencias declaradas para este punto.',
+  'absence.addBtn': 'Añadir ausencia',
+  'absence.from': 'Desde',
+  'absence.to': 'Hasta',
+  'absence.label': 'Etiqueta (opcional)',
+  'absence.labelPlaceholder': 'p. ej. Vacaciones de verano',
+  'absence.save': 'Guardar',
+  'absence.cancel': 'Cancelar',
+  'absence.delete': 'Eliminar',
+  'absence.saved': 'Ausencia guardada.',
+  'absence.deleted': 'Ausencia eliminada.',
+  'absence.error': 'No se pudo guardar la ausencia.',
+  'absence.invalidRange': 'La fecha de fin debe ser posterior a la de inicio.',
+  'absence.noSupply': 'Selecciona un punto de suministro para gestionar sus ausencias.',
+  'forecast.ausenciaBadge': 'modo vacaciones',
 
   // ── Ayuda y guía (panel deslizante, help.js) ──
   'help.btn': 'Ayuda y guía',

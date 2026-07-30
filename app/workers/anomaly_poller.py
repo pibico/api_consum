@@ -115,9 +115,36 @@ async def _dispatch_new_anomalies(slug: str, items: List[dict]) -> None:
 
     candidates.sort(key=lambda a: a.get("ts") or "", reverse=True)
     from app.workers import advice_scheduler
+    from app.services import absences as absences_svc
     for a in candidates:
         event_id = a["id"]
         try:
+            # Absence suppression (2026-07-30, LOW-consumption only): an
+            # empty house consuming LESS than expected is exactly what a
+            # declared absence predicts — not a problem, so this anomaly is
+            # skipped BEFORE the notified-ledger/cooldown checks (it's never
+            # marked notified, so it stays available for the read-only feed
+            # to show, just without an email). A HIGH-consumption anomaly
+            # while "away" is the opposite signal (leak/left-on/intrusion)
+            # and is deliberately NEVER suppressed here.
+            observed, expected = a.get("value_observed"), a.get("value_expected")
+            is_low = observed is not None and expected is not None and observed < expected
+            if is_low:
+                ts_raw = a.get("ts")
+                if ts_raw:
+                    from datetime import datetime as _dt, timezone as _tz
+                    ts = _dt.fromisoformat(ts_raw)
+                    if ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=_tz.utc)
+                    sp = await advice_scheduler._sp_for_device(
+                        customer_id, a.get("device_id"), a.get("channel"))
+                    hit = await absences_svc.active_at(
+                        customer_id, (sp or {}).get("id"), ts)
+                    if hit:
+                        logger.info(
+                            "anomaly_poller: suppressed LOW anomaly slug=%s event=%s "
+                            "(declared absence %s)", slug, event_id, hit.get("label"))
+                        continue
             if await advice_prefs.anomaly_already_notified(customer_id, event_id):
                 continue
             if await advice_prefs.already_sent_today(customer_id, "anomaly"):

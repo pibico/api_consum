@@ -21,10 +21,46 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.v1.dependencies.rbac import ConsumContext, consum_context
 from app.api.v1.endpoints.consumption import _slugs, _sp
-from app.services import supply_points as supply_points_svc
+from app.services import absences as absences_svc
+from app.services import consumption, supply_points as supply_points_svc
 from app.workers import anomaly_poller
 
 router = APIRouter(prefix="/anomalies", tags=["anomalies"])
+
+
+async def _tag_expected_absence(items: list, customer_id: Optional[str]) -> None:
+    """Optional enrichment (2026-07-30 absence prior, spec: "tag suppressed
+    ones... in the feed rather than dropping silently") — mutates each item
+    in place with `expected_absence: bool`. Unlike the EMAIL dispatch
+    (`anomaly_poller._dispatch_new_anomalies`), the read-only feed NEVER
+    drops a row over this — a LOW anomaly inside a declared absence still
+    shows, just tagged as expected; HIGH anomalies are never tagged."""
+    if not items or not customer_id:
+        return
+    points = await supply_points_svc.ensure_for_slugs([customer_id])
+    dev_to_sp: dict = {}
+    for p in points:
+        for dev, ch in await supply_points_svc.subtree(p):
+            dev_to_sp[(dev, ch)] = p["id"]
+    from datetime import datetime as _dt, timezone as _tz
+    for a in items:
+        a["expected_absence"] = False
+        observed, expected = a.get("value_observed"), a.get("value_expected")
+        if observed is None or expected is None or observed >= expected:
+            continue   # only LOW anomalies can ever be "expected" by an absence
+        ts_raw = a.get("ts")
+        if not ts_raw:
+            continue
+        try:
+            ts = _dt.fromisoformat(ts_raw)
+        except ValueError:
+            continue
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=_tz.utc)
+        sp_id = dev_to_sp.get((a.get("device_id"), a.get("channel")))
+        hit = await absences_svc.active_at(customer_id, sp_id, ts)
+        if hit:
+            a["expected_absence"] = True
 
 
 @router.get("")
@@ -53,5 +89,7 @@ async def list_anomalies(customer: Optional[str] = Query(None),
             items = [a for a in items if a.get("device_id") in subtree_devices]
 
     items = sorted(items, key=lambda a: a.get("ts") or "", reverse=True)[:limit]
+    ids = await consumption._slugs_to_ids([slug])
+    await _tag_expected_absence(items, ids.get(slug))
     return {"data": items, "meta": {"total": len(items), "slug": slug,
                                     "cold_start": cold and not items}}

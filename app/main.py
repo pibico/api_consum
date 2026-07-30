@@ -33,6 +33,7 @@ from app.core import db as ts_db
 from app.core import http_client
 from app.core.config import settings
 from app.api.v1.endpoints import anomalies as anomalies_endpoints
+from app.api.v1.endpoints import absences as absences_endpoints
 from app.workers import advice_scheduler, anomaly_poller, notify_sub
 
 logging.basicConfig(
@@ -100,6 +101,7 @@ app.include_router(plc_endpoints.router, prefix=settings.API_V1_STR)
 app.include_router(playground_endpoints.router, prefix=settings.API_V1_STR)
 app.include_router(advice_endpoints.router, prefix=settings.API_V1_STR)
 app.include_router(anomalies_endpoints.router, prefix=settings.API_V1_STR)
+app.include_router(absences_endpoints.router, prefix=settings.API_V1_STR)
 
 # Web HTML routes (/app product pages + SSO /login; landing stays below)
 from app.api.v1.endpoints.web import router as web_router  # noqa: E402

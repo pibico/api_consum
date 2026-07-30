@@ -60,6 +60,13 @@ def _aggregate_week(forecasts: List[Dict[str, Any]]) -> Dict[str, Any]:
     # (api_exo cold-start / both providers down).
     eur_days = [f.get("eur") for f in forecasts if f.get("eur") is not None]
     week_eur = round(sum(eur_days), 2) if eur_days else None
+    # Absence prior (2026-07-30): only frame the WHOLE week as vacation-mode
+    # when EVERY day is (fully or partially) inside a declared absence — a
+    # 2-of-7-day trip must not make the entire weekly forecast read as
+    # "away" (effect strictly bounded to the actual window). Per-day flags
+    # still ride along in periods_by_day for the 7-day strip regardless.
+    all_away = all(f.get("ausencia") for f in forecasts)
+    week_ausencia = day1.get("ausencia") if all_away else None
     return {
         "kwh": round(total_kwh, 1), "band_lo": round(band_lo, 1), "band_hi": round(band_hi, 1),
         "eur": week_eur,
@@ -70,10 +77,12 @@ def _aggregate_week(forecasts: List[Dict[str, Any]]) -> Dict[str, Any]:
         "period_from": day1["period_from"], "period_to": forecasts[-1]["period_to"],
         "period_label": f"{day1['period_label'].split(' → ')[0]} → {forecasts[-1]['period_label'].split(' → ')[1]}",
         "cheap_window": day1.get("cheap_window"),
+        "ausencia": week_ausencia,
         "periods_by_day": [{"date": f["date"], "periods": f["periods"],
                            "price_status": f["price_status"],
                            "period_from": f["period_from"], "period_to": f["period_to"],
-                           "period_label": f["period_label"]} for f in forecasts],
+                           "period_label": f["period_label"],
+                           "ausencia": f.get("ausencia")} for f in forecasts],
     }
 
 
@@ -132,6 +141,11 @@ def _email_context(entry: Dict[str, Any], narrative, alert: Optional[Dict[str, A
         # Weekly cadence only: per-day explicit ranges (S3 "period structure
         # known even where the € isn't yet") — daily cadence omits this key.
         "days": entry.get("periods_by_day"),
+        # Absence prior (2026-07-30): None unless the whole forecast window
+        # is inside a declared absence — see oe3.forecast_explained /
+        # _aggregate_week. Consumed by the UI (badge) and by AdviceSkill's
+        # deterministic vacation-mode bypass (narrate()).
+        "ausencia": entry.get("ausencia"),
     }
 
 
@@ -185,19 +199,30 @@ async def _narrate_with_cap(slug: str, entry: Dict[str, Any],
     `equipment` is forwarded to AdviceSkill.narrate, which enforces the
     heating/cooling guardrail on EVERY return path (hard requirement
     2026-07-29) — never rely on the LLM alone.
+
+    Absence prior (2026-07-30): every fallback path below also respects
+    `entry["ausencia"]` (deterministic vacation-mode narrative instead of the
+    generic template) — the AI-cap/error fallbacks must never let a
+    declared-absence forecast slip back into ordinary (non-vacation)
+    phrasing just because the cap was hit or the LLM errored.
     Returns (narrative, prompt_tokens, completion_tokens) — tokens are 0
     whenever the fallback was used (not a billable call)."""
+    def _fallback():
+        if entry.get("ausencia"):
+            return _advice_skill._vacation_template(entry, lang, equipment)
+        return _advice_skill._template_fallback(entry, alert, lang, equipment)
+
     from app.services import ai_usage
     used = await ai_usage.month_tokens(slug)
     if used >= settings.AI_MONTHLY_TOKEN_CAP:
         logger.info("advice[%s]: AI monthly cap reached (%d/%d) — template fallback",
                    slug, used, settings.AI_MONTHLY_TOKEN_CAP)
-        return _advice_skill._template_fallback(entry, alert, lang, equipment), 0, 0
+        return _fallback(), 0, 0
     try:
         return await _advice_skill.narrate(entry, alert=alert, lang=lang, equipment=equipment)
     except Exception as exc:
         logger.error("advice[%s]: narrate failed: %s", slug, exc)
-        return _advice_skill._template_fallback(entry, alert, lang, equipment), 0, 0
+        return _fallback(), 0, 0
 
 
 async def forecast_for_member(slug: str, cadence: str, lang: str = "es",
@@ -244,7 +269,7 @@ async def forecast_for_member(slug: str, cadence: str, lang: str = "es",
              "period_label": f["period_label"], "kwh": f["kwh"], "band_lo": f["band_lo"],
              "band_hi": f["band_hi"], "eur": f.get("eur"), "eur_lo": f.get("eur_lo"),
              "eur_hi": f.get("eur_hi"), "price_status": f.get("price_status"),
-             "price_confidence": f.get("price_confidence")}
+             "price_confidence": f.get("price_confidence"), "ausencia": f.get("ausencia")}
             for f in raw_forecasts
         ]
     if prompt_t or completion_t:

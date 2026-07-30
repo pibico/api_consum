@@ -46,6 +46,7 @@ import re
 from datetime import date
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from app.services import absences as absences_svc
 from app.services import consumption, exo_client, pricing
 from app.services import invoices as invoices_svc
 from app.services import shap_attr
@@ -291,7 +292,7 @@ async def expected_bill(customer_id: str, slugs: Sequence[str], cups: Optional[s
                            "expected_power_eur": None, "expected_fixed_eur": None,
                            "expected_tax_eur": None, "expected_total_eur": None,
                            "refs": {"last_year": None, "weather_model": False},
-                           "features": None, "means": None}
+                           "features": None, "means": None, "absence_overlap": None}
     if not days:
         return out
 
@@ -363,6 +364,32 @@ async def expected_bill(customer_id: str, slugs: Sequence[str], cups: Optional[s
         expected_kwh = None
         attribution = None
 
+    # Absence prior (2026-07-30, Phase 2.5 §4d): a declared absence
+    # overlapping this billed period lowers the EXPECTED kWh proportional to
+    # the overlap — "a low bill during a declared vacation isn't an anomaly;
+    # a normal/high bill during a declared absence may be". Same clean-term
+    # discipline as oe3.forecast_explained's day-level prior: appended as an
+    # extra 'ausencia' contribution so base+Σφ==total keeps holding exactly.
+    absence_overlap = None
+    if attribution is not None and expected_kwh is not None:
+        absence_overlap = await absences_svc.overlap_fraction(
+            customer_id, supply_point_id, period_start, period_end)
+        frac = absence_overlap["fraction"]
+        if frac > 0:
+            standby_kwh = expected_kwh * (1 - (1 - absences_svc.STANDBY_FRACTION) * frac)
+            phi_absence = round(standby_kwh - expected_kwh, 3)
+            attribution["contributions"].append({
+                "feature": "ausencia", "label": "Ausencia declarada",
+                "label_en": "Declared absence", "phi": phi_absence,
+                "x": round(frac, 2), "x_bar": None, "unit": "kWh",
+                "detail": f"{round(frac * 100)}% del periodo facturado",
+                "detail_en": f"{round(frac * 100)}% of the billed period",
+            })
+            attribution["contributions"].sort(key=lambda c: -abs(c["phi"]))
+            attribution["total"] = round(attribution["total"] + phi_absence, 3)
+            expected_kwh = max(attribution["total"], 0.0)
+
+    out["absence_overlap"] = absence_overlap
     out["attribution"] = attribution
     out["expected_kwh"] = expected_kwh
     if expected_kwh is not None and price_expected_mean is not None:

@@ -161,6 +161,26 @@ window.I18N_EN = {
   'anomaly.expected': 'Expected',
   'anomaly.weatherAdj': 'Weather adjustment',
   'anomaly.samples': 'Samples',
+  'anomaly.expectedAbsence': 'expected: absence',
+
+  // ── Absences / Vacations (2026-07-30, forecast/advice/anomaly prior) ──
+  'absence.title': 'Absences / Vacations',
+  'absence.hint': 'Declare when your home will be empty — the forecast, advice and anomalies will account for it.',
+  'absence.empty': 'No declared absences for this supply point.',
+  'absence.addBtn': 'Add absence',
+  'absence.from': 'From',
+  'absence.to': 'To',
+  'absence.label': 'Label (optional)',
+  'absence.labelPlaceholder': 'e.g. Summer vacation',
+  'absence.save': 'Save',
+  'absence.cancel': 'Cancel',
+  'absence.delete': 'Delete',
+  'absence.saved': 'Absence saved.',
+  'absence.deleted': 'Absence deleted.',
+  'absence.error': 'Could not save the absence.',
+  'absence.invalidRange': 'The end date must be after the start date.',
+  'absence.noSupply': 'Select a supply point to manage its absences.',
+  'forecast.ausenciaBadge': 'vacation mode',
 
   // ── Help & guide (slide panel, help.js) ──
   'help.btn': 'Help & guide',

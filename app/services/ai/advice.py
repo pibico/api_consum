@@ -441,6 +441,41 @@ class AdviceSkill(Skill):
     name = "advice"
     system_prompt = _SYSTEM
 
+    def _vacation_template(self, entry: Dict[str, Any], lang: str,
+                           equipment: Optional[Dict[str, Any]] = None) -> AdviceNarrative:
+        """Deterministic vacation-mode narrative (2026-07-30 absence prior) —
+        used for EVERY forecast whose window falls inside a declared
+        absence (`entry["ausencia"]`), bypassing the LLM entirely (see
+        `narrate()`). This is not a fallback-on-failure path like the other
+        `_template_fallback`s: it's the ONLY path for this case, by design —
+        the hard requirement is "NEVER alarm about the low consumption", and
+        skipping the LLM removes any chance of it drifting into a warning
+        tone. Tips: power down deferrable loads/water heater/standby before
+        leaving, keep only safety lighting, and a no-worry note for the
+        return — never a saving/anomaly framing."""
+        ausencia = entry.get("ausencia") or {}
+        label = ausencia.get("label") or entry.get("period_label") or ""
+        kwh, eur = entry.get("kwh"), entry.get("eur")
+        if lang == "en":
+            summary = (f"Vacation mode: only standby-level consumption expected"
+                      f" (~{kwh} kWh" + (f", ~{eur} EUR" if eur is not None else "") +
+                      f") during {label}.")
+            advice = [
+                "Turn off deferrable appliances, the water heater and standby devices before leaving.",
+                "Leave only safety lighting on if you need it.",
+                "When you're back, resume your usual routine — this low reading is expected, nothing to worry about.",
+            ]
+        else:
+            summary = (f"Modo vacaciones: se espera solo consumo de standby"
+                      f" (~{kwh} kWh" + (f", ~{eur} €" if eur is not None else "") +
+                      f") durante {label}.")
+            advice = [
+                "Apaga electrodomésticos aplazables, el termo y aparatos en standby antes de salir.",
+                "Deja solo la iluminación de seguridad si la necesitas.",
+                "Al volver, retoma tu rutina habitual — esta bajada es lo esperado, no hay nada de qué preocuparse.",
+            ]
+        return _scrub_equipment(AdviceNarrative(summary=summary, advice=advice), equipment, entry, lang)
+
     def _template_fallback(self, entry: Dict[str, Any],
                            alert: Optional[Dict[str, Any]], lang: str,
                            equipment: Optional[Dict[str, Any]] = None) -> AdviceNarrative:
@@ -479,7 +514,18 @@ class AdviceSkill(Skill):
         passed to the LLM as an explicit caveat AND enforced deterministically
         via `_scrub_equipment` on EVERY return path below — the LLM's own
         discipline is never trusted alone to withhold a heating/cooling tip
-        for equipment the household doesn't have."""
+        for equipment the household doesn't have.
+
+        Absence prior (2026-07-30): if `entry["ausencia"]` is set (the
+        forecast window is inside a declared absence — oe3.forecast_explained
+        / _aggregate_week), this SKIPS the LLM entirely and returns the
+        deterministic vacation-mode narrative (`_vacation_template`) —
+        same discipline as the equipment guardrail, just enforced BEFORE the
+        AI call instead of after, since there's no safe way to let an LLM
+        phrase a declared-absence dip and guarantee it never reads as a
+        warning."""
+        if entry.get("ausencia"):
+            return self._vacation_template(entry, lang, equipment), 0, 0
         if not ai_client.configured():
             return self._template_fallback(entry, alert, lang, equipment), 0, 0
 

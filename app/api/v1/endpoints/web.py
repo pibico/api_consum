@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "115"  # 115: Phase 2.5 bill-anomaly "Análisis" panel on the invoice detail (€-delta waterfall + PLC-vs-invoice reconciliation), invoices.html/invoices.js
+ASSET_VERSION = "116"  # 116: absence/vacation periods (per-CUPS) — Ausencias/Vacaciones card on the Panel (app.html/app.js), forecast "modo vacaciones" badge, i18n ES/EN
 
 
 def render_template(template_name: str, **context) -> str:

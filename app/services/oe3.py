@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
+from app.services import absences as absences_svc
 from app.services import consumption, exo_client, shap_attr
 
 logger = logging.getLogger("consum.oe3")
@@ -620,6 +621,20 @@ async def forecast_explained(slugs: Sequence[str], sp=None,
     forecast_dates = [(date.today() + timedelta(days=i)).isoformat()
                       for i in range(1, days_out + 1)]
     day_type_fc = await _day_type_series(forecast_dates, region)
+    # Absence prior (2026-07-30): fetch the CUPS's declared away-windows ONCE
+    # for the whole forecast window (never per day — one DB round trip),
+    # already unified (overlapping declarations count once). `sp` carries
+    # customer_id when the caller filtered by `?supply=`; otherwise fall back
+    # to the slug's own customer_id (household-wide aggregation cadences,
+    # e.g. the daily/weekly advice email) and union ALL of that customer's
+    # CUPS (absences_for's documented sp=None behavior).
+    _ids = await consumption._slugs_to_ids(slugs)
+    customer_id = (sp or {}).get("customer_id") or next(iter(_ids.values()), None)
+    week_from, _ = _day_bounds_local(forecast_dates[0])
+    _, week_to = _day_bounds_local(forecast_dates[-1])
+    absence_intervals = (
+        await absences_svc.absences_for(customer_id, (sp or {}).get("id"), week_from, week_to)
+        if customer_id else [])
     shape_task = _hourly_shape(slugs, device=device, sp=sp)
     schedule_task = exo_client.tariff_schedule_week(forecast_dates[0])
     guardrail_task = _weather_guardrail(lat, lon, forecast_dates, dd_by_date)
@@ -666,12 +681,42 @@ async def forecast_explained(slugs: Sequence[str], sp=None,
             attribution = _consolidate_weather_driver(attribution)
         kwh = max(attribution["total"], 0.0)
         d_from, d_to = _day_bounds_local(d)
+
+        # Absence prior (2026-07-30): override toward a standby/vacant
+        # baseline for any day (fully or partially) inside a declared
+        # absence for this CUPS. Applied as a CLEAN extra Shapley-style term
+        # (phi_absence = standby_kwh - kwh) so base+Σφ==total keeps holding
+        # exactly — no separate code path recomputing the total. The
+        # reduction is scaled by the day's OWN overlap fraction, so the
+        # effect is STRICTLY bounded to the declared window (a half-covered
+        # day is only half nudged, and an untouched day is untouched at all).
+        ausencia: Optional[Dict[str, Any]] = None
+        if absence_intervals:
+            ov_frac = absences_svc.day_overlap_fraction(absence_intervals, d_from, d_to)
+            if ov_frac > 0:
+                standby_kwh = kwh * (1 - (1 - absences_svc.STANDBY_FRACTION) * ov_frac)
+                phi_absence = round(standby_kwh - kwh, 3)
+                ausencia_label = absences_svc.label_for(absence_intervals, d_from, d_to)
+                attribution["contributions"].append({
+                    "feature": "ausencia", "label": "Ausencia declarada",
+                    "label_en": "Declared absence", "phi": phi_absence,
+                    "x": round(ov_frac, 2), "x_bar": None, "unit": "kWh",
+                    "detail": ausencia_label, "detail_en": ausencia_label,
+                })
+                attribution["contributions"].sort(key=lambda c: -abs(c["phi"]))
+                attribution["total"] = round(attribution["total"] + phi_absence, 3)
+                kwh = max(attribution["total"], 0.0)
+                ausencia = {"active": True, "overlap_fraction": round(ov_frac, 2),
+                           "label": ausencia_label,
+                           "period_from": d_from.isoformat(), "period_to": d_to.isoformat()}
+
         entry: Dict[str, Any] = {
             "date": d, "kwh": round(kwh, 2),
             "band_lo": round(max(kwh - 1.28 * sigma, 0.0), 2),
             "band_hi": round(kwh + 1.28 * sigma, 2),
             "attribution": attribution,
             "weather_guardrail": gr,
+            "ausencia": ausencia,
             "eur": None, "price_status": "pending", "periods": None,
             # Mandatory explicit period (owner requirement 2026-07-28): every
             # forecast states EXACTLY the date+hour window it covers, local
@@ -751,8 +796,8 @@ async def forecast_explained(slugs: Sequence[str], sp=None,
             top_alert = gr["alert"]
         forecasts.append(entry)
 
-    week_from, _ = _day_bounds_local(forecast_dates[0])
-    _, week_to = _day_bounds_local(forecast_dates[-1])
+    # week_from/week_to were already computed above (absence-window fetch) —
+    # same day-1 00:00 -> last-day 24:00 span, reused here as-is.
     out.update({"status": "ok", "r2": round(r2, 3), "sigma_kwh": round(sigma, 2),
                "region": region, "forecasts": forecasts, "alert": top_alert,
                # Overall window covered by THIS call (owner requirement

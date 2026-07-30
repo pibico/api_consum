@@ -946,8 +946,15 @@
           '</div>';
       }).join('') + '</div>';
     }
+    // Absence prior (2026-07-30): a badge, never a warning — the low figure
+    // below is EXPECTED (vacation mode), not an alert.
+    var ausenciaBadge = data.ausencia
+      ? '<span class="fc-day-badge real" style="margin-left:6px;" title="' +
+        esc(data.ausencia.label || '') + '">🏖️ ' +
+        esc(__t('forecast.ausenciaBadge', 'modo vacaciones')) + '</span>'
+      : '';
     body.innerHTML =
-      '<div class="fc-period">' + esc(data.period_label || '') + '</div>' +
+      '<div class="fc-period">' + esc(data.period_label || '') + ausenciaBadge + '</div>' +
       '<div class="fc-figures">' +
       '<div class="fc-figure"><b>' + fmt(f.kwh, 1) + '</b><span>kWh (' +
         fmt(f.band_lo, 1) + '–' + fmt(f.band_hi, 1) + ')</span></div>' +
@@ -1014,6 +1021,131 @@
 
   function loadEquipment() {
     return cfetch('/consumption/comfort-flex' + supQS()).then(renderEquipment).catch(function () {});
+  }
+
+  // ── Ausencias / Vacaciones (2026-07-30) — per-CUPS away windows ────────
+  // Local wall-clock construction (NEVER toISOString() on "now" for a date —
+  // the platform's standing gotcha) — here we build a Date from the user's
+  // OWN date+time picker values via the LOCAL constructor, so the browser
+  // (assumed Europe/Madrid, same assumption the rest of this file makes)
+  // resolves the correct DST offset itself; toISOString() on THAT object is
+  // then a normal, tz-aware UTC instant — safe to send to the API.
+  function absLocalDateTime(dateStr, timeStr) {
+    if (!dateStr || !timeStr) return null;
+    var dp = dateStr.split('-').map(Number), tp = timeStr.split(':').map(Number);
+    var d = new Date(dp[0], dp[1] - 1, dp[2], tp[0], tp[1], 0, 0);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  function absFmt(iso) {
+    if (!iso) return '—';
+    try {
+      return new Date(iso).toLocaleString((window.i18n && window.i18n.getLang()) === 'en' ? 'en-GB' : 'es-ES',
+        { timeZone: 'Europe/Madrid', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch (e) { return iso; }
+  }
+
+  function renderAbsenceList(items) {
+    var el = q('abs-list');
+    if (!el) return;
+    if (!items || !items.length) {
+      el.innerHTML = '<div class="fc-empty">' + esc(__t('absence.empty', 'No tienes ausencias declaradas para este punto.')) + '</div>';
+      return;
+    }
+    var now = Date.now();
+    el.innerHTML = items.map(function (a) {
+      var starts = new Date(a.starts_at).getTime(), ends = new Date(a.ends_at).getTime();
+      var active = now >= starts && now <= ends;
+      var past = now > ends;
+      return '<div class="abs-item' + (active ? ' active' : '') + (past ? ' past' : '') + '">' +
+        '<span class="abs-dot"></span>' +
+        '<div class="abs-item-body">' +
+        '<div class="abs-item-range">' + absFmt(a.starts_at) + ' → ' + absFmt(a.ends_at) + '</div>' +
+        (a.label ? '<div class="abs-item-label">' + esc(a.label) + '</div>' : '') +
+        '</div>' +
+        '<button type="button" class="abs-del-btn" data-id="' + a.id + '" title="' +
+        esc(__t('absence.delete', 'Eliminar')) + '">' +
+        '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+        '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>' +
+        '</button></div>';
+    }).join('');
+    el.querySelectorAll('.abs-del-btn').forEach(function (btn) {
+      btn.onclick = function () {
+        if (!window.confirm) return deleteAbsence(btn.dataset.id);
+        deleteAbsence(btn.dataset.id);
+      };
+    });
+  }
+
+  function deleteAbsence(id) {
+    return cfetch('/absences/' + id + custQS(), { method: 'DELETE' }).then(function () {
+      App.showNotification && App.showNotification('', __t('absence.deleted', 'Ausencia eliminada.'), 'success');
+      loadAbsences();
+      loadForecast(fcCadence);   // the prior may have just changed
+    }).catch(function () {
+      App.showNotification && App.showNotification('', __t('absence.error', 'No se pudo guardar la ausencia.'), 'danger');
+    });
+  }
+
+  function loadAbsences() {
+    var sup = App.getSupply && App.getSupply();
+    var el = q('abs-list');
+    if (!sup) {
+      if (el) el.innerHTML = '<div class="fc-empty">' + esc(__t('absence.noSupply', 'Selecciona un punto de suministro para gestionar sus ausencias.')) + '</div>';
+      var addBtn = q('abs-add-btn');
+      if (addBtn) addBtn.style.display = 'none';
+      return Promise.resolve();
+    }
+    var addBtn2 = q('abs-add-btn');
+    if (addBtn2) addBtn2.style.display = '';
+    return cfetch('/absences?supply=' + encodeURIComponent(sup) + custQS('&'))
+      .then(function (r) { renderAbsenceList((r && r.data) || []); })
+      .catch(function () { if (el) el.innerHTML = '<div class="fc-empty">' + esc(__t('absence.error', 'No se pudo guardar la ausencia.')) + '</div>'; });
+  }
+
+  function initAbsenceForm() {
+    var form = q('abs-form');
+    var addBtn = q('abs-add-btn');
+    var cancelBtn = q('abs-cancel-btn');
+    if (!form || !addBtn || !cancelBtn) return;
+    addBtn.onclick = function () {
+      var t = today();
+      q('abs-from-date').value = t;
+      q('abs-to-date').value = t;
+      q('abs-form-status').textContent = '';
+      form.style.display = form.style.display === 'none' ? '' : 'none';
+    };
+    cancelBtn.onclick = function () { form.style.display = 'none'; };
+    form.onsubmit = function (ev) {
+      ev.preventDefault();
+      var status = q('abs-form-status');
+      var start = absLocalDateTime(q('abs-from-date').value, q('abs-from-time').value);
+      var end = absLocalDateTime(q('abs-to-date').value, q('abs-to-time').value);
+      if (!start || !end || end <= start) {
+        if (status) status.textContent = __t('absence.invalidRange', 'La fecha de fin debe ser posterior a la de inicio.');
+        return;
+      }
+      var sup = App.getSupply && App.getSupply();
+      if (!sup) return;
+      cfetch('/absences', {
+        method: 'POST',
+        body: JSON.stringify({
+          customer: customer || undefined,
+          supply: Number(sup),
+          starts_at: start.toISOString(),
+          ends_at: end.toISOString(),
+          label: q('abs-label').value || undefined,
+        }),
+      }).then(function () {
+        form.style.display = 'none';
+        form.reset();
+        App.showNotification && App.showNotification('', __t('absence.saved', 'Ausencia guardada.'), 'success');
+        loadAbsences();
+        loadForecast(fcCadence);   // the prior may have just changed
+      }).catch(function (e) {
+        if (status) status.textContent = (e && e.message) || __t('absence.error', 'No se pudo guardar la ausencia.');
+      });
+    };
   }
 
   function renderForecastWhy() {
@@ -1119,6 +1251,7 @@
       loadForecast(fcCadence);
       loadAnomalyFeed();
       loadEquipment();
+      loadAbsences();
     },
     dismissWxAlert: function () {
       var wrap = q('wx-alert-banner-wrap');
@@ -1227,6 +1360,8 @@
         loadForecast('daily');
         loadAnomalyFeed();
         loadEquipment();
+        initAbsenceForm();
+        loadAbsences();
         setInterval(function () { loadPower().catch(function () {}); }, 5000);   // live watts tick
         setInterval(refreshHouse, 60000);    // kWh / € of the day+month
         setInterval(refreshEnv, 300000);     // exogenous environment
