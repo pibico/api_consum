@@ -101,6 +101,10 @@ class Settings(BaseSettings):
     ANOMALY_POLL_INTERVAL_MIN: int = 15
     ANOMALY_LOOKBACK_DAYS: int = 14
 
+    # ── Accuracy eval harness (2026-07-30, observability only) ──
+    EVAL_WEEKLY_DOW: int = 0       # APScheduler cron day_of_week: 0=Monday
+    EVAL_WEEKLY_HOUR: int = 5      # Europe/Madrid, before the household wakes up
+
     # ── Anomaly -> advice email loop closure (2026-07-30) ──
     # OWN dark-launch gate, independent of EMAIL_ADVICE_ENABLED (which
     # mailer.send_email() checks unconditionally for every template) — lets

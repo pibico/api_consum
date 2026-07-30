@@ -34,7 +34,8 @@ from app.core import http_client
 from app.core.config import settings
 from app.api.v1.endpoints import anomalies as anomalies_endpoints
 from app.api.v1.endpoints import absences as absences_endpoints
-from app.workers import advice_scheduler, anomaly_poller, notify_sub
+from app.api.v1.endpoints import eval as eval_endpoints
+from app.workers import advice_scheduler, anomaly_poller, eval_scheduler, notify_sub
 
 logging.basicConfig(
     level=logging.INFO,
@@ -63,9 +64,14 @@ async def lifespan(app: FastAPI):
         anomaly_poller.start()
     except Exception as e:  # noqa: BLE001 — the member anomaly feed must never block startup
         log.error("anomaly_poller failed to start (continuing): %s", e)
+    try:
+        eval_scheduler.start()
+    except Exception as e:  # noqa: BLE001 — observability harness must never block startup
+        log.error("eval_scheduler failed to start (continuing): %s", e)
     yield
     advice_scheduler.shutdown()
     anomaly_poller.shutdown()
+    eval_scheduler.shutdown()
     try:
         await ts_db.close_pool()
     except Exception as e:  # noqa: BLE001
@@ -102,6 +108,7 @@ app.include_router(playground_endpoints.router, prefix=settings.API_V1_STR)
 app.include_router(advice_endpoints.router, prefix=settings.API_V1_STR)
 app.include_router(anomalies_endpoints.router, prefix=settings.API_V1_STR)
 app.include_router(absences_endpoints.router, prefix=settings.API_V1_STR)
+app.include_router(eval_endpoints.router, prefix=settings.API_V1_STR)
 
 # Web HTML routes (/app product pages + SSO /login; landing stays below)
 from app.api.v1.endpoints.web import router as web_router  # noqa: E402
