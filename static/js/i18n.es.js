@@ -405,6 +405,8 @@ window.I18N_ES = {
   'cons.colPeriod': 'Periodo',
   'cons.colCost': 'Coste €',
   'cons.wholeHouse': 'Toda la casa',
+  'cons.expected': 'Esperado (IA)',
+  'cons.expectedSince': 'Previsión esperada (IA) disponible desde el {date} — para este día aún no hay datos.',
   // Ahorro (F3/OE3)
   'sav.shiftTitle': 'Ahorro potencial',
   'sav.shiftUnit': '€/mes desplazando consumo',

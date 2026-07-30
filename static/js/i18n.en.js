@@ -405,6 +405,8 @@ window.I18N_EN = {
   'cons.colPeriod': 'Period',
   'cons.colCost': 'Cost €',
   'cons.wholeHouse': 'Whole house',
+  'cons.expected': 'Expected (AI)',
+  'cons.expectedSince': 'AI-expected forecast available since {date} — no data yet for this day.',
   // Savings (F3/OE3)
   'sav.shiftTitle': 'Potential savings',
   'sav.shiftUnit': '€/month by shifting consumption',

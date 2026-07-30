@@ -6,6 +6,7 @@ union of their org's customer slugs; a `?customer=` narrows to one slug
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -17,6 +18,7 @@ from app.services import consumption, edge_client, exo_client, pricing
 from app.services import contracts as contracts_svc
 from app.services import supply_points as supply_points_svc
 
+logger = logging.getLogger("consum.api.consumption")
 router = APIRouter(prefix="/consumption", tags=["consumption"])
 
 
@@ -485,6 +487,26 @@ async def day(date: str = Query(..., description="YYYY-MM-DD (local)"),
         slugs, date, date, supply_point_id=(sp or {}).get("id"))
     hmap = pricing.hourly_rollup(pmap)
 
+    # Phase 3a V4: expected/residual overlay — whole-house only (a `device`
+    # filter narrows to one plug, which the expected baseline never covers;
+    # cold start / no registered main → [] and the overlay is simply absent).
+    expected_by_hour: dict[int, dict] = {}
+    expected_since = None
+    if not device:
+        try:
+            exp = await consumption.expected_series(slugs, date, date, sp=sp)
+            for r in exp:
+                if r["ts"][:10] != date:
+                    continue
+                expected_by_hour[int(r["ts"][11:13])] = r
+            if not expected_by_hour:
+                # Cold start (Phase 3a just deployed): no expected data yet
+                # for THIS day — surface since-when it exists at all, so the
+                # UI can show a note instead of silently omitting the overlay.
+                expected_since = await consumption.expected_since_for(slugs, sp=sp)
+        except Exception:
+            logger.exception("day: expected_series failed for %s", date)
+
     # Settlement (hourly) — the source of truth for totals & the retailer bill.
     kwh_by_hour: dict[int, float] = {}
     for r in hourly:
@@ -501,9 +523,12 @@ async def day(date: str = Query(..., description="YYYY-MM-DD (local)"),
         total_kwh += kwh
         if cost is not None:
             total_cost += cost
+        exp = expected_by_hour.get(hour) or {}
         values.append({"hour": hour, "kwh": kwh,
                        "price_eur_kwh": round(price, 5) if price is not None else None,
-                       "period": p.get("period"), "cost_eur": cost})
+                       "period": p.get("period"), "cost_eur": cost,
+                       "expected_kwh": exp.get("expected_kwh"),
+                       "residual_kwh": exp.get("residual_kwh")})
 
     # Display curve (quarter) — rescale each hour's quarters to the settlement
     # kWh so the bars sum to the hourly total shown everywhere else.
@@ -528,6 +553,7 @@ async def day(date: str = Query(..., description="YYYY-MM-DD (local)"),
                              "cost_eur": round(kwh * price, 4) if price is not None else None})
     return {"date": date, "values": values, "quarters": quarters,
             "price_source": price_source,
+            "expected_since": expected_since,
             "total_kwh": round(total_kwh, 2),
             "total_cost_eur": round(total_cost, 2) if values else 0,
             "avg_price_eur_kwh": round(total_cost / total_kwh, 4) if total_kwh > 0 and total_cost else None}

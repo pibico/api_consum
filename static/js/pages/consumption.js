@@ -53,6 +53,29 @@
     axisPointer: { type: 'shadow' },
   };
 
+  // Phase 3a V4: actual-vs-expected overlay. `expected_kwh` is null for hours
+  // without an accrued api_edge virtual_readings row (cold start, or a
+  // household with no registered role='main' sensor) — connectNulls:false
+  // means the dashed line simply breaks over those gaps instead of a
+  // misleading flat/zero segment.
+  function updateExpectedNote() {
+    var vals = (day && day.values) || [];
+    var hasExpected = vals.some(function (v) { return v.expected_kwh != null; });
+    var legend = q('cons-expected-legend'), note = q('cons-expected-note');
+    if (legend) legend.style.display = hasExpected ? '' : 'none';
+    if (!note) return;
+    if (hasExpected || !day || !day.expected_since) {
+      note.style.display = 'none';
+      note.textContent = '';
+      return;
+    }
+    var since = String(day.expected_since).slice(0, 10);
+    note.textContent = __t('cons.expectedSince',
+      'Previsión esperada (IA) disponible desde el {date} — para este día aún no hay datos.')
+      .replace('{date}', since);
+    note.style.display = '';
+  }
+
   function drawDayChart() {
     var c = chart('cons-day-chart');
     if (!c || !day) return;
@@ -60,16 +83,25 @@
     (day.values || []).forEach(function (v) { byHour[v.hour] = v; });
     var hours = [];
     for (var h = 0; h < 24; h++) hours.push(h);
+    updateExpectedNote();
     c.setOption({
       grid: { left: 44, right: 8, top: 12, bottom: 22 },
       tooltip: Object.assign({}, TOOLTIP, {
         formatter: function (params) {
           var i = params[0].dataIndex, v = byHour[i];
           if (!v) return String(i).padStart(2, '0') + ':00 — ' + __t('common.noData', 'Sin datos');
-          return '<b>' + String(i).padStart(2, '0') + ':00–' + String(i + 1).padStart(2, '0') + ':00</b><br>' +
+          var s = '<b>' + String(i).padStart(2, '0') + ':00–' + String(i + 1).padStart(2, '0') + ':00</b><br>' +
             fmt(v.kwh, 3) + ' kWh' + (v.period ? ' · ' + v.period : '') +
             (v.price_eur_kwh != null ? '<br>PVPC ' + v.price_eur_kwh.toFixed(4) + ' €/kWh' : '') +
             (v.cost_eur != null ? ' · <b>' + v.cost_eur.toFixed(3) + ' €</b>' : '');
+          if (v.expected_kwh != null) {
+            var delta = v.kwh - v.expected_kwh;
+            var pct = v.expected_kwh > 0 ? (delta / v.expected_kwh * 100) : null;
+            s += '<br>' + __t('cons.expected', 'Esperado (IA)') + ': ' + fmt(v.expected_kwh, 3) + ' kWh' +
+              (pct != null ? ' <span style="color:' + (delta > 0 ? '#e74c3c' : '#27ae60') + ';">(' +
+                (delta > 0 ? '+' : '') + pct.toFixed(0) + '%)</span>' : '');
+          }
+          return s;
         },
       }),
       xAxis: { type: 'category', data: hours.map(function (h) { return String(h).padStart(2, '0'); }),
@@ -80,6 +112,13 @@
         data: hours.map(function (h) {
           var v = byHour[h];
           return { value: v ? v.kwh : 0, itemStyle: { color: periodColor(v && v.period) } };
+        }),
+      }, {
+        type: 'line', symbol: 'none', connectNulls: false, z: 3,
+        lineStyle: { color: '#22384c', width: 2, type: 'dashed' },
+        data: hours.map(function (h) {
+          var v = byHour[h];
+          return (v && v.expected_kwh != null) ? v.expected_kwh : null;
         }),
       }],
     });

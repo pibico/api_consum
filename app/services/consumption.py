@@ -563,6 +563,99 @@ async def energy_series(
     ]
 
 
+# Phase 3a V4 (explainable AI): the api_edge `virtual_expected` worker writes a
+# deterministic, weather/day-type-adjusted "expected" baseline for each
+# household's role='main' sensor into `public.virtual_readings` (mig 026) —
+# device_id = "virtual_<real_main_device_id>" (api_edge's
+# anomaly_service.virtual_sensor_key — keyed by device_id only, NOT channel),
+# channel='expected_main'/'residual_main', variable='apower' (avg W over the
+# hour, same as sensor_hourly.avg). Read it the SAME direct-DB way energy_series
+# reads sensor_hourly — mig 027 (api_edge) grants api_consum SELECT on
+# virtual_readings, same grant-based cross-service pattern as mig 022
+# (sensor_hourly/sensor_daily). No api_edge HTTP endpoint needed.
+async def _expected_vkeys(ids: Dict[str, str],
+                          sp: Optional[Dict[str, Any]]) -> List[tuple]:
+    """(customer_id, virtual_device_id) pairs for this household's/sp's
+    registered main sensor(s) — shared by expected_series/expected_since_for.
+    The virtual key only depends on device_id (see api_edge's
+    anomaly_service.virtual_sensor_key), not channel."""
+    if sp is not None:
+        mains = [(sp["customer_id"], sp["main_sensor_key"], sp["main_channel"])]
+    else:
+        mains = await _mains_rows(ids)
+    return sorted({(cid, f"virtual_{dev}") for cid, dev, _ch in mains})
+
+
+async def expected_since_for(slugs: Sequence[str],
+                             sp: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    """Earliest virtual_readings ts for this household's expected_main series
+    — feeds the cold-start UI note ("previsión disponible desde <fecha>").
+    None when there is no registered main or no accrued data yet."""
+    ids = await _slugs_to_ids(slugs)
+    if not ids:
+        return None
+    vkeys = await _expected_vkeys(ids, sp)
+    if not vkeys:
+        return None
+    triple = "(customer_id::text = %s AND device_id = %s)"
+    sql = " OR ".join([triple] * len(vkeys))
+    params: List[Any] = [x for pair in vkeys for x in pair]
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                f"""SELECT MIN(ts) FROM virtual_readings
+                     WHERE channel = 'expected_main' AND ({sql})""",
+                params,
+            )
+            row = await cur.fetchone()
+    return row[0].isoformat() if row and row[0] else None
+
+
+async def expected_series(slugs: Sequence[str], start: str, end: str,
+                          sp: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """Hourly {ts, expected_kwh, residual_kwh} for THIS household's (or `sp`'s,
+    F3) role='main' sensor. virtual_readings is ALWAYS hourly (mig 026 writes
+    one row per sensor per hour) — there is no quarter-hour equivalent, so
+    callers align this against hourly buckets only.
+
+    COLD START (deploy day forward): a household with no accrued
+    virtual_readings for the range yet returns []. Never fabricate — the
+    caller (the /day endpoint / consumption card) must degrade gracefully,
+    not synthesize a flat or broken line."""
+    ids = await _slugs_to_ids(slugs)
+    if not ids:
+        return []
+    vkeys = await _expected_vkeys(ids, sp)
+    if not vkeys:
+        return []
+    triple = "(customer_id::text = %s AND device_id = %s)"
+    sql = " OR ".join([triple] * len(vkeys))
+    params: List[Any] = [x for pair in vkeys for x in pair]
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                f"""SELECT time_bucket('1 hour', ts) AS b, channel,
+                           SUM(value_num) / 1000.0 AS kwh
+                     FROM virtual_readings
+                    WHERE variable = 'apower' AND channel IN ('expected_main', 'residual_main')
+                      AND ts >= %s::timestamptz
+                      AND ts < (%s::timestamptz + interval '1 day')
+                      AND ({sql})
+                    GROUP BY b, channel""",
+                [start, end] + params,
+            )
+            rows = await cur.fetchall()
+    buckets: Dict[Any, Dict[str, float]] = {}
+    for b, channel, kwh in rows:
+        d = buckets.setdefault(b, {"expected_kwh": None, "residual_kwh": None})
+        key = "expected_kwh" if channel == "expected_main" else "residual_kwh"
+        d[key] = round(float(kwh or 0), 3)
+    return [
+        {"ts": b.isoformat(), **d}
+        for b, d in sorted(buckets.items())
+    ]
+
+
 async def topology_from_sensors(slugs: Sequence[str],
                                 sp: Optional[Dict[str, Any]] = None
                                 ) -> Dict[str, Any]:
