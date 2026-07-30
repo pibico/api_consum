@@ -145,6 +145,39 @@ async def mark_anomaly_notified(customer_id: str, event_id: int, ok: bool = True
         await con.commit()
 
 
+async def bill_already_notified(customer_id: str, invoice_id: int) -> bool:
+    """Per-INVOICE idempotency (migration 017, consum.notified_bill_invoices)
+    — mirrors `anomaly_already_notified` exactly, keyed by invoice_id instead
+    of an api_edge anomaly_events id (see that migration's docstring for why
+    a bill anomaly only needs a one-shot check, not a lookback-window
+    dedupe). Only ok=true counts as "notified" — a failed/dark-launch
+    attempt is retried on the next check of the SAME invoice (there isn't
+    one, in practice: B4 only calls this once, right after import)."""
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                "SELECT ok FROM consum.notified_bill_invoices "
+                "WHERE customer_id = %s AND invoice_id = %s",
+                (customer_id, invoice_id))
+            r = await cur.fetchone()
+    return bool(r and r[0])
+
+
+async def mark_bill_notified(customer_id: str, invoice_id: int, ok: bool = True) -> None:
+    """Record the bill-advisory attempt for this exact invoice (migration
+    017) — same ON CONFLICT DO UPDATE pattern as `mark_anomaly_notified`."""
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                """INSERT INTO consum.notified_bill_invoices (customer_id, invoice_id, ok)
+                   VALUES (%s, %s, %s)
+                   ON CONFLICT (customer_id, invoice_id)
+                   DO UPDATE SET ok = EXCLUDED.ok, notified_at = now()""",
+                (customer_id, invoice_id, ok),
+            )
+        await con.commit()
+
+
 def cooldown_ok(last_sent: Optional[datetime], cooldown_hours: int) -> bool:
     """True when enough time has passed since the last send (any cadence)."""
     if last_sent is None:

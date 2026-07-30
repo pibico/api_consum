@@ -515,6 +515,37 @@ async def history_before(customer_id: str, before_start: str,
             return [_row_to_dict(r, with_breakdown=False) for r in await cur.fetchall()]
 
 
+async def history_for_cups(customer_id: str, cups: Optional[str],
+                           before_end: Optional[str] = None,
+                           exclude_id: Optional[int] = None,
+                           limit: int = 36) -> List[Dict[str, Any]]:
+    """Bill-anomaly baseline (Phase 2.5, B1): non-void invoices for THIS
+    exact installation — `cups` matched on its 20-char base (…PK ≡ …PK0F,
+    same dedupe rule as the import pipeline) when known; a household with no
+    CUPS yet (legacy single-point) falls back to ALL of the customer's
+    invoices, unfiltered. WITH breakdown (unlike history_before/list_for) —
+    bill_expectation.components_for() needs the uploaded rows' `ai_amounts`
+    (power/fixed/tax aren't first-class columns for uploaded bills — see
+    that module's docstring). Oldest-first (regression-friendly); `limit`
+    caps it at ~3 years of monthly bills, plenty for the OLS fit."""
+    cond, params = "customer_id = %s AND status != 'void'", [customer_id]
+    if cups:
+        cond += " AND left(cups, 20) = left(%s, 20)"
+        params.append(cups)
+    if before_end:
+        cond += " AND period_end < %s"
+        params.append(before_end)
+    if exclude_id:
+        cond += " AND id != %s"
+        params.append(exclude_id)
+    params.append(limit)
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                _SELECT + f" WHERE {cond} ORDER BY period_start ASC LIMIT %s", params)
+            return [_row_to_dict(r) for r in await cur.fetchall()]
+
+
 # ── Current billing period (live, unfrozen) ─────────────────────────────────
 # The Panel/Facturas "factura en curso" KPI: the OPEN period derived from the
 # stored invoice history (anchor = last period_end + 1; cycle = median length

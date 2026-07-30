@@ -297,6 +297,18 @@
   </div>
 </aside>
 
+<!-- Análisis (Phase 2.5) — €-delta waterfall + PLC-vs-invoice reconciliation -->
+<aside class="slide-panel" id="analysisPanel" aria-hidden="true">
+  <div class="slide-panel-header">
+    <h2 data-i18n="inv.analysisTitle">Análisis de tu factura</h2>
+    <button type="button" class="panel-close" onclick="IvPage.closeAnalysis()" aria-label="Cerrar">&times;</button>
+  </div>
+  <div class="slide-panel-body" style="padding:16px 20px;overflow-y:auto;">
+    <div id="iv-analysis-body" style="font-size:0.95rem;"></div>
+    <p class="text-muted" style="margin-top:0.9rem;font-size:0.7rem;" data-i18n="inv.analysisNote">Comparamos esta factura con lo esperado para tu propia vivienda (histórico, clima y tarifa) — nunca con la de otro hogar.</p>
+  </div>
+</aside>
+
 <!-- PDF viewer (slide panel — view in place, download optional) -->
 <aside class="slide-panel" id="pdfViewerPanel" aria-hidden="true">
   <div class="slide-panel-header">

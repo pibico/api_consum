@@ -153,6 +153,24 @@ async def update_fields(sp_id: int, customer_ids: Sequence[str],
     return await get(sp_id, customer_ids)
 
 
+async def get_by_cups(customer_id: str, cups: Optional[str]) -> Optional[Dict[str, Any]]:
+    """The customer's supply point whose CUPS matches (20-char base — …PK ≡
+    …PK0F, same dedupe rule the import pipeline uses). None when the
+    household has no PLC/topology for this installation (bill-anomaly
+    channel, Phase 2.5 B1/B5: this IS the "does a PLC exist for this CUPS"
+    check — reconciliation reports 'not_available' when it returns None)."""
+    if not cups:
+        return None
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                _SELECT + " WHERE customer_id::text = %s AND cups IS NOT NULL "
+                "AND left(cups, 20) = left(%s, 20) LIMIT 1",
+                (str(customer_id), cups))
+            r = await cur.fetchone()
+    return _row_to_dict(r) if r else None
+
+
 async def bind_contract_cups(customer_id: str, cups: Optional[str]
                              ) -> Optional[int]:
     """Auto-vinculación por CUPS (decisión 13-07): devuelve el supply_point_id

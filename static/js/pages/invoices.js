@@ -101,16 +101,24 @@
       var explainBtn = (!voided && ctx && ctx.ai_enabled)
         ? '<button class="btn btn-sm pnl-day-btn" onclick="IvPage.explain(' + iv.id + ')" data-i18n="inv.explainBtn">Explicar</button> '
         : '';
+      // Análisis (Phase 2.5) — the €-delta waterfall + PLC reconciliation.
+      // Available for any non-void invoice (generated OR uploaded) —
+      // unlike explainBtn it doesn't need ctx.ai_enabled (the waterfall
+      // itself is deterministic; only the narrative sentence needs AI, and
+      // that degrades to a template fallback server-side).
+      var analysisBtn = !voided
+        ? '<button class="btn btn-sm pnl-day-btn" onclick="IvPage.analysis(' + iv.id + ')" data-i18n="inv.analysisBtn">Análisis</button> '
+        : '';
       if (uploaded) {
         // The user's own document — always downloadable, no PRO gate;
         // editable (OCR gaps: totals/bands/period) and deletable (a bad
         // upload is a file mistake, not an accounting record).
-        actions = explainBtn +
+        actions = explainBtn + analysisBtn +
           '<button class="btn btn-sm pnl-day-btn" onclick="IvPage.file(' + iv.id + ')">PDF</button>' +
           ' <button class="btn btn-sm pnl-day-btn" onclick="IvPage.edit(' + iv.id + ')" data-i18n="inv.editBtn">Editar</button>' +
           ' <button class="btn btn-sm btn-danger" onclick="IvPage.remove(' + iv.id + ')" data-i18n="inv.deleteBtn">Eliminar</button>';
       } else {
-        actions = explainBtn +
+        actions = explainBtn + analysisBtn +
           '<button class="btn btn-sm pnl-day-btn" onclick="IvPage.detail(' + iv.id + ')" data-i18n="inv.view">Ver</button>';
         if (isPro())
           actions += ' <button class="btn btn-sm pnl-day-btn" onclick="IvPage.pdf(' + iv.id + ')">PDF</button>';
@@ -1098,6 +1106,124 @@
   }
   function closeCost() { AppUI.closePanel('costPanel'); }
 
+  // ── Análisis (Phase 2.5) — €-delta waterfall + PLC-vs-invoice reconciliation ─
+  var RECON_VERDICT_STYLE = {
+    ok: { bg: 'rgba(46,204,113,0.12)', border: 'rgba(46,204,113,0.4)', color: '#1e7e4e',
+         label: __t('inv.reconOk', 'Coincide con el contador') },
+    estimated_read: { bg: 'rgba(243,156,18,0.12)', border: 'rgba(243,156,18,0.45)', color: '#9c6a06',
+                      label: __t('inv.reconEstimated', 'Lectura estimada (se corrige sola)') },
+    meter_gap: { bg: 'rgba(231,76,60,0.12)', border: 'rgba(231,76,60,0.45)', color: '#b03024',
+                label: __t('inv.reconGap', 'Diferencia con el contador') },
+  };
+
+  function analysis(id) {
+    var body = q('iv-analysis-body');
+    body.innerHTML = '<span class="spinner"></span> <span class="text-muted">' +
+      __t('inv.analysisLoading', 'Analizando tu factura…') + '</span>';
+    AppUI.openPanel('analysisPanel');
+    cfetch('/invoices/' + id + '/anomaly').then(function (a) {
+      var b = a.bill;
+      if (!b || b.status === 'void') {
+        body.innerHTML = '<span class="text-muted">' +
+          __t('inv.analysisVoid', 'No hay análisis para una factura anulada.') + '</span>';
+        return;
+      }
+      if (b.status === 'error') {
+        body.innerHTML = '<span class="text-muted">' + __t('common.error', 'Error') + '</span>';
+        return;
+      }
+      var html = '';
+
+      // Headline: actual vs expected, delta chip.
+      if (b.expected_total_eur != null) {
+        var up = b.delta_eur > 0;
+        var chipColor = Math.abs(b.delta_eur) < 1 ? '#6a9bc3' : (up ? '#e74c3c' : '#2ecc71');
+        html += '<div class="glass-panel" style="padding:0.8rem 1rem;margin-bottom:12px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;">' +
+          '<div><div class="text-muted" style="font-size:0.72rem;">' + esc(b.period_label || '') + '</div>' +
+          '<div style="font-size:1.3rem;font-weight:700;color:#2c5171;">' + eur(b.actual_total_eur) + '</div></div>' +
+          '<div style="text-align:right;">' +
+          '<div class="text-muted" style="font-size:0.7rem;">' + __t('inv.analysisExpected', 'Esperado') + '</div>' +
+          '<div style="font-size:1rem;color:#3d5a75;">' + eur(b.expected_total_eur) + '</div></div></div>' +
+          '<div style="margin-top:8px;display:flex;align-items:center;gap:8px;">' +
+          '<span style="width:10px;height:10px;border-radius:50%;background:' + chipColor + ';flex:none;"></span>' +
+          '<span style="font-weight:600;color:' + chipColor + ';">' +
+          (up ? '+' : '') + eur(b.delta_eur) + '</span>' +
+          (b.is_anomaly ? '<span class="badge" style="background:' + chipColor + '22;color:' + chipColor + ';">' +
+            __t('inv.analysisAnomaly', 'Fuera de lo esperado') + '</span>' : '') +
+          (b.estimated_read ? '<span class="badge" style="background:rgba(243,156,18,0.15);color:#9c6a06;">' +
+            __t('inv.reconEstimated', 'Lectura estimada (se corrige sola)') + '</span>' : '') +
+          '</div></div>';
+      } else {
+        html += '<div class="glass-panel" style="padding:0.8rem 1rem;margin-bottom:12px;">' +
+          '<span class="text-muted">' + __t('inv.analysisSparse',
+            'Aún no hay histórico suficiente en este punto de suministro para comparar esta factura.') +
+          '</span></div>';
+      }
+
+      // Narrative.
+      if (b.narrative && b.narrative.summary) {
+        html += '<p style="margin:0 0 10px;">' + esc(b.narrative.summary) + '</p>';
+        if (b.narrative.advice && b.narrative.advice.length) {
+          html += '<ul style="margin:0 0 14px 1.1rem;padding:0;font-size:0.88rem;">' +
+            b.narrative.advice.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ul>';
+        }
+      }
+
+      // Driver waterfall — dot + tinted chip, NEVER a border-left accent.
+      if (b.drivers && b.drivers.length) {
+        html += '<h4 style="margin:0 0 6px;font-size:0.8rem;" data-i18n="inv.analysisDrivers">Por qué cambió</h4>';
+        html += b.drivers.map(function (d) {
+          var pos = d.phi > 0;
+          var c = pos ? '#e74c3c' : '#2ecc71';
+          return '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;' +
+            'background:' + c + '14;margin-bottom:5px;font-size:0.85rem;">' +
+            '<span style="width:9px;height:9px;border-radius:50%;background:' + c + ';flex:none;"></span>' +
+            '<span style="flex:1;">' + esc(d.label) + (d.detail ? '<div class="text-muted" style="font-size:0.7rem;">' +
+              esc(d.detail) + '</div>' : '') + '</span>' +
+            '<b style="color:' + c + ';white-space:nowrap;">' + (pos ? '+' : '') + eur(d.phi) + '</b>' +
+            '</div>';
+        }).join('');
+      }
+
+      // PLC-vs-invoice reconciliation panel (B5).
+      var r = b.reconciliation || {};
+      html += '<h4 style="margin:14px 0 6px;font-size:0.8rem;" data-i18n="inv.reconTitle">Contador vs. factura</h4>';
+      if (r.status !== 'ok') {
+        html += '<p class="text-muted" style="font-size:0.82rem;margin:0;">' +
+          __t('inv.reconNotAvailable', 'No disponible: este punto no tiene datos del contador para este periodo.') +
+          '</p>';
+      } else {
+        var vs = RECON_VERDICT_STYLE[r.verdict] || RECON_VERDICT_STYLE.ok;
+        html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;' +
+          'background:' + vs.bg + ';border:1px solid ' + vs.border + ';color:' + vs.color +
+          ';margin-bottom:8px;font-size:0.85rem;">' + esc(vs.label) + '</div>';
+        html += '<table class="data-table" style="font-size:0.82rem;"><thead><tr>' +
+          '<th data-i18n="inv.reconPeriod">Franja</th>' +
+          '<th data-i18n="inv.reconMetered">Contador</th>' +
+          '<th data-i18n="inv.reconInvoiced">Factura</th>' +
+          '<th data-i18n="inv.reconDelta">Diferencia</th></tr></thead><tbody>' +
+          (r.by_period || []).map(function (p) {
+            return '<tr><td>' + p.period + '</td><td>' + fmt(p.metered_kwh, 1) + ' kWh</td>' +
+              '<td>' + (p.invoiced_kwh != null ? fmt(p.invoiced_kwh, 1) + ' kWh' : '—') + '</td>' +
+              '<td>' + (p.delta_kwh != null ? (p.delta_kwh > 0 ? '+' : '') + fmt(p.delta_kwh, 1) + ' kWh'
+                + (p.pct != null ? ' (' + (p.pct > 0 ? '+' : '') + p.pct.toFixed(0) + '%)' : '') : '—') + '</td></tr>';
+          }).join('') +
+          (r.total ? '<tr style="font-weight:700;"><td>' + __t('inv.total', 'Total') + '</td><td>' +
+            fmt(r.total.metered_kwh, 1) + ' kWh</td><td>' + fmt(r.total.invoiced_kwh, 1) + ' kWh</td><td>' +
+            (r.total.delta_kwh > 0 ? '+' : '') + fmt(r.total.delta_kwh, 1) + ' kWh' +
+            (r.total.pct != null ? ' (' + (r.total.pct > 0 ? '+' : '') + r.total.pct.toFixed(0) + '%)' : '') +
+            '</td></tr>' : '') +
+          '</tbody></table>';
+      }
+
+      body.innerHTML = html;
+    }).catch(function (e) {
+      body.innerHTML = '<span class="text-muted">' + esc(e.message || __t('common.error', 'Error')) + '</span>';
+    });
+  }
+  function closeAnalysis() { AppUI.closePanel('analysisPanel'); }
+
   // Q&A en llano sobre LA factura abierta en el panel Explicar.
   function ask() {
     var inp = q('iv-ask-input'), log = q('iv-ask-log'), btn = q('iv-ask-send');
@@ -1209,6 +1335,7 @@
     ask: ask, editBpEnd: editBpEnd, saveBpEnd: saveBpEnd, setRange: setRange,
     cost: cost, closeCost: closeCost, renderSummary: renderSummary,
     sumDatesChanged: sumDatesChanged,
+    analysis: analysis, closeAnalysis: closeAnalysis,
     edit: openEdit, closeEdit: function () { AppUI.closePanel('invoiceEditPanel'); },
     saveEdit: saveEdit,
   };

@@ -278,6 +278,100 @@ def _facts_for_forecast(entry: Dict[str, Any], alert: Optional[Dict[str, Any]],
     return "\n".join(lines)
 
 
+# ── Bill narration (Phase 2.5 B3, 2026-07-30) ───────────────────────────────
+# A THIRD framing, alongside narrate()'s forward-looking forecast and
+# narrate_anomaly()'s power-deviation event: a CLOSED INVOICE compared
+# against its OWN weather/price-adjusted expectation (bill_expectation.py +
+# bill_attr.py, exact €-delta waterfall). Past tense ("salió", "subió"), €
+# drivers (never kWh jargon), same equipment guardrail.
+
+_SYSTEM_BILL = (
+    "Eres el asistente de CONSUM-IA. Te doy el resultado YA CALCULADO de "
+    "comparar una factura de la luz CERRADA con lo que se esperaba para "
+    "ese mismo periodo, en tu propio hogar (nunca una previsión futura): el "
+    "importe de la factura, el esperado, la diferencia en euros, y sus "
+    "causas -- 'drivers' -- ya ordenadas de mayor a menor impacto, cada una "
+    "con su efecto en euros. Tu trabajo es SOLO redactar, en español o "
+    "inglés según se te pida, con calidez y SIN jerga (nunca 'Shapley', "
+    "'atribución', 'residual', 'kWh/día'; di 'más/menos de lo esperado').\n"
+    "- summary: 1-2 frases con la cifra clave (la diferencia en €) y la "
+    "causa principal (el primer driver).\n"
+    "- advice: 1 a 3 consejos concretos, coherentes con los drivers (si el "
+    "driver principal es de clima, no sugieras nada sobre electrodomésticos; "
+    "si es de consumo o precio, sí). Si la diferencia es NEGATIVA (factura "
+    "más BARATA de lo esperado), no des consejos de ahorro — puedes felicitar "
+    "brevemente.\n"
+    "NO inventes cifras que no te dé. NO cambies el veredicto (si sube, no "
+    "digas que baja). Si un driver dice 'lectura estimada', acláralo: no es "
+    "un fallo, se corrige solo en la próxima factura real. Responde SOLO el "
+    "objeto JSON pedido."
+)
+
+_SYSTEM_BILL_EN = (
+    "You are the CONSUM-IA assistant. I give you the ALREADY-COMPUTED "
+    "result of comparing a CLOSED electricity bill against what was "
+    "expected for that SAME period, for this specific household (never a "
+    "forward-looking forecast): the bill amount, the expected amount, the "
+    "difference in euros, and its causes -- 'drivers' -- sorted by impact, "
+    "each with its euro effect. Your ONLY job is to phrase it warmly and "
+    "jargon-free (never 'Shapley', 'attribution', 'residual', 'kWh/day'; say "
+    "'more/less than expected').\n"
+    "- summary: 1-2 sentences with the key figure (the € difference) and the "
+    "main cause (the first driver).\n"
+    "- advice: 1 to 3 concrete tips, consistent with the drivers (if the top "
+    "driver is weather, don't suggest anything about appliances; if it's "
+    "consumption or price, do). If the difference is NEGATIVE (bill CHEAPER "
+    "than expected), don't give saving tips — a brief congratulation is fine.\n"
+    "Do NOT invent figures I did not give you. Do NOT change the verdict. If "
+    "a driver says 'estimated read', clarify it isn't a fault — it "
+    "self-corrects on the next real bill. Reply with ONLY the requested JSON "
+    "object."
+)
+
+
+def _bill_deterministic_summary(entry: Dict[str, Any], lang: str) -> str:
+    delta = entry.get("delta_eur")
+    period = entry.get("period_label") or ""
+    if delta is None:
+        return (f"Bill review for {period}." if lang == "en" else f"Revisión de tu factura de {period}.")
+    up = delta > 0
+    if lang == "en":
+        word = "higher" if up else "lower"
+        return f"Your bill for {period} came out {abs(delta):.2f} EUR {word} than expected."
+    word = "más alta" if up else "más baja"
+    return f"Tu factura de {period} salió {abs(delta):.2f} € {word} de lo esperado."
+
+
+def _facts_for_bill(entry: Dict[str, Any], lang: str,
+                    equipment: Optional[Dict[str, Any]] = None) -> str:
+    lines = [
+        f"- periodo: {entry.get('period_label')}",
+        f"- importe_factura_eur: {entry.get('actual_total_eur')}",
+        f"- importe_esperado_eur: {entry.get('expected_total_eur')}",
+        f"- diferencia_eur: {entry.get('delta_eur')}",
+    ]
+    if entry.get("estimated_read"):
+        lines.append("- lectura_estimada: true (aclara que NO es un fallo — se corrige sola)")
+    for d in entry.get("drivers") or []:
+        label, phi = d.get("label"), d.get("phi")
+        if label and phi is not None:
+            lines.append(f"- factor: {label} | efecto_eur: {phi:+.2f}")
+    equipment = equipment or {}
+    missing = []
+    if not equipment.get("electric_heating", False):
+        missing.append("electric heating" if lang == "en" else "calefacción eléctrica")
+    if not equipment.get("electric_cooling", False):
+        missing.append("electric AC/HVAC" if lang == "en" else "aire acondicionado/HVAC eléctrico")
+    if missing:
+        if lang == "en":
+            lines.append(f"- equipment_missing: This household has NO {' or '.join(missing)} "
+                         "— NEVER suggest actions for equipment it doesn't have.")
+        else:
+            lines.append(f"- equipo_ausente: Este hogar NO tiene {' ni '.join(missing)} "
+                         "— NUNCA sugieras acciones sobre equipos que no tiene.")
+    return "\n".join(lines)
+
+
 class AdviceSkill(Skill):
     name = "advice"
     system_prompt = _SYSTEM
@@ -402,4 +496,65 @@ class AdviceSkill(Skill):
         except (ValidationError, ValueError) as e:
             logger.warning("advice(anomaly): JSON validation failed: %s", str(e)[:200])
             fb = self._anomaly_template_fallback(entry, lang, equipment)
+            return fb, prompt_t, completion_t
+
+    def _bill_template_fallback(self, entry: Dict[str, Any], lang: str,
+                                equipment: Optional[Dict[str, Any]] = None) -> AdviceNarrative:
+        """Deterministic degrade path for bill narration — AI off/capped/
+        unreachable. Names the dominant € driver, direction-aware advice
+        (never a saving tip on a bill that came out CHEAPER), passed
+        through `_scrub_equipment` for defense in depth."""
+        summary = _bill_deterministic_summary(entry, lang)
+        delta = entry.get("delta_eur") or 0.0
+        drivers = entry.get("drivers") or []
+        top = drivers[0] if drivers else None
+        if top and top.get("label"):
+            summary += (f" Mainly: {top['label']}." if lang == "en" else f" Sobre todo: {top['label']}.")
+        if delta > 0:
+            advice = (["Check whether an appliance was left running more than usual this period."]
+                     if lang == "en" else
+                     ["Comprueba si algún electrodoméstico ha estado encendido más de lo habitual este periodo."])
+        else:
+            advice = (["Nothing to do — this bill came out lower than expected."] if lang == "en" else
+                     ["Nada que hacer — esta factura salió mejor de lo esperado."])
+        return _scrub_equipment(AdviceNarrative(summary=summary, advice=advice), equipment, entry, lang,
+                                fallback_summary=lambda: _bill_deterministic_summary(entry, lang))
+
+    async def narrate_bill(self, entry: Dict[str, Any], lang: str = "es",
+                           equipment: Optional[Dict[str, Any]] = None
+                           ) -> tuple[AdviceNarrative, int, int]:
+        """Bill counterpart to `narrate()`/`narrate_anomaly()` (Phase 2.5 B3)
+        — same numbers-in/prose-out discipline and equipment guardrail, past-
+        tense CLOSED-INVOICE framing (bill_attr.attribute_bill's € waterfall,
+        not a kWh forecast or a W deviation). Returns (narrative,
+        prompt_tokens, completion_tokens)."""
+        if not ai_client.configured():
+            return self._bill_template_fallback(entry, lang, equipment), 0, 0
+
+        system = _SYSTEM_BILL_EN if lang == "en" else _SYSTEM_BILL
+        facts = _facts_for_bill(entry, lang, equipment)
+        lang_instruction = ("Reply STRICTLY in English (both summary and advice)."
+                           if lang == "en" else
+                           "Responde ESTRICTAMENTE en español (tanto summary como advice).")
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content":
+                ("Datos de la factura analizada:\n" if lang != "en" else "Analyzed bill data:\n") + facts +
+                "\n\n" + lang_instruction +
+                "\n\nDevuelve SOLO un objeto JSON {\"summary\": str, \"advice\": [str, ...]}."},
+        ]
+        got = await ai_client.llm_chat_full(messages, temperature=0.3, max_tokens=350)
+        if not got or not got.get("text"):
+            return self._bill_template_fallback(entry, lang, equipment), 0, 0
+        usage = got.get("usage") or {}
+        prompt_t = int(usage.get("prompt_tokens") or 0)
+        completion_t = int(usage.get("completion_tokens") or 0)
+        try:
+            parsed = AdviceNarrative.model_validate_json(_strip_json(got["text"]))
+            narrative = _scrub_equipment(parsed, equipment, entry, lang,
+                                         fallback_summary=lambda: _bill_deterministic_summary(entry, lang))
+            return narrative, prompt_t, completion_t
+        except (ValidationError, ValueError) as e:
+            logger.warning("advice(bill): JSON validation failed: %s", str(e)[:200])
+            fb = self._bill_template_fallback(entry, lang, equipment)
             return fb, prompt_t, completion_t

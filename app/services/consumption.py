@@ -98,6 +98,18 @@ async def all_slugs() -> List[str]:
             return [r[0] for r in await cur.fetchall()]
 
 
+async def slug_for_customer(customer_id: str) -> Optional[str]:
+    """Reverse of `_slugs_to_ids` — the ONE slug for a customer_id (bill
+    anomaly channel, Phase 2.5: an invoice row carries `customer_id`, but
+    every location/pricing/consumption reader in this codebase keys off
+    slugs). None if the customer no longer exists."""
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute("SELECT slug FROM customers WHERE customer_id = %s", (customer_id,))
+            r = await cur.fetchone()
+    return r[0] if r else None
+
+
 async def location_for(slugs: Sequence[str],
                        sp: Optional[Dict[str, Any]] = None
                        ) -> Optional[Dict[str, Any]]:

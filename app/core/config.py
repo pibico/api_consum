@@ -116,6 +116,21 @@ class Settings(BaseSettings):
     # deviations reach an inbox.
     ANOMALY_EMAIL_MIN_SEVERITY: str = "critical"
 
+    # ── Bill-level anomaly channel (Phase 2.5, 2026-07-30) ──────────────────
+    # Fires on invoice IMPORT (upload), not a poller — see bill_expectation.py
+    # / bill_attr.py / bill_reconcile.py and migration 017. OWN dark-launch
+    # gate (mirrors ANOMALY_EMAIL_ENABLED's relationship to EMAIL_ADVICE_
+    # ENABLED): BOTH must be true for a real send.
+    BILL_ANOMALY_EMAIL_ENABLED: bool = False
+    # Fire when |delta_eur| >= max(BILL_ANOM_EUR_ABS_MIN, BILL_ANOM_PCT_MIN *
+    # expected_eur) — spec's two-sided (over- AND under-charge) threshold.
+    BILL_ANOM_EUR_ABS_MIN: float = 15.0
+    BILL_ANOM_PCT_MIN: float = 0.20
+    # PLC-vs-invoice reconciliation (B5): total kWh deviation beyond this
+    # percentage is flagged 'meter_gap' (estimated reads are labelled
+    # 'estimated_read' regardless of tolerance — never a "fault").
+    RECON_PCT_TOL: float = 8.0
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

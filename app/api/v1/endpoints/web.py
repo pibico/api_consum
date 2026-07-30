@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "114"  # 114: AEMET banner i18n fix (localized phenomenon/severity, never raw enum) + energy_advisory equipment gating (shared equipment_guard scrub, banner now respects comfort_flex like the advice email) + banner contrast fix (opaque light-glass card, was dark-on-dark against the gradient body)
+ASSET_VERSION = "115"  # 115: Phase 2.5 bill-anomaly "Análisis" panel on the invoice detail (€-delta waterfall + PLC-vs-invoice reconciliation), invoices.html/invoices.js
 
 
 def render_template(template_name: str, **context) -> str:

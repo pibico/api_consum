@@ -22,10 +22,13 @@ from pydantic import BaseModel, Field, model_validator
 from app.api.v1.dependencies.rbac import (ConsumContext, consum_context,
                                           require_ai, require_role, require_tier)
 from app.api.v1.endpoints.consumption import _slugs, _sp
-from app.services import contracts, invoices
+from app.core.config import settings
+from app.services import advice_prefs, contracts, invoices
+from app.services.ai.advice import AdviceSkill
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 logger = logging.getLogger(__name__)
+_advice_skill = AdviceSkill()   # Phase 2.5 bill narration (narrate_bill) — module-level like advice_scheduler.py's
 
 
 class _LRUCache(OrderedDict):
@@ -164,6 +167,12 @@ async def upload_invoice(
     # call) so the list shows the split without delaying the upload response.
     if markdown:
         asyncio.get_running_loop().create_task(_fill_band_kwh(inv["id"], markdown))
+    # Phase 2.5 B4 — bill-anomaly check + (dark-launch-gated) advisory email,
+    # fire-and-forget right after a successful, NON-void import. See
+    # _post_upload_bill_check's own early-return gate — a no-op, DB-free
+    # cost while BILL_ANOMALY_EMAIL_ENABLED/EMAIL_ADVICE_ENABLED are False
+    # (the current, dark-launched default).
+    asyncio.get_running_loop().create_task(_post_upload_bill_check(inv["id"]))
     return inv
 
 
@@ -541,8 +550,186 @@ async def _compute_anomaly(ai_enabled: bool, inv: dict) -> dict:
             + f" tu media habitual ({signals['gasto_por_dia_habitual_eur']} €/día)."),
             "causes": [], "advice": None}
     out["narrative"] = narrative
+    # ── Phase 2.5 (B1-B3, B5) — the SHAP-attributed €-delta waterfall +
+    # PLC-vs-invoice reconciliation, additive under `out["bill"]` so the
+    # OLD %-deviation banner above (still consumed by the "Explicar" panel,
+    # static/js/pages/invoices.js:1014) keeps working byte-for-byte. A
+    # failure here must NEVER break that existing, simpler banner. ─────────
+    try:
+        out["bill"] = await _compute_bill_analysis(inv, ai_enabled=ai_enabled)
+    except Exception as exc:                                  # noqa: BLE001
+        logger.error("bill analysis failed for invoice %s: %s", invoice_id, exc)
+        out["bill"] = {"status": "error"}
     _anomaly_cache[invoice_id] = out
     return out
+
+
+_BILL_ANOM_LABEL_HELPS = {
+    "es": "Ver el análisis completo en el panel de Análisis.",
+}
+
+
+async def _compute_bill_analysis(inv: dict, ai_enabled: bool, lang: str = "es") -> dict:
+    """Phase 2.5 B1-B3 + B5: expected_bill -> attribute_bill -> narrate_bill
+    -> reconcile. Pure/side-effect-free (no email — that's B4, the import
+    hook below) so it's safe to call from a cached GET as often as needed.
+    Refuses (status='void') on a voided invoice per spec."""
+    from app.services import bill_attr, bill_expectation, bill_reconcile, consumption
+    from app.services import supply_points as supply_points_svc
+
+    if inv.get("status") == "void":
+        return {"status": "void"}
+
+    customer_id = inv["customer_id"]
+    slug = await consumption.slug_for_customer(customer_id)
+    slugs = [slug] if slug else []
+    sp = await supply_points_svc.get_by_cups(customer_id, inv.get("cups"))
+    equipment = (await consumption.comfort_flex_for(slugs, sp=sp)).get("equipment") if slugs else None
+    region = (await advice_prefs.get(customer_id) or {}).get("region")
+
+    actual = bill_expectation.components_for(inv)
+    estimated = bill_expectation.is_estimated_read(inv)
+    expected = await bill_expectation.expected_bill(
+        customer_id, slugs, inv.get("cups"), inv["period_start"], inv["period_end"],
+        supply_point_id=(sp or {}).get("id"), exclude_invoice_id=inv["id"], equipment=equipment,
+        region=region)
+    attribution = bill_attr.attribute_bill(actual, expected)
+
+    delta = attribution["delta_eur"]
+    expected_eur = expected.get("expected_total_eur")
+    threshold = max(settings.BILL_ANOM_EUR_ABS_MIN,
+                    settings.BILL_ANOM_PCT_MIN * abs(expected_eur or 0))
+    is_bill_anomaly = (expected["status"] == "ok" and not estimated
+                       and expected_eur is not None and abs(delta) >= threshold)
+
+    period_label = f"{inv['period_start']} → {inv['period_end']}"
+    entry = {"period_label": period_label, "actual_total_eur": attribution["actual_total_eur"],
+             "expected_total_eur": expected_eur, "delta_eur": delta,
+             "drivers": attribution["drivers"], "estimated_read": estimated}
+    if ai_enabled:
+        narrative, prompt_t, completion_t = await _advice_skill.narrate_bill(entry, lang=lang, equipment=equipment)
+    else:
+        narrative, prompt_t, completion_t = _advice_skill._bill_template_fallback(entry, lang, equipment), 0, 0
+    if prompt_t or completion_t:
+        from app.services import ai_usage
+        await ai_usage.record(slug, None, "bill_anomaly_analysis", prompt_t, completion_t)
+
+    reconciliation = await bill_reconcile.reconcile(
+        slugs, sp, inv["period_start"], inv["period_end"],
+        invoiced_bands={"P1": inv.get("energy_p1_kwh"), "P2": inv.get("energy_p2_kwh"),
+                        "P3": inv.get("energy_p3_kwh")},
+        invoiced_total_kwh=actual.get("energy_kwh"), is_estimated=estimated)
+
+    return {"status": "ok", "expectation_status": expected["status"], "hist_count": expected["hist_count"],
+           "sparse": expected["sparse"], "estimated_read": estimated, "is_anomaly": is_bill_anomaly,
+           "delta_eur": delta, "actual_total_eur": attribution["actual_total_eur"],
+           "expected_total_eur": expected_eur, "base": attribution["base"],
+           "drivers": attribution["drivers"], "residual": attribution["residual"],
+           "refs": expected.get("refs"), "period_label": period_label,
+           "narrative": {"summary": narrative.summary, "advice": narrative.advice},
+           "reconciliation": reconciliation}
+
+
+# ── Phase 2.5 B4 — import-time trigger + email dispatch ─────────────────────
+# Fire-and-forget background task off POST /invoices/upload (the "extractor/
+# import endpoint" the spec means — /invoices/close, the SELF-GENERATED
+# settlement path, is out of scope: a household always sees that total the
+# instant it closes the period, there is no "import" surprise to advise on).
+
+async def _post_upload_bill_check(invoice_id: int) -> None:
+    """Ensure the AI amounts extraction exists (an UPLOADED bill's power/
+    fixed/tax split needs `breakdown.ai_amounts` — see bill_expectation.py's
+    `components_for()`), THEN run the bill-anomaly check + dispatch. Cheap
+    no-op (one SELECT, no LLM, no api_exo calls) when the feature is dark —
+    see `_maybe_send_bill_advisory`'s own early gate. Never raises — this
+    runs detached from the upload response."""
+    try:
+        inv = await invoices.get(invoice_id)
+        if not inv or inv.get("status") == "void":
+            return
+        if not settings.BILL_ANOMALY_EMAIL_ENABLED or not settings.EMAIL_ADVICE_ENABLED:
+            return   # dark launch — skip BEFORE any LLM/api_exo/DB-write cost
+        if inv.get("origin") == "uploaded" and not (inv.get("breakdown") or {}).get("ai_amounts"):
+            inv = await _ensure_uploaded_markdown(inv)
+            await _compute_amounts(inv)
+            inv = await invoices.get(invoice_id)
+        await _maybe_send_bill_advisory(inv)
+    except Exception as exc:                                   # noqa: BLE001
+        logger.error("post-upload bill check failed for invoice %s: %s", invoice_id, exc)
+
+
+async def _maybe_send_bill_advisory(inv: dict) -> None:
+    """B4: runs the SAME B1-B3 pipeline the GET endpoint uses
+    (`_compute_bill_analysis`) and, if anomalous AND the household is
+    opted in AND not already notified for THIS invoice AND within the
+    household's cooldown/daily-cap, sends ONE advisory email — the
+    `advice` template's `anomaly` (NON-weather) block + `site` block +
+    explicit billing period, mirroring `advice_scheduler.run_for_anomaly`'s
+    shape exactly. Dedup: `consum.notified_bill_invoices` (migration 017,
+    per-invoice, forever) THEN the shared household cooldown/cap
+    (`consum.sent_advice` cadence='bill') — checked in that order so a
+    re-run on the SAME invoice_id (e.g. a retried background task) never
+    even reaches the cooldown check. Never raises."""
+    invoice_id = inv["id"]
+    customer_id = inv["customer_id"]
+    if await advice_prefs.bill_already_notified(customer_id, invoice_id):
+        return
+    prefs = await advice_prefs.get(customer_id)
+    if not prefs or not prefs.get("opt_in") or not prefs.get("recipient_email"):
+        return
+    if await advice_prefs.already_sent_today(customer_id, "bill"):
+        return
+    last_sent = await advice_prefs.last_sent_at(customer_id)
+    if not advice_prefs.cooldown_ok(last_sent, settings.ADVICE_COOLDOWN_H):
+        return
+
+    lang = prefs.get("lang") or "es"
+    analysis = await _compute_bill_analysis(inv, ai_enabled=True, lang=lang)
+    if analysis.get("status") != "ok" or not analysis.get("is_anomaly"):
+        # Not anomalous (or refused/void/error) — nothing to send, and NOT
+        # marked notified (a later re-check of a DIFFERENT invoice is
+        # unaffected; this exact invoice simply never becomes anomalous).
+        return
+
+    from app.services import consumption, mailer
+    from app.services import supply_points as supply_points_svc
+    from app.workers.advice_scheduler import _site_block
+
+    slug = await consumption.slug_for_customer(customer_id)
+    sp = await supply_points_svc.get_by_cups(customer_id, inv.get("cups"))
+    site = (await _site_block(slug, customer_id, sp) if slug
+           else {"name": slug, "cups": inv.get("cups"), "slug": slug})
+
+    delta = analysis["delta_eur"]
+    es = lang != "en"
+    drivers = [{"label": d["label"], "effect": f"{d['phi']:+.2f} €", "detail": d.get("detail")}
+              for d in (analysis.get("drivers") or [])[:5]]
+    anomaly_block = {
+        "level": "Alto" if es else "High",
+        "body": (f"Tu factura del periodo {analysis['period_label']} salió "
+                f"{abs(delta):.2f} € " + ("más cara" if delta > 0 else "más barata")
+                + " de lo esperado." if es else
+                f"Your bill for {analysis['period_label']} came out {abs(delta):.2f} EUR "
+                + ("higher" if delta > 0 else "lower") + " than expected."),
+    }
+    base_url = (settings.PUBLIC_BASE_URL or "").rstrip("/")
+    context = {
+        "title": (analysis["narrative"]["summary"].split(".")[0][:120]
+                 or ("Análisis de tu factura" if es else "Your bill analysis")),
+        "period_label": analysis["period_label"],
+        "period_from": inv["period_start"], "period_to": inv["period_end"],
+        "summary": analysis["narrative"]["summary"],
+        "forecast": {"kwh": None, "eur": None, "band_lo": None, "band_hi": None},
+        "drivers": drivers,
+        "advice": [{"text": a} for a in analysis["narrative"]["advice"]],
+        "alert": None, "anomaly": anomaly_block,
+        "cta_url": (base_url + "/app/invoices") if base_url else None,
+        "days": None, "site": site,
+    }
+    ok = await mailer.send_email("advice", prefs["recipient_email"], context, lang=lang)
+    await advice_prefs.mark_bill_notified(customer_id, invoice_id, ok=ok)
+    await advice_prefs.mark_sent(customer_id, "bill", ok=ok)
+    logger.info("bill advisory: invoice=%s slug=%s sent=%s", invoice_id, slug, ok)
 
 
 _amounts_cache: _LRUCache = _LRUCache()
