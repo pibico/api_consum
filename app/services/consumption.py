@@ -252,21 +252,50 @@ async def comfort_flex_for(slugs: Sequence[str],
     UI, for invoice-only households with no PLC. No row at all → the
     conservative all-false default (never surface equipment we can't
     confirm exists). Same per-supply-point-override precedence as
-    solar_config_for."""
+    solar_config_for.
+
+    A household with multiple supply_points (mig 012) can have MULTIPLE
+    comfort_flex rows (one per CUPS, unique on (customer_id,
+    COALESCE(supply_point_id, 0)) — mig 015). When `sp` pins a specific
+    CUPS the exact-match row wins deterministically (unchanged). But the
+    whole-household AGGREGATE read (no `sp`) used to have NO deterministic
+    tie-break between those rows — `ORDER BY customer_id` alone is a tie
+    for same-customer rows, so Postgres could return either one depending
+    on physical row order/plan, silently flip-flopping which equipment
+    profile gated the forecast/thermal-analysis/banner (found 2026-07-30:
+    pibico had 2 contradictory rows, one per CUPS). Fixed with an explicit,
+    documented tie-break for the no-`sp` branch:
+      1) source='plc' (CM4 capture) over 'consum_fallback' — PLC is
+         authoritative when present;
+      2) updated_at DESC — the most recently confirmed value wins;
+      3) supply_point_id ASC — stable last-resort tiebreak so repeated
+         calls never flip-flop even on a full tie.
+    """
     ids = await _slugs_to_ids(slugs)
     if not ids:
         return _merge_comfort_flex(None, None, None)
     sp_id = sp["id"] if sp else None
     async with db.raw_connection() as con:
         async with con.cursor() as cur:
-            await cur.execute(
-                """SELECT payload, source, updated_at FROM consum.comfort_flex
-                    WHERE customer_id = ANY(%s)
-                    ORDER BY (supply_point_id = %s) DESC NULLS LAST,
-                             (supply_point_id IS NULL) DESC, customer_id
-                    LIMIT 1""",
-                (list(ids.values()), sp_id),
-            )
+            if sp_id is not None:
+                await cur.execute(
+                    """SELECT payload, source, updated_at FROM consum.comfort_flex
+                        WHERE customer_id = ANY(%s)
+                        ORDER BY (supply_point_id = %s) DESC NULLS LAST,
+                                 (supply_point_id IS NULL) DESC, customer_id
+                        LIMIT 1""",
+                    (list(ids.values()), sp_id),
+                )
+            else:
+                await cur.execute(
+                    """SELECT payload, source, updated_at FROM consum.comfort_flex
+                        WHERE customer_id = ANY(%s)
+                        ORDER BY (source = 'plc') DESC,
+                                 updated_at DESC NULLS LAST,
+                                 supply_point_id ASC NULLS LAST
+                        LIMIT 1""",
+                    (list(ids.values()),),
+                )
             row = await cur.fetchone()
     if not row:
         return _merge_comfort_flex(None, None, None)
