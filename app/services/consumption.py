@@ -156,7 +156,8 @@ async def solar_config_for(slugs: Sequence[str],
                 """SELECT peak_kwp, tilt, azimuth, loss FROM consum.solar_config
                     WHERE customer_id = ANY(%s)
                     ORDER BY (supply_point_id = %s) DESC NULLS LAST,
-                             (supply_point_id IS NULL) DESC, customer_id
+                             (supply_point_id IS NULL) DESC,
+                             updated_at DESC NULLS LAST, id ASC
                     LIMIT 1""",
                 (list(ids.values()), sp_id),
             )
