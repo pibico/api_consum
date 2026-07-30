@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     )
     AUTH_VALIDATE_CACHE_TTL: int = 90
     AUTH_VALIDATE_NEGATIVE_CACHE_TTL: int = 10
+    # Service credential api_consum presents to api_auth's service-to-service
+    # endpoints (/email/send, /email/smtp/*) — an api_auth API_KEYS entry,
+    # NOT a local secret (mirrors api_edge's auth_service_api_key).
+    AUTH_SERVICE_API_KEY: str = ""
 
     # ── CORS (values in .env; never "*": allow_credentials=True) ──
     CORS_ORIGINS: List[str] = []
@@ -77,6 +81,40 @@ class Settings(BaseSettings):
     MQTT_USER: str = ""
     MQTT_PASS: str = ""
     MQTT_EVENT_TOPIC: str = "home/+/+/event"
+
+    # ── Explainable forecast + advice email (Phase 1, 2026-07-28) ──
+    # Dark launch: stays False until the template/content has been reviewed
+    # end-to-end; mailer.send_email() short-circuits with no api_auth call.
+    EMAIL_ADVICE_ENABLED: bool = False
+    ADVICE_DAILY_HOUR: int = 21     # Europe/Madrid, AFTER api_exo's 20:20 prices_tomorrow job
+    ADVICE_WEEKLY_DOW: int = 0      # APScheduler cron day_of_week: 0=Monday
+    ADVICE_WEEKLY_HOUR: int = 8
+    ADVICE_COOLDOWN_H: int = 20     # min hours between two advice emails to the same household
+    ADVICE_DAILY_CAP: int = 1       # max advice emails per household per calendar day
+    # Public URL for the advice email's CTA button — per-box (this service
+    # has its own vhost, unlike the path-prefixed app.pibico.es services).
+    PUBLIC_BASE_URL: str = "https://consum.pibico.es"
+
+    # ── Member anomaly feed poller (UI surfacing, 2026-07-29) ──
+    # Polls api_edge's Phase 2 E4 GET /anomalies with EDGE_API_KEY (already
+    # set above) — disabled automatically when that key is empty.
+    ANOMALY_POLL_INTERVAL_MIN: int = 15
+    ANOMALY_LOOKBACK_DAYS: int = 14
+
+    # ── Anomaly -> advice email loop closure (2026-07-30) ──
+    # OWN dark-launch gate, independent of EMAIL_ADVICE_ENABLED (which
+    # mailer.send_email() checks unconditionally for every template) — lets
+    # the anomaly->email loop be flipped on separately from the forecast
+    # cadences' rollout state. Both must be true for a real send; either
+    # false short-circuits BEFORE any DB write or LLM call (see
+    # anomaly_poller._dispatch_new_anomalies).
+    ANOMALY_EMAIL_ENABLED: bool = False
+    # Only anomaly_events at this severity (or higher) trigger an email.
+    # api_edge's evaluator writes 'warning' at |z|>=ANOM_Z_THRESHOLD (default
+    # 3.0) and 'critical' at |z|>=1.5x that — defaulting to 'critical' here
+    # keeps routine borderline blips UI-only; only clearly extreme
+    # deviations reach an inbox.
+    ANOMALY_EMAIL_MIN_SEVERITY: str = "critical"
 
     class Config:
         env_file = ".env"

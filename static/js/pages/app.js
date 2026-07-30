@@ -29,6 +29,12 @@
 
   function q(id) { return document.getElementById(id); }
   function fmt(n, dec) { return (n == null) ? '—' : Number(n).toLocaleString(undefined, { maximumFractionDigits: dec == null ? 1 : dec }); }
+  // NOTE: a second `esc` is declared later inside the DOMContentLoaded/
+  // onAppReady closure (loadPortfolio's scope) — that one shadows this one
+  // ONLY within that nested closure; every top-level function added here
+  // (forecast card, weather banner, anomaly feed) needs its OWN accessible
+  // copy, hence this outer-scope declaration.
+  function esc(t) { return String(t == null ? '' : t).replace(/</g, '&lt;'); }
   function today() {
     // LOCAL calendar date — toISOString() is UTC and made the panel serve
     // yesterday between 00:00 and 02:00 CEST (backend + DB run Europe/Madrid).
@@ -834,6 +840,252 @@
       renderWeather();
       renderSolar();
       renderWind();
+      renderWeatherAlert(r.weather_alert);
+    });
+  }
+
+  // ── AEMET weather-alert banner (S5) ───────────────────────────────────
+  var WX_SEV_RANK = { red: 0, orange: 1, yellow: 2 };
+  function wxAlertDismissKey(a) {
+    return 'consum_wx_alert_dismissed:' + (a.id || (a.phenomenon || '') + '|' + (a.severity || '') +
+      '|' + (a.from || a.valid_from || today()));
+  }
+  function renderWeatherAlert(payload) {
+    var wrap = q('wx-alert-banner-wrap');
+    if (!wrap) return;
+    var alerts = (payload && payload.alerts) || [];
+    // Orange/red always shown; yellow only if there's no higher one (optional per spec).
+    var candidates = alerts.filter(function (a) {
+      var sev = (a.severity || '').toLowerCase();
+      return sev === 'red' || sev === 'orange' || sev === 'yellow';
+    }).sort(function (a, b) {
+      return (WX_SEV_RANK[(a.severity || '').toLowerCase()] ?? 9) -
+        (WX_SEV_RANK[(b.severity || '').toLowerCase()] ?? 9);
+    });
+    var top = candidates[0];
+    if (!top) { wrap.innerHTML = ''; return; }
+    var dismissKey = wxAlertDismissKey(top);
+    try { if (sessionStorage.getItem(dismissKey) === '1') { wrap.innerHTML = ''; return; } } catch (e) {}
+    var lang = (window.i18n && window.i18n.getLang()) || 'es';
+    var sev = (top.severity || '').toLowerCase();
+    var phen = (top.phenomenon || '').toLowerCase();
+    // Both must be LOCALIZED — never the raw enum token (bug fix 2026-07-29:
+    // the banner was mixing English `heat`/`yellow` into an otherwise
+    // Spanish UI). Unknown/missing tokens fall back to a generic localized
+    // label, never to the token itself.
+    var sevLabel = __t('alert.severity.' + sev,
+      __t('alert.severity.generic', lang === 'en' ? 'warning' : 'aviso'));
+    var phenLabel = __t('alert.phenomenon.' + phen,
+      __t('alert.phenomenon.generic', lang === 'en' ? 'Weather alert' : 'Aviso meteorológico'));
+    var body = (lang === 'en' ? (top.body_en || top.body_es) : top.body_es) || top.body || '';
+    var advisory = (lang === 'en' ? (top.energy_advisory_en || top.energy_advisory_es)
+                                  : top.energy_advisory_es) || top.energy_advisory || '';
+    wrap.innerHTML =
+      '<div class="wx-alert-banner sev-' + esc(sev) + '">' +
+      '<span class="wx-alert-dot"></span>' +
+      '<div class="wx-alert-body">' +
+      '<div class="wx-alert-title">' + esc(top.title || phenLabel) +
+      ' <span style="font-weight:400;opacity:0.75;">(' + esc(sevLabel) +
+      (top.source ? ' · ' + esc(top.source) : '') + ')</span></div>' +
+      (body ? '<div>' + esc(body) + '</div>' : '') +
+      (advisory ? '<div class="wx-alert-adv">' + esc(advisory) + '</div>' : '') +
+      '</div>' +
+      '<button type="button" class="wx-alert-close" aria-label="' + __t('common.close', 'Cerrar') + '" onclick="ConsumApp.dismissWxAlert()">&times;</button>' +
+      '</div>';
+    wrap.dataset.dismissKey = dismissKey;
+  }
+
+  // ── Forecast & advice card (S2/S3/S6) ─────────────────────────────────
+  var fcCadence = 'daily';
+  var fcLast = null;   // last /advice/forecast payload (feeds the "why" panel)
+
+  function fcLang() { return (window.i18n && window.i18n.getLang()) || 'es'; }
+
+  function fcConfidenceBadge(status, confidence) {
+    if (status === 'real') return { cls: 'real', text: __t('forecast.real', 'real') };
+    if (status === 'forecast') {
+      var label = confidence ? __t('forecast.est', 'estimado') + ' · ' +
+        __t('forecast.conf.' + confidence, confidence) : __t('forecast.est', 'estimado');
+      return { cls: 'estimate', text: label };
+    }
+    return { cls: '', text: __t('forecast.pending', 'pendiente') };
+  }
+
+  function renderForecastCard(data) {
+    var body = q('fc-body');
+    if (!body) return;
+    if (!data || data.status !== 'ok') {
+      var msg = data && data.status === 'insufficient_data'
+        ? __t('forecast.insufficientData', 'Aún no hay suficiente histórico de tu hogar para predecir (se necesitan varias semanas de datos).')
+        : __t('forecast.unavailable', 'La previsión no está disponible ahora mismo.');
+      body.innerHTML = '<div class="fc-empty">' + esc(msg) + '</div>';
+      return;
+    }
+    fcLast = data;
+    var f = data.forecast || {};
+    var drivers = (data.drivers || []).slice(0, 3).map(function (d) {
+      var pos = /^\+/.test(d.effect || '');
+      return '<span class="driver-chip"><span class="driver-dot ' + (pos ? 'pos' : 'neg') + '"></span>' +
+        esc(d.label) + ' ' + esc(d.effect) + '</span>';
+    }).join('');
+    var advice = (data.advice || []).map(function (a) { return '<li>' + esc(a.text) + '</li>'; }).join('');
+    var cheap = data.cheap_window;
+    var cheapHtml = cheap
+      ? '<div class="fc-cheap-tip">💡 ' + esc(__t('forecast.cheapWindow', 'Horas más baratas') +
+          ': ' + cheap.label + ' (~' + cheap.avg_price_eur_kwh.toFixed(4) + ' €/kWh)') + '</div>'
+      : '';
+    var strip = '';
+    if (fcCadence === 'weekly' && data.per_day && data.per_day.length) {
+      strip = '<div class="fc-strip">' + data.per_day.map(function (d, i) {
+        var badge = fcConfidenceBadge(d.price_status, d.price_confidence);
+        return '<div class="fc-day">' +
+          '<div class="fc-day-label">' + esc(dayLabel(d.date, i)) + '</div>' +
+          '<div class="fc-day-kwh">' + fmt(d.kwh, 1) + ' kWh</div>' +
+          '<div class="fc-day-eur">' + (d.eur != null ? d.eur.toFixed(2) + ' €' : '—') + '</div>' +
+          '<span class="fc-day-badge ' + badge.cls + '">' + esc(badge.text) + '</span>' +
+          '</div>';
+      }).join('') + '</div>';
+    }
+    body.innerHTML =
+      '<div class="fc-period">' + esc(data.period_label || '') + '</div>' +
+      '<div class="fc-figures">' +
+      '<div class="fc-figure"><b>' + fmt(f.kwh, 1) + '</b><span>kWh (' +
+        fmt(f.band_lo, 1) + '–' + fmt(f.band_hi, 1) + ')</span></div>' +
+      (f.eur != null ? '<div class="fc-figure"><b>' + f.eur.toFixed(2) + ' €</b><span>' +
+        esc(__t('forecast.estimatedCost', 'coste estimado')) + '</span></div>' : '') +
+      '<button type="button" class="fc-why-btn" onclick="ForecastWhyPanel.open()">' +
+        esc(__t('forecast.why', '¿Por qué?')) + '</button>' +
+      '</div>' +
+      (data.summary ? '<p style="font-size:0.82rem;color:#3d5a75;margin:0 0 0.4rem;">' + esc(data.summary) + '</p>' : '') +
+      '<div class="fc-drivers">' + drivers + '</div>' +
+      (advice ? '<ul class="fc-advice-list">' + advice + '</ul>' : '') +
+      cheapHtml + strip;
+  }
+
+  function loadForecast(cadence) {
+    fcCadence = cadence || fcCadence;
+    var body = q('fc-body');
+    if (body) body.innerHTML = '<span class="spinner"></span>';
+    return cfetch('/advice/forecast?cadence=' + fcCadence + '&lang=' + fcLang() + supQS('&'))
+      .then(renderForecastCard)
+      .catch(function () {
+        if (body) body.innerHTML = '<div class="fc-empty">' + esc(__t('forecast.unavailable', 'La previsión no está disponible ahora mismo.')) + '</div>';
+      });
+  }
+
+  // ── Comfort/flexibility equipment — FALLBACK/OVERRIDE only (mig 015,
+  //    hard requirement 2026-07-29). The authoritative capture is the CM4
+  //    PLC's "Confort y flexibilidad" screen (separate workstream, synced
+  //    via api_edge, source='plc'); this toggle is for invoice-only
+  //    households with no PLC, or to manually correct a synced value. */
+  function renderEquipment(cf) {
+    var el = q('fc-equipment');
+    if (!el) return;
+    var eq = (cf && cf.equipment) || { electric_heating: false, electric_cooling: false };
+    var synced = cf && cf.source === 'plc';
+    el.innerHTML =
+      '<label><input type="checkbox" id="fc-eq-heating"' + (eq.electric_heating ? ' checked' : '') + '>' +
+        esc(__t('forecast.eqHeating', 'Calefacción eléctrica')) + '</label>' +
+      '<label><input type="checkbox" id="fc-eq-cooling"' + (eq.electric_cooling ? ' checked' : '') + '>' +
+        esc(__t('forecast.eqCooling', 'Aire acondicionado / HVAC eléctrico')) + '</label>' +
+      (synced ? '<span class="fc-eq-badge">' + esc(__t('forecast.eqSynced', 'sincronizado desde tu PLC')) + '</span>' : '') +
+      '<span class="fc-eq-status" id="fc-eq-status"></span>';
+    var save = function () {
+      var status = q('fc-eq-status');
+      if (status) status.textContent = '';
+      cfetch('/consumption/comfort-flex', {
+        method: 'PUT',
+        body: JSON.stringify({
+          customer: customer || undefined,
+          has_electric_heating: q('fc-eq-heating').checked,
+          has_electric_cooling: q('fc-eq-cooling').checked,
+          supply_point_id: (App.getSupply && App.getSupply()) || undefined,
+        }),
+      }).then(function () {
+        if (status) status.textContent = __t('advice.saved', 'Preferencia guardada.');
+        loadForecast(fcCadence);   // re-narrate with the new equipment gate
+      }).catch(function () {
+        if (status) status.textContent = __t('advice.saveError', 'No se pudo guardar la preferencia.');
+      });
+    };
+    q('fc-eq-heating').onchange = save;
+    q('fc-eq-cooling').onchange = save;
+  }
+
+  function loadEquipment() {
+    return cfetch('/consumption/comfort-flex' + supQS()).then(renderEquipment).catch(function () {});
+  }
+
+  function renderForecastWhy() {
+    var el = q('fc-why-body');
+    if (!el) return;
+    if (!fcLast || fcLast.status !== 'ok' || !fcLast.attribution) {
+      el.innerHTML = '<p class="text-muted">' + esc(__t('advice.whyEmpty', 'Activa la previsión para ver aquí sus factores.')) + '</p>';
+      return;
+    }
+    var attr = fcLast.attribution;
+    var rows = (attr.contributions || []).map(function (c) {
+      var pos = c.phi >= 0;
+      return '<div class="wf-row"><span class="driver-dot ' + (pos ? 'pos' : 'neg') + '"></span>' +
+        '<span class="wf-label">' + esc(c.label) + '</span>' +
+        '<span class="wf-val ' + (pos ? 'pos' : 'neg') + '">' + (pos ? '+' : '') + c.phi.toFixed(2) + ' kWh</span></div>';
+    }).join('');
+    el.innerHTML =
+      '<p class="fc-period">' + esc(fcLast.period_label || '') + '</p>' +
+      '<div class="wf-base">' + esc(__t('advice.whyBase', 'Base (comportamiento habitual)')) + ': <b>' + attr.base.toFixed(2) + ' kWh</b></div>' +
+      rows +
+      '<div class="wf-total"><span>' + esc(__t('advice.whyTotal', 'Total previsto')) + '</span><span>' + attr.total.toFixed(2) + ' kWh</span></div>';
+  }
+
+  window.ForecastWhyPanel = {
+    open: function () { renderForecastWhy(); window.AppUI.openPanel('forecastWhyPanel'); },
+    close: function () { window.AppUI.closePanel('forecastWhyPanel'); },
+  };
+
+  // ── Member anomaly feed (Phase 2 E4) ──────────────────────────────────
+  function anomalyLocalTs(ts) {
+    if (!ts) return '—';
+    try {
+      return new Date(ts).toLocaleString((window.i18n && window.i18n.getLang()) === 'en' ? 'en-GB' : 'es-ES',
+        { timeZone: 'Europe/Madrid', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    } catch (e) { return ts; }
+  }
+
+  function renderAnomalyFeed(r) {
+    var body = q('anomaly-body');
+    if (!body) return;
+    var items = (r && r.data) || [];
+    if (!items.length) {
+      body.innerHTML = '<div class="fc-empty">' + esc(__t('anomaly.empty', 'Sin anomalías recientes en tu hogar.')) + '</div>';
+      return;
+    }
+    body.innerHTML = '<div class="anomaly-feed">' + items.map(function (a, i) {
+      var sev = (a.severity || 'warning').toLowerCase();
+      var meta = a.meta || {};
+      var obs = a.value_observed, exp = a.value_expected;
+      var diffPct = (obs != null && exp) ? Math.round(((obs - exp) / exp) * 100) : null;
+      var title = esc(a.variable || 'consumo') + ' — ' + esc(a.device_id || '') +
+        (diffPct != null ? ' (' + (diffPct > 0 ? '+' : '') + diffPct + '%)' : '');
+      var detailParts = [];
+      if (obs != null) detailParts.push(__t('anomaly.observed', 'Observado') + ': ' + fmt(obs, 2));
+      if (exp != null) detailParts.push(__t('anomaly.expected', 'Esperado') + ': ' + fmt(exp, 2));
+      if (a.score != null) detailParts.push('z: ' + Number(a.score).toFixed(2));
+      if (meta.weather_adj) detailParts.push(__t('anomaly.weatherAdj', 'Ajuste clima') + ': ' + JSON.stringify(meta.weather_adj));
+      if (meta.n_samples) detailParts.push(__t('anomaly.samples', 'Muestras') + ': ' + meta.n_samples);
+      return '<div class="anomaly-item sev-' + esc(sev) + '" onclick="this.classList.toggle(\'open\')">' +
+        '<span class="anomaly-dot"></span>' +
+        '<div class="anomaly-body">' +
+        '<div class="anomaly-title">' + title + '</div>' +
+        '<div class="anomaly-meta">' + anomalyLocalTs(a.ts) + ' · ' + esc(a.channel || '') + '</div>' +
+        '<div class="anomaly-detail">' + esc(detailParts.join(' · ')) + '</div>' +
+        '</div></div>';
+    }).join('') + '</div>';
+  }
+
+  function loadAnomalyFeed() {
+    return cfetch('/anomalies' + supQS()).then(renderAnomalyFeed).catch(function () {
+      var body = q('anomaly-body');
+      if (body) body.innerHTML = '<div class="fc-empty">' + esc(__t('anomaly.empty', 'Sin anomalías recientes en tu hogar.')) + '</div>';
     });
   }
 
@@ -864,6 +1116,15 @@
       customer = q('customer-select').value || '';
       refreshHouse();
       refreshEnv();
+      loadForecast(fcCadence);
+      loadAnomalyFeed();
+      loadEquipment();
+    },
+    dismissWxAlert: function () {
+      var wrap = q('wx-alert-banner-wrap');
+      if (!wrap) return;
+      try { if (wrap.dataset.dismissKey) sessionStorage.setItem(wrap.dataset.dismissKey, '1'); } catch (e) {}
+      wrap.innerHTML = '';
     },
   };
 
@@ -878,6 +1139,8 @@
   document.addEventListener('i18n:changed', function () {
     drawPvpcChart(); renderWeather(); renderSolar(); renderWind();
     updatePriceKpi(); updateHouseSource();
+    if (env) renderWeatherAlert(env.weather_alert);
+    loadForecast(fcCadence);   // re-fetch: narrative language changes server-side
   });
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -897,6 +1160,14 @@
       q('pnl-mkt-omie').onclick = function () { setMarket('omie'); };
       q('pnl-pvpc-today').onclick = function () { setPvpcDay('today'); };
       q('pnl-pvpc-tomorrow').onclick = function () { setPvpcDay('tomorrow'); };
+      q('fc-tab-daily').onclick = function () {
+        q('fc-tab-daily').classList.add('active'); q('fc-tab-weekly').classList.remove('active');
+        loadForecast('daily');
+      };
+      q('fc-tab-weekly').onclick = function () {
+        q('fc-tab-weekly').classList.add('active'); q('fc-tab-daily').classList.remove('active');
+        loadForecast('weekly');
+      };
   function esc(t) { return String(t == null ? '' : t).replace(/</g, '&lt;'); }
 
   function loadPortfolio() {
@@ -953,9 +1224,13 @@
           return;
         }
         loadContract(); refreshHouse(); loadBillingKpi(); loadEnvironment().catch(function () {});
+        loadForecast('daily');
+        loadAnomalyFeed();
+        loadEquipment();
         setInterval(function () { loadPower().catch(function () {}); }, 5000);   // live watts tick
         setInterval(refreshHouse, 60000);    // kWh / € of the day+month
         setInterval(refreshEnv, 300000);     // exogenous environment
+        setInterval(loadAnomalyFeed, 300000);  // anomaly feed — same cadence as environment
       })
         .catch(function (e) {
           App.showNotification(__t('common.error', 'Error'), e.message, 'danger');

@@ -188,6 +188,128 @@ async def set_solar_config(slug: str, peak_kwp: float,
             "supply_point_id": supply_point_id}
 
 
+_DEFAULT_COMFORT_FLEX: Dict[str, Any] = {
+    "version": 1, "source": None, "updated_at": None,
+    "equipment": {"electric_heating": False, "electric_cooling": False,
+                 "electric_dhw": False, "ev_charger": False},
+    "comfort": {"temp_min_c": None, "temp_max_c": None},
+    "flexible_loads": [],
+}
+
+
+def _merge_comfort_flex(payload: Optional[Dict[str, Any]], source: Optional[str],
+                        updated_at: Optional[str]) -> Dict[str, Any]:
+    """Deep-merge a (possibly partial) stored payload onto the conservative
+    defaults — a household without electric heating/cooling info at all
+    (no row) gets ALL-false equipment, never a KeyError downstream in
+    oe3.forecast_explained / AdviceSkill."""
+    import copy
+    out = copy.deepcopy(_DEFAULT_COMFORT_FLEX)
+    payload = payload or {}
+    out["equipment"].update(payload.get("equipment") or {})
+    out["comfort"].update(payload.get("comfort") or {})
+    out["flexible_loads"] = payload.get("flexible_loads") or []
+    out["version"] = payload.get("version", 1)
+    out["source"] = source
+    out["updated_at"] = updated_at
+    return out
+
+
+async def comfort_flex_for(slugs: Sequence[str],
+                           sp: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """The household's comfort_flex profile (consum.comfort_flex, mig 015) —
+    cross-team contract: {version, source, updated_at, equipment{
+    electric_heating, electric_cooling, electric_dhw, ev_charger},
+    comfort{temp_min_c, temp_max_c}, flexible_loads[]}. `source='plc'` (the
+    CM4 "Confort y flexibilidad" capture, synced via api_edge) is
+    AUTHORITATIVE when present; `source='consum_fallback'` is this app's own
+    UI, for invoice-only households with no PLC. No row at all → the
+    conservative all-false default (never surface equipment we can't
+    confirm exists). Same per-supply-point-override precedence as
+    solar_config_for."""
+    ids = await _slugs_to_ids(slugs)
+    if not ids:
+        return _merge_comfort_flex(None, None, None)
+    sp_id = sp["id"] if sp else None
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                """SELECT payload, source, updated_at FROM consum.comfort_flex
+                    WHERE customer_id = ANY(%s)
+                    ORDER BY (supply_point_id = %s) DESC NULLS LAST,
+                             (supply_point_id IS NULL) DESC, customer_id
+                    LIMIT 1""",
+                (list(ids.values()), sp_id),
+            )
+            row = await cur.fetchone()
+    if not row:
+        return _merge_comfort_flex(None, None, None)
+    return _merge_comfort_flex(row[0], row[1], row[2].isoformat() if row[2] else None)
+
+
+async def set_comfort_flex_fallback(slug: str, has_electric_heating: bool,
+                                    has_electric_cooling: bool,
+                                    updated_by: Optional[str] = None,
+                                    supply_point_id: Optional[int] = None) -> Dict[str, Any]:
+    """Member-facing FALLBACK/OVERRIDE write (consum UI) — always writes
+    `source='consum_fallback'`, never 'plc' (that's exclusively the sync
+    endpoint below). Read-modify-write on the existing payload so it never
+    clobbers `comfort`/`flexible_loads` a PLC sync may have set previously
+    for this same row (unusual — a plc row switching to fallback — but
+    cheap to preserve)."""
+    from psycopg.types.json import Jsonb
+
+    ids = await _slugs_to_ids([slug])
+    cid = ids.get(slug)
+    if not cid:
+        raise HTTPException(404, detail=f"Hogar desconocido: {slug}")
+    existing = await comfort_flex_for([slug], sp={"id": supply_point_id} if supply_point_id else None)
+    payload = {"version": existing.get("version", 1),
+              "equipment": {**existing["equipment"],
+                           "electric_heating": bool(has_electric_heating),
+                           "electric_cooling": bool(has_electric_cooling)},
+              "comfort": existing["comfort"], "flexible_loads": existing["flexible_loads"]}
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                """INSERT INTO consum.comfort_flex
+                       (customer_id, supply_point_id, source, payload, updated_by)
+                   VALUES (%s, %s, 'consum_fallback', %s, %s)
+                   ON CONFLICT (customer_id, COALESCE(supply_point_id, 0))
+                   DO UPDATE SET source = 'consum_fallback', payload = EXCLUDED.payload,
+                       updated_by = EXCLUDED.updated_by, updated_at = now()""",
+                (cid, supply_point_id, Jsonb(payload), updated_by),
+            )
+    return _merge_comfort_flex(payload, "consum_fallback", None)
+
+
+async def set_comfort_flex_sync(slug: str, payload: Dict[str, Any],
+                                supply_point_id: Optional[int] = None) -> Dict[str, Any]:
+    """Service-key write — the contract the PLC-capture/api_edge-sync
+    workstream calls into. Always writes `source='plc'` (authoritative;
+    wins over any `consum_fallback` row for the same customer+supply_point,
+    since it's the SAME upserted row — there is only ever one active row
+    per (customer_id, supply_point_id))."""
+    from psycopg.types.json import Jsonb
+
+    ids = await _slugs_to_ids([slug])
+    cid = ids.get(slug)
+    if not cid:
+        raise HTTPException(404, detail=f"Hogar desconocido: {slug}")
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                """INSERT INTO consum.comfort_flex
+                       (customer_id, supply_point_id, source, payload, updated_by)
+                   VALUES (%s, %s, 'plc', %s, 'edge_sync')
+                   ON CONFLICT (customer_id, COALESCE(supply_point_id, 0))
+                   DO UPDATE SET source = 'plc', payload = EXCLUDED.payload,
+                       updated_by = 'edge_sync', updated_at = now()""",
+                (cid, supply_point_id, Jsonb(payload)),
+            )
+    return _merge_comfort_flex(payload, "plc", None)
+
+
 async def devices_for(slugs: Sequence[str]) -> List[Dict[str, Any]]:
     """Devices (id, hostname, type, customer slug) for the authorized slugs."""
     ids = await _slugs_to_ids(slugs)

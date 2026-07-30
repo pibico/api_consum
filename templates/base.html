@@ -304,6 +304,11 @@
 
         {% include "partials/lang_dropdown.html" %}
 
+        <button class="app-header-btn" id="btnAdvice" onclick="AdvicePanel.open()"
+                data-i18n-title="advice.btn" title="Previsión por email">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M4 6l8 7 8-7"/></svg>
+        </button>
+
         <button class="app-header-btn" id="btnHelp" onclick="HelpPanel.open()"
                 data-i18n-title="help.btn" title="Ayuda y guía">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12" y2="17"/></svg>
@@ -457,6 +462,35 @@
   {# Active locale dict BEFORE the engine: the engine registers window.I18N_*
      synchronously at its IIFE, so __t()/i18n.t() translate from the very first
      dynamic render (no async _ensureDict race on first paint). #}
+  <!-- Previsión y consejos por email — slide panel (S8, never a modal) -->
+  <aside class="slide-panel" id="advicePanel" aria-hidden="true">
+    <div class="slide-panel-header">
+      <h2 data-i18n="advice.title">Previsión y consejos por email</h2>
+      <button type="button" class="panel-close" onclick="AdvicePanel.close()" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="slide-panel-body" style="padding:14px 18px;overflow-y:auto;">
+      <p class="text-muted" style="margin:0 0 1rem;font-size:0.85rem;" data-i18n="advice.intro">Recibe cada día (21:00) la previsión de mañana y cada lunes (08:00) la previsión de la semana, con la explicación de a qué se debe y un consejo para ahorrar.</p>
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:6px;">
+        <input type="checkbox" id="advice-opt-in">
+        <span data-i18n="advice.toggleLabel">Recibir previsión y consejos por email</span>
+      </label>
+      <p class="text-muted" style="margin:0 0 1rem;font-size:0.78rem;" data-i18n="advice.recipientNote">Se enviará a tu email de cuenta.</p>
+      <div id="advice-status" style="font-size:0.82rem;min-height:1.2em;"></div>
+    </div>
+  </aside>
+
+  <!-- "¿Por qué esta previsión?" — full SHAP waterfall, slide panel (never a
+       modal). Built by app.js from GET /advice/forecast's `attribution`. -->
+  <aside class="slide-panel" id="forecastWhyPanel" aria-hidden="true">
+    <div class="slide-panel-header">
+      <h2 data-i18n="advice.whyTitle">Por qué esta previsión</h2>
+      <button type="button" class="panel-close" onclick="ForecastWhyPanel.close()" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="slide-panel-body" style="padding:14px 18px;overflow-y:auto;">
+      <div id="fc-why-body"><p class="text-muted" data-i18n="advice.whyEmpty">Activa la previsión para ver aquí sus factores.</p></div>
+    </div>
+  </aside>
+
   <!-- Ayuda y guía — slide panel (never a modal), built by help.js from i18n -->
   <aside class="slide-panel" id="helpPanel" aria-hidden="true">
     <div class="slide-panel-header">
@@ -479,6 +513,7 @@
   <script src="{{ root }}/static/js/api_consum.js?v={{ v }}" defer></script>
   <script src="{{ root }}/static/js/pages/_pagination.js?v={{ v }}" defer></script>
   <script src="{{ root }}/static/js/help.js?v={{ v }}" defer></script>
+  <script src="{{ root }}/static/js/advice.js?v={{ v }}" defer></script>
   {% block extra_js %}{% endblock %}
 </body>
 </html>

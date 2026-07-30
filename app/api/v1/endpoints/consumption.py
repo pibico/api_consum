@@ -6,7 +6,7 @@ union of their org's customer slugs; a `?customer=` narrows to one slug
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -312,6 +312,7 @@ async def environment(customer: Optional[str] = Query(None),
 
     from app.core.config import settings
     from app.services import oe3
+    from app.services.ai.equipment_guard import scrub_alerts
 
     slugs = await _slugs(ctx, customer)
     sp = await _sp(slugs, supply)
@@ -322,7 +323,7 @@ async def environment(customer: Optional[str] = Query(None),
     # (mig 003/012 — por punto de suministro si se filtra).
     solar_cfg = await consumption.solar_config_for(slugs, sp=sp) or {}
     (today, tomorrow, omie_today, omie_tomorrow, carbon,
-     weather, obs, solar, sun, window, wind) = await asyncio.gather(
+     weather, obs, solar, sun, window, wind, alert, comfort) = await asyncio.gather(
         exo_client.pvpc_day("today"),
         exo_client.pvpc_day("tomorrow"),
         exo_client.omie_day("today"),
@@ -338,18 +339,42 @@ async def environment(customer: Optional[str] = Query(None),
         exo_client.daylight(lat, lon),
         oe3.green_window(lat, lon),
         exo_client.wind_forecast(lat, lon),
+        # S5 weather-alert banner (UI surfacing, 2026-07-29): AEMET orange/red
+        # advisories for the household's own coords — real avisos since
+        # WS-EXO-AEMET landed (source=AEMET), heuristic fallback before that.
+        exo_client.weather_alerts(lat, lon),
+        # Equipment gate (hard requirement 2026-07-29): the banner's
+        # energy_advisory is api_exo's generic per-phenomenon text and knows
+        # nothing about THIS household's installed equipment — comfort_flex
+        # is api_consum's, so we scrub it here (never in api_exo).
+        consumption.comfort_flex_for(slugs, sp=sp),
     )
+    # Copy, never mutate: `alert` may be the SAME dict object exo_client's
+    # in-process TTL cache hands to every caller for this lat/lon — two
+    # households sharing coordinates would otherwise poison each other's
+    # equipment-gated advisory text.
+    alert = dict(alert) if alert else {}
+    alert["alerts"] = scrub_alerts(alert.get("alerts") or [], (comfort or {}).get("equipment"))
 
     def _kwh(r):
         return r.get("price_eur_kwh") or ((r.get("price_eur_mwh") or 0) / 1000.0)
 
     def _prices(payload):
+        # PVPC is billed hourly (24 rows). api_exo reports `granularity`, so
+        # if ESIOS ever ships native 15-min PVPC the rows carry `time` too and
+        # the chart switches to 96 slots the same way OMIE already does.
+        payload = payload or {}
+        quarter = payload.get("granularity") == "quarter"
         out = []
-        for r in (payload or {}).get("prices") or []:
-            if r.get("hour") is None:
+        for r in payload.get("prices") or []:
+            dl = str(r.get("datetime_local") or "")
+            if r.get("hour") is None and len(dl) < 16:
                 continue
-            out.append({"hour": int(r["hour"]), "price_eur_kwh": _kwh(r),
-                        "period": r.get("period")})
+            row = {"hour": int(r["hour"]) if r.get("hour") is not None else int(dl[11:13]),
+                   "price_eur_kwh": _kwh(r), "period": r.get("period")}
+            if quarter and len(dl) >= 16:
+                row["time"] = dl[11:16]
+            out.append(row)
         return out
 
     _band = pricing._band   # 2.0TD static calendar (shared fallback)
@@ -414,6 +439,12 @@ async def environment(customer: Optional[str] = Query(None),
         "window": window,
         "wind": {"hourly": (wind or {}).get("hourly") or [],
                  "source": (wind or {}).get("source") or "Open-Meteo"},
+        # S5 weather-alert banner: pass the raw AEMET/heuristic payload
+        # through — the frontend picks the worst severity to headline and
+        # renders the rest as secondary chips (a household could have >1
+        # active advisory, e.g. wind + heat).
+        "weather_alert": {"alerts": (alert or {}).get("alerts") or [],
+                          "count": (alert or {}).get("count") or 0},
         # Data provenance per card (transparency requirement): pass the
         # upstream `source` fields through instead of hardcoding names.
         "sources": {
@@ -728,3 +759,70 @@ async def put_solar_config(body: SolarConfigIn,
         slug, body.peak_kwp, tilt=body.tilt, azimuth=body.azimuth,
         loss=body.loss, updated_by=(ctx.user or {}).get("email"),
         supply_point_id=(sp or {}).get("id"))
+
+
+# ── Comfort/flexibility profile (mig 015): electric heating/cooling gate
+#    for the forecast + advice (hard requirement 2026-07-29). `source='plc'`
+#    (CM4 "Confort y flexibilidad" + api_edge sync, separate workstream) is
+#    authoritative; the toggle below is a FALLBACK/OVERRIDE for households
+#    with no PLC — kept minimal (equipment.electric_heating/cooling only).
+class ComfortFlexIn(BaseModel):
+    customer: Optional[str] = None
+    has_electric_heating: bool = False
+    has_electric_cooling: bool = False
+    supply_point_id: Optional[int] = None
+
+
+class ComfortFlexSyncIn(BaseModel):
+    """Full cross-team contract — the PLC-sync workstream's write path."""
+    slug: str
+    payload: Dict[str, Any]
+    supply_point_id: Optional[int] = None
+
+
+@router.get("/comfort-flex")
+async def get_comfort_flex(customer: Optional[str] = Query(None),
+                           supply: Optional[int] = Query(None),
+                           ctx: ConsumContext = Depends(consum_context)):
+    """The household's comfort_flex profile — `source` tells the UI whether
+    to render read-only (synced from a PLC, 'plc') or editable ('consum_fallback'
+    / null = never set, defaults apply)."""
+    slugs = await _slugs(ctx, customer)
+    if not slugs:
+        raise HTTPException(404, detail="no household in scope")
+    sp = await _sp(slugs, supply)
+    return await consumption.comfort_flex_for(slugs, sp=sp)
+
+
+@router.put("/comfort-flex")
+async def put_comfort_flex(body: ComfortFlexIn,
+                           ctx: ConsumContext = Depends(consum_context)):
+    """Member-facing fallback/override — self-service like solar-config (any
+    authenticated household member; not gated to editor). Always writes
+    `source='consum_fallback'`, even if it overrides a previously-synced
+    'plc' row (explicit user action)."""
+    if ctx.is_service and not ctx.is_superadmin:
+        raise HTTPException(403, detail="read-only service key")
+    slugs = await _slugs(ctx, body.customer)
+    if not slugs:
+        raise HTTPException(400, detail="no household in scope")
+    slug = slugs[0]
+    ctx.check_slug(slug)
+    sp = await _sp(slugs, body.supply_point_id)
+    return await consumption.set_comfort_flex_fallback(
+        slug, body.has_electric_heating, body.has_electric_cooling,
+        updated_by=(ctx.user or {}).get("email"), supply_point_id=(sp or {}).get("id"))
+
+
+@router.put("/comfort-flex/sync")
+async def sync_comfort_flex(body: ComfortFlexSyncIn,
+                            ctx: ConsumContext = Depends(consum_context)):
+    """Service-key-only write — the contract the PLC-capture/api_edge-sync
+    workstream (separate) calls into. Body.payload is the FULL cross-team
+    JSON: {version, equipment{electric_heating,electric_cooling,
+    electric_dhw,ev_charger}, comfort{temp_min_c,temp_max_c},
+    flexible_loads[]}. Always writes `source='plc'` (authoritative)."""
+    if not ctx.is_service:
+        raise HTTPException(403, detail="service key required (PLC-sync contract)")
+    return await consumption.set_comfort_flex_sync(
+        body.slug, body.payload, supply_point_id=body.supply_point_id)

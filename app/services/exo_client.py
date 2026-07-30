@@ -130,6 +130,23 @@ async def carbon_current() -> Optional[dict]:
     return await _get("/carbon/current", ttl=300)
 
 
+async def price_forecast(lat: float, lon: float, days: int = 7,
+                         access_tariff: str = "2.0TD") -> Optional[dict]:
+    """WS-EXO-PRICE 7-day hourly electricity price forecast ->
+    {status, model_status, method_by_day, hourly: [{date, hour, period_from,
+    period_to, price_mean_eur_kwh, price_lo_eur_kwh, price_hi_eur_kwh,
+    period, confidence, method, drivers}]}. D+1 is `method=official` when
+    REE's D+1 demand+renewable forecasts are already published (there's a
+    same-day publish-time gap — see api_exo's price_model.py — before which
+    even "tomorrow" degrades to `method=proxy`/`climatology`); D+2-7 is
+    `method=proxy` (weather-driven, wider band). None on failure — callers
+    keep showing `price_status="forecast_pending"` for that day (S3)."""
+    return await _get(
+        f"/prices/forecast?days={days}&lat={lat}&lon={lon}&access_tariff={access_tariff}",
+        ttl=3 * 3600,
+    )
+
+
 QUARTERS = ("00", "15", "30", "45")
 
 
@@ -208,6 +225,34 @@ async def tariff_schedule_week(day: str) -> Optional[dict]:
     {rows: [{datetime_local, weekday, hour, band}]} (168 rows)."""
     return await _get(
         f"/tariffs/schedule/week?start_date={day}&access_tariff=2.0TD", ttl=86400
+    )
+
+
+async def holidays(year: int, region: Optional[str] = None) -> Optional[dict]:
+    """Spanish holidays for `year` (S4) → {holidays: [{date, name, is_national,
+    region}]}. `is_national` drives TARIFF pricing (all-day P3, per CNMC
+    2.0TD); the (regional) full list drives the BEHAVIOUR day-type regressor.
+    7-day TTL — the calendar is static per year (matches api_exo's own cache)."""
+    qs = f"/holidays?year={year}"
+    if region:
+        qs += f"&region={region}"
+    return await _get(qs, ttl=7 * 24 * 3600)
+
+
+async def weather_alerts(lat: float, lon: float) -> Optional[dict]:
+    """Weather alerts + energy advisories (S5) → {alerts: [{severity,
+    phenomenon, energy_advisory_es/en, ...}], count}. Heuristic today
+    (Open-Meteo derived); same shape once WS-EXO-AEMET lands."""
+    return await _get(f"/weather/alerts?lat={lat}&lon={lon}", ttl=1800)
+
+
+async def climate_normals(lat: float, lon: float, days_before: int = 0,
+                          days_after: int = 6) -> Optional[dict]:
+    """30-yr day-of-year normals (S5 guardrail) → {normals: [{date, temp_mean,
+    temp_max, temp_min}]}. 30-day TTL — normals barely move."""
+    return await _get(
+        f"/climate/normals?lat={lat}&lon={lon}&days_before={days_before}&days_after={days_after}",
+        ttl=86400 * 30,
     )
 
 

@@ -101,6 +101,67 @@ window.I18N_EN = {
   'nav.apiDocs': 'API Docs',
   'nav.collapse': 'Collapse',
 
+  // ── Forecast & advice by email (slide panel, S8) ──
+  'advice.btn': 'Forecast by email',
+  'advice.title': 'Forecast & advice by email',
+  'advice.intro': "Get tomorrow's forecast every day (21:00) and next week's forecast every Monday (08:00), with the reasons why and one tip to save.",
+  'advice.toggleLabel': 'Receive forecast & advice by email',
+  'advice.recipientNote': "It will be sent to your account's email.",
+  'advice.saved': 'Preference saved.',
+  'advice.saveError': 'Could not save the preference.',
+  'advice.whyTitle': 'Why this forecast',
+  'advice.whyEmpty': 'Turn on the forecast to see its drivers here.',
+  'advice.whyBase': 'Base (usual behaviour)',
+  'advice.whyTotal': 'Total forecast',
+
+  // ── Forecast & advice — dashboard card (UI surfacing, 2026-07-29) ──
+  'forecast.title': 'Your forecast',
+  'forecast.tabDaily': 'Tomorrow',
+  'forecast.tabWeekly': '7 days',
+  'forecast.why': 'Why?',
+  'forecast.estimatedCost': 'estimated cost',
+  'forecast.cheapWindow': 'Cheapest hours',
+  'forecast.insufficientData': 'Not enough history for your household to forecast yet (a few weeks of data are needed).',
+  'forecast.unavailable': 'The forecast is not available right now.',
+  'forecast.real': 'real',
+  'forecast.est': 'estimated',
+  'forecast.pending': 'pending',
+  'forecast.conf.high': 'high confidence',
+  'forecast.conf.medium': 'medium confidence',
+  'forecast.conf.low': 'low confidence',
+  'forecast.eqHeating': 'Electric heating',
+  'forecast.eqCooling': 'Electric AC / HVAC',
+  'forecast.eqSynced': 'synced from your PLC',
+
+  // ── Weather alert (S5, dashboard banner) ──
+  'alert.title': 'Weather alert',
+  'common.close': 'Close',
+  // AEMET severity (CAP nivel -> our info/yellow/orange/red enum).
+  'alert.severity.info': 'notice',
+  'alert.severity.yellow': 'yellow',
+  'alert.severity.orange': 'orange',
+  'alert.severity.red': 'red',
+  'alert.severity.generic': 'warning',
+  // AEMET phenomenon (fenomeno code -> our internal enum).
+  'alert.phenomenon.heat': 'Heat',
+  'alert.phenomenon.cold': 'Cold',
+  'alert.phenomenon.wind': 'Wind',
+  'alert.phenomenon.rain': 'Rain',
+  'alert.phenomenon.snow': 'Snow',
+  'alert.phenomenon.storm': 'Storm',
+  'alert.phenomenon.coast': 'Coastal phenomenon',
+  'alert.phenomenon.fog': 'Fog',
+  'alert.phenomenon.frost': 'Frost',
+  'alert.phenomenon.generic': 'Weather alert',
+
+  // ── Recent anomalies (Phase 2 E4, dashboard feed) ──
+  'anomaly.title': 'Recent anomalies',
+  'anomaly.empty': 'No recent anomalies in your household.',
+  'anomaly.observed': 'Observed',
+  'anomaly.expected': 'Expected',
+  'anomaly.weatherAdj': 'Weather adjustment',
+  'anomaly.samples': 'Samples',
+
   // ── Help & guide (slide panel, help.js) ──
   'help.btn': 'Help & guide',
   'help.title': 'CONSUM-IA guide',

@@ -89,6 +89,32 @@ async def webui_ensure(webui_port: int) -> bool:
         return False
 
 
+async def anomalies(customer_slug: str, since_days: int = 14,
+                    limit: int = 50) -> Optional[List[dict]]:
+    """GET api_edge `/api/v1/anomalies?slug=` (Phase 2 E4 — statistical
+    anomaly write-path, mig 024 anomaly_events). Same EDGE_API_KEY already
+    used for /devices and /topology: api_edge's `org_scope()` dependency
+    treats a valid non-admin service key as unrestricted-read (rbac.py), so
+    no new credential or api_edge-side change is needed. Returns the raw row
+    list (full explainability `meta` per row) or None if api_edge is
+    unreachable/errors — the caller (anomaly_poller) treats None as
+    "keep the last good cache", not as "no anomalies"."""
+    from datetime import datetime, timedelta, timezone
+    since = (datetime.now(timezone.utc) - timedelta(days=since_days)).isoformat()
+    url = f"{settings.EDGE_BASE_URL.rstrip('/')}/api/v1/anomalies"
+    try:
+        client = http_client.get_client()
+        r = await client.get(url, params={"slug": customer_slug, "from": since, "limit": limit},
+                             headers={"X-API-Key": settings.EDGE_API_KEY}, timeout=10.0)
+        if r.status_code != 200:
+            logger.warning("api_edge /anomalies?slug=%s -> %s", customer_slug, r.status_code)
+            return None
+        return (r.json() or {}).get("data") or []
+    except httpx.RequestError as e:
+        logger.error("api_edge /anomalies unreachable: %s", e)
+        return None
+
+
 async def shelly_switch(customer_slug: str, sensor_key: str, on: bool) -> Optional[dict]:
     """POST api_edge /mqtt/sensors/{key}/switch — Switch.Set over MQTT.
     Admin service key, server-side only; tenancy re-checked by api_edge."""

@@ -13,6 +13,10 @@
    and the PLC view) — plus the exogenous environment personalized for the
    home, assembled server-side from api_exo (/consumption/environment). #}
 
+<!-- AEMET weather-alert banner (S5) — dismissible, dot + tinted bg (no
+     border-left), populated from /consumption/environment's weather_alert. -->
+<div id="wx-alert-banner-wrap"></div>
+
 {# Vista de CARTERA (F3): con "Todos los puntos" y 2+ instalaciones el Panel
    muestra una tarjeta por punto + totales; clicar una entra a su panel.
    Las cards de ubicación (tiempo/viento/sol) solo existen POR punto. #}
@@ -58,6 +62,29 @@
     <div class="kpi-value" id="kpi-bill" style="font-size:1.6rem;">—</div>
     <div class="kpi-sub" id="kpi-bill-sub">—</div>
   </div>
+</div>
+
+<!-- Forecast & advice card (S2/S3/S6) — tomorrow (daily) + 7-day strip
+     (weekly), SHAP drivers, cheapest-hours tip, explicit period on every
+     figure (owner requirement 2026-07-28). "¿por qué?" opens the full
+     waterfall in forecastWhyPanel (base.html). -->
+<div class="glass-panel" style="padding:0.85rem 1rem;margin-bottom:1rem;">
+  <div class="fc-card-head">
+    <h4 style="margin:0;font-size:0.85rem;" data-i18n="forecast.title">Tu previsión</h4>
+    <div class="fc-tabs">
+      <button class="btn btn-sm pnl-day-btn active" id="fc-tab-daily" data-i18n="forecast.tabDaily">Mañana</button>
+      <button class="btn btn-sm pnl-day-btn" id="fc-tab-weekly" data-i18n="forecast.tabWeekly">7 días</button>
+    </div>
+  </div>
+  <div id="fc-body"><span class="spinner"></span></div>
+  <div id="fc-equipment" class="fc-equipment"></div>
+</div>
+
+<!-- Member anomaly feed (Phase 2 E4) — read-only, graceful empty state
+     (cold-start: <8 weeks fleet history). No ack/resolve here. -->
+<div class="glass-panel" style="padding:0.85rem 1rem;margin-bottom:1rem;">
+  <h4 style="margin:0 0 0.5rem;font-size:0.85rem;" data-i18n="anomaly.title">Anomalías recientes</h4>
+  <div id="anomaly-body"><span class="spinner"></span></div>
 </div>
 
 <!-- General meter today + PVPC curve, side by side -->

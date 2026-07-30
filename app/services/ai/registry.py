@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Dict, Optional
 
+from app.services.ai.advice import AdviceSkill
 from app.services.ai.base import Skill
 from app.services.ai.contracts import ContractSkill
 from app.services.ai.invoices import InvoiceSkill
@@ -13,6 +14,7 @@ from app.services.ai.invoices import InvoiceSkill
 SKILLS: Dict[str, Skill] = {
     "contract": ContractSkill(),
     "invoice": InvoiceSkill(),
+    "advice": AdviceSkill(),
 }
 
 

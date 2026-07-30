@@ -101,6 +101,67 @@ window.I18N_ES = {
   'nav.apiDocs': 'API Docs',
   'nav.collapse': 'Contraer',
 
+  // ── Previsión y consejos por email (panel deslizante, S8) ──
+  'advice.btn': 'Previsión por email',
+  'advice.title': 'Previsión y consejos por email',
+  'advice.intro': 'Recibe cada día (21:00) la previsión de mañana y cada lunes (08:00) la previsión de la semana, con la explicación de a qué se debe y un consejo para ahorrar.',
+  'advice.toggleLabel': 'Recibir previsión y consejos por email',
+  'advice.recipientNote': 'Se enviará a tu email de cuenta.',
+  'advice.saved': 'Preferencia guardada.',
+  'advice.saveError': 'No se pudo guardar la preferencia.',
+  'advice.whyTitle': 'Por qué esta previsión',
+  'advice.whyEmpty': 'Activa la previsión para ver aquí sus factores.',
+  'advice.whyBase': 'Base (comportamiento habitual)',
+  'advice.whyTotal': 'Total previsto',
+
+  // ── Previsión y consejos — tarjeta del Panel (UI surfacing, 2026-07-29) ──
+  'forecast.title': 'Tu previsión',
+  'forecast.tabDaily': 'Mañana',
+  'forecast.tabWeekly': '7 días',
+  'forecast.why': '¿Por qué?',
+  'forecast.estimatedCost': 'coste estimado',
+  'forecast.cheapWindow': 'Horas más baratas',
+  'forecast.insufficientData': 'Aún no hay suficiente histórico de tu hogar para predecir (se necesitan varias semanas de datos).',
+  'forecast.unavailable': 'La previsión no está disponible ahora mismo.',
+  'forecast.real': 'real',
+  'forecast.est': 'estimado',
+  'forecast.pending': 'pendiente',
+  'forecast.conf.high': 'confianza alta',
+  'forecast.conf.medium': 'confianza media',
+  'forecast.conf.low': 'confianza baja',
+  'forecast.eqHeating': 'Calefacción eléctrica',
+  'forecast.eqCooling': 'Aire acondicionado / HVAC eléctrico',
+  'forecast.eqSynced': 'sincronizado desde tu PLC',
+
+  // ── Aviso meteorológico (S5, banner del Panel) ──
+  'alert.title': 'Aviso meteorológico',
+  'common.close': 'Cerrar',
+  // Severidad AEMET (nivel CAP -> nuestro enum info/yellow/orange/red).
+  'alert.severity.info': 'informativo',
+  'alert.severity.yellow': 'amarillo',
+  'alert.severity.orange': 'naranja',
+  'alert.severity.red': 'rojo',
+  'alert.severity.generic': 'aviso',
+  // Fenómeno AEMET (código fenomeno -> nuestro enum interno).
+  'alert.phenomenon.heat': 'Calor',
+  'alert.phenomenon.cold': 'Frío',
+  'alert.phenomenon.wind': 'Viento',
+  'alert.phenomenon.rain': 'Lluvia',
+  'alert.phenomenon.snow': 'Nieve',
+  'alert.phenomenon.storm': 'Tormenta',
+  'alert.phenomenon.coast': 'Fenómeno costero',
+  'alert.phenomenon.fog': 'Niebla',
+  'alert.phenomenon.frost': 'Heladas',
+  'alert.phenomenon.generic': 'Aviso meteorológico',
+
+  // ── Anomalías recientes (Phase 2 E4, feed del Panel) ──
+  'anomaly.title': 'Anomalías recientes',
+  'anomaly.empty': 'Sin anomalías recientes en tu hogar.',
+  'anomaly.observed': 'Observado',
+  'anomaly.expected': 'Esperado',
+  'anomaly.weatherAdj': 'Ajuste clima',
+  'anomaly.samples': 'Muestras',
+
   // ── Ayuda y guía (panel deslizante, help.js) ──
   'help.btn': 'Ayuda y guía',
   'help.title': 'Guía de CONSUM-IA',

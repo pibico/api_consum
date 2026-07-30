@@ -48,7 +48,7 @@
     if (DICT[lang]) return Promise.resolve();
     return new Promise((resolve) => {
       const s = document.createElement('script');
-      s.src = ROOT + '/static/js/i18n.' + lang + '.js?v=4';   // ← bump v=N on dict change
+      s.src = ROOT + '/static/js/i18n.' + lang + '.js?v=5';   // ← bump v=N on dict change
       s.onload = function () {
         const g = lang === 'en' ? window.I18N_EN : lang === 'fr' ? window.I18N_FR : window.I18N_ES;
         DICT[lang] = g || {};

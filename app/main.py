@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
+from app.api.v1.endpoints import advice as advice_endpoints
 from app.api.v1.endpoints import auth as auth_endpoints
 from app.api.v1.endpoints import consumption as consumption_endpoints
 from app.api.v1.endpoints import contract as contract_endpoints
@@ -31,7 +32,8 @@ from app.api.v1.endpoints import savings as savings_endpoints
 from app.core import db as ts_db
 from app.core import http_client
 from app.core.config import settings
-from app.workers import notify_sub
+from app.api.v1.endpoints import anomalies as anomalies_endpoints
+from app.workers import advice_scheduler, anomaly_poller, notify_sub
 
 logging.basicConfig(
     level=logging.INFO,
@@ -52,7 +54,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:  # noqa: BLE001
         log.error("TS pool failed to open (continuing, consumption disabled): %s", e)
     notify_sub.start()
+    try:
+        advice_scheduler.start()
+    except Exception as e:  # noqa: BLE001 — the daily/weekly email must never block startup
+        log.error("advice_scheduler failed to start (continuing): %s", e)
+    try:
+        anomaly_poller.start()
+    except Exception as e:  # noqa: BLE001 — the member anomaly feed must never block startup
+        log.error("anomaly_poller failed to start (continuing): %s", e)
     yield
+    advice_scheduler.shutdown()
+    anomaly_poller.shutdown()
     try:
         await ts_db.close_pool()
     except Exception as e:  # noqa: BLE001
@@ -86,6 +98,8 @@ app.include_router(invoice_endpoints.router, prefix=settings.API_V1_STR)
 app.include_router(ai_endpoints.router, prefix=settings.API_V1_STR)
 app.include_router(plc_endpoints.router, prefix=settings.API_V1_STR)
 app.include_router(playground_endpoints.router, prefix=settings.API_V1_STR)
+app.include_router(advice_endpoints.router, prefix=settings.API_V1_STR)
+app.include_router(anomalies_endpoints.router, prefix=settings.API_V1_STR)
 
 # Web HTML routes (/app product pages + SSO /login; landing stays below)
 from app.api.v1.endpoints.web import router as web_router  # noqa: E402
