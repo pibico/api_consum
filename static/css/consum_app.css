@@ -778,8 +778,8 @@
    leaving a filler gap under the shorter column; a flex row of two
    flex-column children lets each stack pack its own cards tight and end
    wherever its own content ends, with zero effect on the other column's
-   height. Left = Tu previsión; right = Ausencias/Vacaciones + Anomalías.
-   50/50 split. */
+   height. Left = Tu previsión, Tu casa, Sol, Windy map; right = Ausencias/
+   Vacaciones, Anomalías, El precio de tu luz. 50/50 split. */
 .panel-forecast-row { display: flex; gap: 1rem; margin-bottom: 1rem; align-items: flex-start; }
 .panel-forecast-row > * { margin-bottom: 0 !important; min-width: 0; }
 .panel-forecast-left,

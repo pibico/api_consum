@@ -64,13 +64,27 @@
   </div>
 </div>
 
-<!-- Panel top row (2026-07-30): TWO INDEPENDENT vertical stacks side by side
-     (not a row-aligned grid) below the untouched KPI row above. Left stack =
-     Tu previsión (wider); right stack = Ausencias/Vacaciones then Anomalías,
-     packed tight with no filler gap regardless of the other column's
-     height. Collapses to one column (KPIs → previsión → ausencias →
-     anomalías) below the .panel-forecast-row breakpoint. Cards themselves
-     are unchanged — only their container/placement moved. -->
+<!-- Panel body (2026-07-30): TWO EQUAL-WIDTH (1fr/1fr) INDEPENDENT vertical
+     flex stacks below the untouched KPI row above:
+       LEFT  — Tu previsión, Tu casa (hora a hora), Sol en tu tejado, Tu
+               instalación (Windy radar map — NOT explicitly named by the
+               owner in the left/right list; kept here, after Sol, pending
+               confirmation — see report)
+       RIGHT — Ausencias/Vacaciones, Anomalías, El precio de tu luz, Viento
+               e infiltración, El tiempo en tu casa
+     Each column packs its cards flush top-to-bottom — no row-alignment
+     across columns, no filler gaps (a shorter column simply ends where its
+     content ends; it does NOT get stretched to match the other, and the
+     other does NOT leave a gap waiting for it). Collapses to one column on
+     narrow screens: KPIs → Tu previsión → Tu casa → Sol → Tu instalación →
+     Ausencias → Anomalías → El precio de tu luz → Viento e infiltración →
+     El tiempo en tu casa. Cards themselves are unchanged — only their
+     container/placement moved. NOTE (kept from the original wx-2col
+     ordering): the Windy map's <iframe> renders in its own compositing
+     layer and can capture pointer events across its box, overlapping
+     interactive headers placed AFTER it in the same column — so within the
+     LEFT column, Sol en tu tejado (kWp input) stays BEFORE Tu instalación
+     (map), never after. -->
 <div class="panel-forecast-row">
   <div class="panel-forecast-left">
     <!-- Forecast & advice card (S2/S3/S6) — tomorrow (daily) + 7-day strip
@@ -87,6 +101,51 @@
       </div>
       <div id="fc-body"><span class="spinner"></span></div>
       <div id="fc-equipment" class="fc-equipment"></div>
+    </div>
+
+    <!-- General meter today (hourly). -->
+    <div class="glass-panel" style="padding:0.75rem 1rem;">
+      <h4 style="margin:0 0 0.5rem;font-size:0.85rem;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span data-i18n="app.houseChart">Tu casa, hora a hora</span>
+        <span class="pnl-house-total" id="pnl-house-total"></span>
+        <span class="pnl-hdr-nav">
+          <button class="btn-icon" id="pnl-house-prev" title="Día anterior"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button>
+          <input type="date" id="pnl-house-date" class="pibico-input">
+          <button class="btn-icon" id="pnl-house-next" title="Día siguiente"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button>
+        </span>
+      </h4>
+      <div id="pnl-house-chart" style="width:100%;height:190px;"></div>
+      <div style="display:flex;gap:12px;margin-top:6px;font-size:0.7rem;color:var(--color-text-light);flex-wrap:wrap;">
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(231,76,60,0.75);"></span> P1 Punta</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(243,156,18,0.75);"></span> P2 Llano</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(46,204,113,0.75);"></span> P3 Valle</span>
+        <span class="pnl-src" style="margin:0 0 0 auto;"><span data-i18n="app.source">Fuente</span>: <span id="house-source">Medidor General de tu casa · coste con PVPC (ESIOS)</span></span>
+      </div>
+    </div>
+
+    <!-- Personalized exogenous environment — solar. -->
+    <div class="glass-panel" style="padding:0.75rem 1rem;">
+      <h4 style="margin:0 0 0.5rem;font-size:0.85rem;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span data-i18n="app.solarTitle">Sol en tu tejado</span>
+        <label style="margin-left:auto;font-size:0.65rem;color:var(--color-text-light);display:flex;align-items:center;gap:4px;font-weight:400;" data-i18n-title="app.solarKwpHint" title="Potencia pico de tu instalación fotovoltaica">
+          <span data-i18n="app.solarKwp">Instalada</span>
+          <input type="number" id="pnl-solar-kwp" min="0" max="100" step="0.5" placeholder="3" style="font-size:0.65rem;padding:1px 4px;border-radius:3px;width:56px;border:1px solid rgba(0,0,0,0.15);">
+          <span>kWp</span>
+        </label>
+      </h4>
+      <div id="pnl-solar"><span class="spinner"></span></div>
+      <div id="pnl-solar-chart" style="width:100%;height:150px;margin-top:6px;"></div>
+    </div>
+
+    <!-- Windy radar map — kept AFTER solar (see column note above). Taller
+         min-height (2026-07-30) so the embedded Windy <iframe> (JS sets it
+         to width/height:100%, see renderMap() in app.js) actually fills a
+         sizeable card instead of the previous 230px sliver. -->
+    <div class="glass-panel" style="padding:0.75rem 1rem;display:flex;flex-direction:column;min-height:380px;">
+      <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="app.mapTitle">Tu instalación</span>
+        <span class="text-muted" id="pnl-map-muni" style="font-weight:400;"></span>
+        <span class="text-muted" style="font-weight:400;">· <span data-i18n="app.radar">radar (Windy)</span></span></h4>
+      <div id="pnl-map" style="flex:1;min-height:340px;border-radius:8px;overflow:hidden;"></div>
     </div>
   </div>
 
@@ -135,99 +194,54 @@
       <h4 style="margin:0 0 0.5rem;font-size:0.85rem;" data-i18n="anomaly.title">Anomalías recientes</h4>
       <div id="anomaly-body"><span class="spinner"></span></div>
     </div>
-  </div>
-</div>
 
-<!-- General meter today + PVPC curve, side by side -->
-<div class="wx-2col">
-  <div class="glass-panel" style="padding:0.75rem 1rem;">
-    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-      <span data-i18n="app.houseChart">Tu casa, hora a hora</span>
-      <span class="pnl-house-total" id="pnl-house-total"></span>
-      <span class="pnl-hdr-nav">
-        <button class="btn-icon" id="pnl-house-prev" title="Día anterior"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button>
-        <input type="date" id="pnl-house-date" class="pibico-input">
-        <button class="btn-icon" id="pnl-house-next" title="Día siguiente"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button>
-      </span>
-    </h4>
-    <div id="pnl-house-chart" style="width:100%;height:190px;"></div>
-    <div style="display:flex;gap:12px;margin-top:6px;font-size:0.7rem;color:var(--color-text-light);flex-wrap:wrap;">
-      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(231,76,60,0.75);"></span> P1 Punta</span>
-      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(243,156,18,0.75);"></span> P2 Llano</span>
-      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(46,204,113,0.75);"></span> P3 Valle</span>
-      <span class="pnl-src" style="margin:0 0 0 auto;"><span data-i18n="app.source">Fuente</span>: <span id="house-source">Medidor General de tu casa · coste con PVPC (ESIOS)</span></span>
+    <!-- PVPC curve — pulled up flush under Anomalías. -->
+    <div class="glass-panel" style="padding:0.75rem 1rem;">
+      <h4 style="margin:0 0 0.5rem;font-size:0.85rem;display:flex;align-items:center;gap:8px;">
+        <span data-i18n="app.pvpcChart">El precio de tu luz</span>
+        <span style="margin-left:auto;display:flex;gap:4px;">
+          <button class="btn btn-sm pnl-day-btn active" id="pnl-mkt-pvpc" title="Tarifa regulada (PVPC)">PVPC</button>
+          <button class="btn btn-sm pnl-day-btn" id="pnl-mkt-omie" title="Mercado mayorista (contratos indexados)">OMIE</button>
+          <span style="width:8px;"></span>
+          <button class="btn btn-sm pnl-day-btn active" id="pnl-pvpc-today" data-i18n="app.today">Hoy</button>
+          <button class="btn btn-sm pnl-day-btn" id="pnl-pvpc-tomorrow" data-i18n="app.tomorrow" disabled>Mañana</button>
+        </span>
+      </h4>
+      <div id="pnl-pvpc-chart" style="width:100%;height:190px;"></div>
+      <div style="display:flex;gap:12px;align-items:center;margin-top:6px;font-size:0.7rem;color:var(--color-text-light);flex-wrap:wrap;">
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(231,76,60,0.75);"></span> P1 Punta</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(243,156,18,0.75);"></span> P2 Llano</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(46,204,113,0.75);"></span> P3 Valle</span>
+        <span id="pnl-pvpc-note" class="kpi-sub" style="font-size:0.72rem;margin-left:auto;"></span>
+      </div>
     </div>
-  </div>
-  <div class="glass-panel" style="padding:0.75rem 1rem;">
-    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;display:flex;align-items:center;gap:8px;">
-      <span data-i18n="app.pvpcChart">El precio de tu luz</span>
-      <span style="margin-left:auto;display:flex;gap:4px;">
-        <button class="btn btn-sm pnl-day-btn active" id="pnl-mkt-pvpc" title="Tarifa regulada (PVPC)">PVPC</button>
-        <button class="btn btn-sm pnl-day-btn" id="pnl-mkt-omie" title="Mercado mayorista (contratos indexados)">OMIE</button>
-        <span style="width:8px;"></span>
-        <button class="btn btn-sm pnl-day-btn active" id="pnl-pvpc-today" data-i18n="app.today">Hoy</button>
-        <button class="btn btn-sm pnl-day-btn" id="pnl-pvpc-tomorrow" data-i18n="app.tomorrow" disabled>Mañana</button>
-      </span>
-    </h4>
-    <div id="pnl-pvpc-chart" style="width:100%;height:190px;"></div>
-    <div style="display:flex;gap:12px;align-items:center;margin-top:6px;font-size:0.7rem;color:var(--color-text-light);flex-wrap:wrap;">
-      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(231,76,60,0.75);"></span> P1 Punta</span>
-      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(243,156,18,0.75);"></span> P2 Llano</span>
-      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(46,204,113,0.75);"></span> P3 Valle</span>
-      <span id="pnl-pvpc-note" class="kpi-sub" style="font-size:0.72rem;margin-left:auto;"></span>
+
+    <!-- Personalized exogenous environment — wind. Flush under El precio
+         de tu luz. -->
+    <div class="glass-panel" style="padding:0.75rem 1rem;">
+      <h4 style="margin:0 0 0.5rem;font-size:0.85rem;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span data-i18n="app.windTitle">Viento e infiltración</span>
+        <label style="margin-left:auto;font-size:0.65rem;color:var(--color-text-light);display:flex;align-items:center;gap:4px;font-weight:400;">
+          <span data-i18n="app.windThreshold">Umbral</span>
+          <input type="number" id="pnl-wind-threshold" min="20" max="80" step="5" value="40" style="font-size:0.65rem;padding:1px 4px;border-radius:3px;width:46px;border:1px solid rgba(0,0,0,0.15);">
+          <span>km/h</span>
+        </label>
+      </h4>
+      <div id="pnl-wind-chart" style="width:100%;height:150px;"></div>
+      <div id="pnl-wind-kpis" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;font-size:0.72rem;"></div>
+      <div id="pnl-wind-advisory"></div>
+      <div id="pnl-wind-src"></div>
     </div>
-  </div>
-</div>
 
-<!-- Personalized exogenous environment.
-     NOTE: the solar + wind cards (with header inputs) MUST come BEFORE the
-     Windy map card. The Windy <iframe> renders in its own compositing layer
-     and captures pointer events across its whole box, which — when placed
-     above — overlaps the headers below and blocks the kWp / threshold inputs.
-     Keeping the interactive cards on top avoids that iframe event bleed. -->
-<div class="wx-2col">
-  <div class="glass-panel" style="padding:0.75rem 1rem;">
-    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-      <span data-i18n="app.solarTitle">Sol en tu tejado</span>
-      <label style="margin-left:auto;font-size:0.65rem;color:var(--color-text-light);display:flex;align-items:center;gap:4px;font-weight:400;" data-i18n-title="app.solarKwpHint" title="Potencia pico de tu instalación fotovoltaica">
-        <span data-i18n="app.solarKwp">Instalada</span>
-        <input type="number" id="pnl-solar-kwp" min="0" max="100" step="0.5" placeholder="3" style="font-size:0.65rem;padding:1px 4px;border-radius:3px;width:56px;border:1px solid rgba(0,0,0,0.15);">
-        <span>kWp</span>
-      </label>
-    </h4>
-    <div id="pnl-solar"><span class="spinner"></span></div>
-    <div id="pnl-solar-chart" style="width:100%;height:150px;margin-top:6px;"></div>
-  </div>
-  <div class="glass-panel" style="padding:0.75rem 1rem;">
-    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-      <span data-i18n="app.windTitle">Viento e infiltración</span>
-      <label style="margin-left:auto;font-size:0.65rem;color:var(--color-text-light);display:flex;align-items:center;gap:4px;font-weight:400;">
-        <span data-i18n="app.windThreshold">Umbral</span>
-        <input type="number" id="pnl-wind-threshold" min="20" max="80" step="5" value="40" style="font-size:0.65rem;padding:1px 4px;border-radius:3px;width:46px;border:1px solid rgba(0,0,0,0.15);">
-        <span>km/h</span>
-      </label>
-    </h4>
-    <div id="pnl-wind-chart" style="width:100%;height:150px;"></div>
-    <div id="pnl-wind-kpis" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;font-size:0.72rem;"></div>
-    <div id="pnl-wind-advisory"></div>
-    <div id="pnl-wind-src"></div>
-  </div>
-</div>
-
-<div class="wx-2col">
-  <div class="glass-panel" style="padding:0.75rem 1rem;display:flex;flex-direction:column;">
-    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="app.mapTitle">Tu instalación</span>
-      <span class="text-muted" id="pnl-map-muni" style="font-weight:400;"></span>
-      <span class="text-muted" style="font-weight:400;">· <span data-i18n="app.radar">radar (Windy)</span></span></h4>
-    <div id="pnl-map" style="flex:1;min-height:230px;border-radius:8px;overflow:hidden;"></div>
-  </div>
-  <div class="glass-panel" style="padding:0.75rem 1rem;">
-    <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="app.weatherTitle">El tiempo en tu casa</span>
-      <span class="text-muted" id="pnl-wx-muni" style="font-weight:400;"></span>
-      <span class="text-muted" style="font-weight:400;">· <span data-i18n="app.next7">próximos 7 días</span></span></h4>
-    <div id="pnl-weather"><span class="spinner"></span></div>
-    <div id="pnl-wx-chart" style="width:100%;height:165px;margin-top:4px;"></div>
-    <div id="pnl-wx-src"></div>
+    <!-- 7-day weather forecast. Flush under Viento e infiltración. -->
+    <div class="glass-panel" style="padding:0.75rem 1rem;">
+      <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="app.weatherTitle">El tiempo en tu casa</span>
+        <span class="text-muted" id="pnl-wx-muni" style="font-weight:400;"></span>
+        <span class="text-muted" style="font-weight:400;">· <span data-i18n="app.next7">próximos 7 días</span></span></h4>
+      <div id="pnl-weather"><span class="spinner"></span></div>
+      <div id="pnl-wx-chart" style="width:100%;height:165px;margin-top:4px;"></div>
+      <div id="pnl-wx-src"></div>
+    </div>
   </div>
 </div>
 

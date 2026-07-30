@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "118"  # 118: Panel layout — Tu previsión / Ausencias / Anomalías into a 2-col grid row (.panel-forecast-row, consum_app.css + app.html), no logic change
+ASSET_VERSION = "119"  # 119: Panel layout — full mosaic of every non-KPI card into two equal 1fr/1fr independent flex-column stacks (.panel-forecast-row, consum_app.css + app.html); taller Windy radar card so its iframe fills the card. No card logic/content change.
 
 
 def render_template(template_name: str, **context) -> str:
