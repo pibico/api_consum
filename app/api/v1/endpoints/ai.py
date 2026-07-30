@@ -41,11 +41,16 @@ _SYSTEM = (
 
 async def _aggregate_context(slugs: list[str], sp: Optional[dict] = None) -> dict:
     """The ONLY payload the LLM sees — aggregates, no raw rows / PII."""
+    # Equipment gate (gap fix 2026-07-30 — same hard requirement as the
+    # dashboard forecast card): never let the LLM narrate "el frío/calor
+    # explica tu consumo" to a household with no electric heating/cooling.
+    comfort = await consumption.comfort_flex_for(slugs, sp=sp)
+    equipment = comfort.get("equipment")
     summ, power, shift, thermal, window, pvpc, carbon = await asyncio.gather(
         consumption.summary(slugs, sp=sp),
         consumption.current_power(slugs, sp=sp),
         oe3.shift_analysis(slugs, sp=sp),
-        oe3.thermal_analysis(slugs, sp=sp),
+        oe3.thermal_analysis(slugs, sp=sp, equipment=equipment),
         oe3.green_window(),
         exo_client.pvpc_day("today"),
         exo_client.carbon_current(),

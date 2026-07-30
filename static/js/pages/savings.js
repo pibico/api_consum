@@ -154,10 +154,22 @@
         ],
       }],
     }, true);
-    // The weather insight, demoted to one honest sentence.
+    // The weather insight, demoted to one honest sentence. Equipment-gated
+    // (gap fix 2026-07-30): a household with neither electric heating nor
+    // cooling never gets this line at all — the underlying regression drops
+    // both HDD/CDD, so weather_share_pct is a neutral 0%, and there is
+    // nothing true to say about "frío/calor" driving its consumption. A
+    // household with only ONE of the two gets the driver-specific wording
+    // instead of the generic "frío/calor" (never implying the other exists).
     var t = data.thermal || {};
-    q('sv-weather-txt').textContent = (t.status === 'ok' && t.weather_share_pct != null)
-      ? __t('sav.weatherLine', 'El frío/calor explica ~{p} % de lo que consumes — el resto son hábitos, y ahí está el ahorro.')
+    var heatingActive = t.heating_active !== false;   // default true (equipment=None, pre-gate callers)
+    var coolingActive = t.cooling_active !== false;
+    var weatherKey = (heatingActive && coolingActive) ? 'sav.weatherLine'
+      : heatingActive ? 'sav.weatherLineCold'
+      : coolingActive ? 'sav.weatherLineHeat'
+      : null;
+    q('sv-weather-txt').textContent = (weatherKey && t.status === 'ok' && t.weather_share_pct != null)
+      ? __t(weatherKey, 'El frío/calor explica ~{p} % de lo que consumes — el resto son hábitos, y ahí está el ahorro.')
         .replace('{p}', fmt(t.weather_share_pct, 0))
       : '';
   }

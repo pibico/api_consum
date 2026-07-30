@@ -448,6 +448,8 @@ window.I18N_EN = {
   'sav.barExpensive': 'All in expensive hours',
   'sav.barReal': 'Your month, your hours',
   'sav.weatherLine': 'Cold/heat explains ~{p}% of what you use — the rest is habits, and that\'s where savings live.',
+  'sav.weatherLineCold': 'Cold explains ~{p}% of what you use — the rest is habits, and that\'s where savings live.',
+  'sav.weatherLineHeat': 'Heat explains ~{p}% of what you use — the rest is habits, and that\'s where savings live.',
   'sav.chartAppliances': 'What each appliance costs you',
   'sav.applNote': 'Approximate € at your month\'s average price. Bars respect your wiring: when a device hangs from another (a strip, a UPS…), the child is subtracted from the parent — you can add bars up without double counting. "Always on" is standby: truly switching those off is guaranteed savings.',
   'sav.restSuffix': '(rest)',

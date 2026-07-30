@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "120"  # 120: Panel layout — right column reorder (El tiempo en tu casa now above Viento e infiltración, last); left column (Tu previsión/Tu casa/Sol/Windy map) unchanged. Fixed #pnl-map's indefinite flex:1 height (iframe height:100% was collapsing to the ~150px UA default) with an explicit height:360px so the Windy radar iframe fully fills its card. No card logic/content change.
+ASSET_VERSION = "121"  # 121: Equipment-gate oe3.thermal_analysis (Savings/OE3 "weather explains your consumption" insight) — drops HDD/CDD regressor per household equipment (same variance-safe fit as forecast_explained), savings.js picks frío-only/calor-only/suppressed wording (new i18n keys sav.weatherLineCold/sav.weatherLineHeat). Also fixes the AEMET banner equipment_guard gap: accent+plural-tolerant term matching (equipment_guard.py, hits()/_term_pattern) and scrub_alerts now also scrubs body_es/body_en (official AEMET CAP text bypassed the scrub before — energy_advisory_es/en only). No visual layout change.
 
 
 def render_template(template_name: str, **context) -> str:

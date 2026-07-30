@@ -166,35 +166,32 @@ async def shift_analysis(slugs: Sequence[str], device: Optional[str] = None,
 # ---------------------------------------------------------------------------
 
 
-def _ols3(X: List[List[float]], y: List[float]) -> Optional[List[float]]:
-    """Least squares for y = b0 + b1·x1 + b2·x2 via normal equations
-    (3×3 Gaussian elimination — no numpy dependency for 45 points)."""
-    n = len(y)
-    A = [[0.0] * 3 for _ in range(3)]
-    b = [0.0] * 3
-    for i in range(n):
-        row = [1.0, X[i][0], X[i][1]]
-        for j in range(3):
-            b[j] += row[j] * y[i]
-            for k in range(3):
-                A[j][k] += row[j] * row[k]
-    # Gaussian elimination with partial pivoting
-    M = [A[i] + [b[i]] for i in range(3)]
-    for col in range(3):
-        piv = max(range(col, 3), key=lambda r: abs(M[r][col]))
-        if abs(M[piv][col]) < 1e-9:
-            return None
-        M[col], M[piv] = M[piv], M[col]
-        for r in range(3):
-            if r != col:
-                f = M[r][col] / M[col][col]
-                for c in range(col, 4):
-                    M[r][c] -= f * M[col][c]
-    return [M[i][3] / M[i][i] for i in range(3)]
-
 
 async def thermal_analysis(slugs: Sequence[str], device: Optional[str] = None,
-                           days: int = 45, sp=None) -> Dict[str, Any]:
+                           days: int = 45, sp=None,
+                           equipment: Optional[Dict[str, bool]] = None) -> Dict[str, Any]:
+    """OLS `consumo_dia ~ HDD + CDD` — the Savings/OE3 "weather explains your
+    consumption" insight.
+
+    `equipment` (gap fix 2026-07-30, same contract as `forecast_explained`'s:
+    consumption.comfort_flex_for()'s `equipment` sub-object): a household
+    without electric_heating/electric_cooling must never be told the
+    cold/heat it can't act on electrically is driving its consumption. Reuses
+    `_fit_variance_safe` — the SAME variance-safe, equipment-gated fit
+    `forecast_explained` uses — so hdd/cdd are DROPPED from the regression
+    (beta forced to 0, not just hidden from the output) exactly like there.
+    The "calendar" slot `_fit_variance_safe` also fits is unused here (always
+    0 — a constant column, so its own variance guard drops it for free); only
+    `hdd`/`cdd` are ever populated for this caller.
+
+    `equipment=None` keeps the pre-gate behavior (both drivers fit
+    unconditionally) for any caller that hasn't been updated yet.
+    `kwh_per_hdd`/`kwh_per_cdd` are None (not 0.0) when the corresponding
+    equipment is absent — "not applicable", never "measured and found zero" —
+    and `r2`/`weather_share_pct` are computed from the SAME reduced model, so
+    a household with neither piece of equipment gets a neutral ~0% weather
+    share instead of a spurious one, and a household with only one gets a
+    share attributable to just that driver."""
     end = date.today() - timedelta(days=1)
     start = end - timedelta(days=days - 1)
     rows_task = consumption.energy_series(slugs, start.isoformat(),
@@ -212,24 +209,28 @@ async def thermal_analysis(slugs: Sequence[str], device: Optional[str] = None,
         r = dd_by_date.get(d)
         if not r or daily_kwh[d] <= 0:
             continue
-        X.append([r["hdd"], r["cdd"]])
+        X.append([r["hdd"], r["cdd"], 0.0])  # 3rd slot: unused "calendar" (_fit_variance_safe)
         y.append(daily_kwh[d])
         series.append({"date": d, "kwh": daily_kwh[d],
                        "temp_mean": r["temp_mean"],
                        "hdd": r["hdd"], "cdd": r["cdd"]})
 
+    heating_active = equipment is None or equipment.get("electric_heating", False)
+    cooling_active = equipment is None or equipment.get("electric_cooling", False)
     out: Dict[str, Any] = {"days_used": len(y), "series": series,
                            "base_kwh": None, "kwh_per_hdd": None,
                            "kwh_per_cdd": None, "r2": None,
-                           "weather_share_pct": None}
+                           "weather_share_pct": None, "equipment": equipment,
+                           "heating_active": heating_active,
+                           "cooling_active": cooling_active}
     if len(y) < 10:
         out["status"] = "insufficient_data"
         return out
-    beta = _ols3(X, y)
-    if beta is None:
+    fit = _fit_variance_safe(X, y, equipment=equipment)
+    if fit is None:
         out["status"] = "singular"
         return out
-    b0, b_hdd, b_cdd = beta
+    b0, b_hdd, b_cdd = fit["intercept"], fit["hdd"], fit["cdd"]
     mean_y = sum(y) / len(y)
     ss_tot = sum((v - mean_y) ** 2 for v in y)
     ss_res = 0.0
@@ -241,10 +242,10 @@ async def thermal_analysis(slugs: Sequence[str], device: Optional[str] = None,
     out.update({
         "status": "ok",
         "base_kwh": round(b0, 2),          # weather-independent daily floor
-        "kwh_per_hdd": round(b_hdd, 3),    # extra kWh per heating degree-day
-        "kwh_per_cdd": round(b_cdd, 3),    # extra kWh per cooling degree-day
+        "kwh_per_hdd": round(b_hdd, 3) if heating_active else None,
+        "kwh_per_cdd": round(b_cdd, 3) if cooling_active else None,
         "r2": round(r2, 3),
-        "weather_share_pct": round(r2 * 100, 1),  # variance explained by climate
+        "weather_share_pct": round(r2 * 100, 1),  # variance explained by ACTIVE climate driver(s) only
     })
     # Yesterday: actual vs weather-expected → "habits vs weather" verdict
     last = series[-1] if series else None
@@ -327,9 +328,10 @@ def _apply_calendar_label(attribution: Dict[str, Any], day_type: int,
 
 def _ols_general(X: List[List[float]], y: List[float]) -> Optional[List[float]]:
     """Least squares y = b0 + sum(b_i·x_i) via normal equations, Gaussian
-    elimination with partial pivoting — the same numerically-safe pattern as
-    `_ols3`, generalized to k regressors (k = len(X[0])) so the day-type
-    feature can be added without duplicating the algorithm."""
+    elimination with partial pivoting, generalized to k regressors
+    (k = len(X[0])) — the single fitting routine shared by every OLS caller
+    in this module (`_fit_variance_safe`, used by both `thermal_analysis`
+    and `forecast_explained`)."""
     n = len(y)
     if n == 0 or not X or not X[0]:
         return None

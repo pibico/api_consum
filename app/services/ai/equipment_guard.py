@@ -20,6 +20,7 @@ equipment we don't have" primitive.
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Any, Dict, List, Optional
 
 # NOTE: matched against text with hyphens stripped (see `hits` below), so
@@ -34,7 +35,7 @@ FORBIDDEN_TERMS: Dict[str, List[str]] = {
     ],
     "electric_cooling": [
         "aire acondicionado", "climatizador", "climatización", "preenfr",
-        "a/c", "hvac", "ac",
+        "a/c", "a/a", "hvac", "ac",
         "air conditioning", "airconditioning", "precool",
     ],
 }
@@ -43,7 +44,39 @@ FORBIDDEN_TERMS: Dict[str, List[str]] = {
 # false-positive inside "reaction", "back", "vacío"...) — matched with word
 # boundaries instead. Anything not listed here keeps the substring check.
 _WORD_BOUNDARY_TERMS = {"ac"}
-_WORD_RE_CACHE: Dict[str, "re.Pattern[str]"] = {}
+_TERM_RE_CACHE: Dict[str, "re.Pattern[str]"] = {}
+
+
+def _strip_accents(s: str) -> str:
+    """Fold away combining diacritics (á→a, ó→o, ción→cion...) so matching is
+    accent-insensitive — real AEMET/api_exo advisory text and this module's
+    own term list aren't always consistent about accents (bug found
+    2026-07-30: real official AEMET body text — see `scrub_alerts` — is
+    verbatim government CAP prose, never normalized for us)."""
+    return "".join(c for c in unicodedata.normalize("NFD", s)
+                   if unicodedata.category(c) != "Mn")
+
+
+def _term_pattern(term: str) -> "re.Pattern[str]":
+    """Compile (and cache) a case/accent-insensitive, naive-plural-tolerant
+    regex for one forbidden term. Bug found 2026-07-30: the real api_exo
+    "cold"/"frost" advisories say "Las bombas de calor pierden eficiencia..."
+    (PLURAL) while the term list had the singular "bomba de calor" — a plain
+    substring check misses it because the plural 's' lands INSIDE the
+    phrase ("bomba" -> "bombas"), not at its end, so a suffix-only fix (e.g.
+    just adding "heat pumps" as its own term) doesn't generalize. Every word
+    of every term therefore gets an optional Spanish/English plural suffix
+    ('s' or 'es'), not just the whole phrase. Bare short tokens
+    (`_WORD_BOUNDARY_TERMS`, e.g. "ac") stay additionally word-bounded to
+    avoid false positives inside unrelated words ("reaction", "back")."""
+    pat = _TERM_RE_CACHE.get(term)
+    if pat is None:
+        words = _strip_accents(term).split(" ")
+        body = r"\s+".join(re.escape(w) + r"(?:es|s)?" for w in words)
+        if term in _WORD_BOUNDARY_TERMS:
+            body = r"\b" + body + r"\b"
+        pat = _TERM_RE_CACHE[term] = re.compile(body)
+    return pat
 
 # Equipment-neutral passive measures — safe to suggest to ANY household
 # regardless of what it has installed, used to backfill whatever gets
@@ -90,25 +123,17 @@ def missing_terms(equipment: Optional[Dict[str, Any]]) -> List[str]:
 
 
 def hits(text: str, forbidden: List[str]) -> bool:
-    """Case-insensitive, hyphen-agnostic check against `forbidden`. Bare
-    short tokens in `_WORD_BOUNDARY_TERMS` (e.g. "ac") match on WORD
-    boundaries only — api_exo's EN heat advisory says "reduce AC load"
-    (no slash, unlike the ES "carga del A/C") — plain substring would also
-    false-positive inside unrelated words ("reaction", "back"...). Every
-    other term keeps the simple substring check."""
+    """Case/accent-insensitive, hyphen-agnostic, naive-plural-tolerant check
+    against `forbidden` (see `_term_pattern`). Bare short tokens in
+    `_WORD_BOUNDARY_TERMS` (e.g. "ac") match on WORD boundaries only —
+    api_exo's EN heat advisory says "reduce AC load" (no slash, unlike the
+    ES "carga del A/C") — plain substring would also false-positive inside
+    unrelated words ("reaction", "back"...). Every other term keeps the
+    simple (now accent/plural-tolerant) substring check."""
     if not text or not forbidden:
         return False
-    low = text.lower().replace("-", "")
-    for term in forbidden:
-        if term in _WORD_BOUNDARY_TERMS:
-            pat = _WORD_RE_CACHE.get(term)
-            if pat is None:
-                pat = _WORD_RE_CACHE[term] = re.compile(r"\b" + re.escape(term) + r"\b")
-            if pat.search(low):
-                return True
-        elif term in low:
-            return True
-    return False
+    low = _strip_accents(text.lower().replace("-", ""))
+    return any(_term_pattern(term).search(low) for term in forbidden)
 
 
 def fallback_tip(lang: str) -> str:
@@ -123,13 +148,23 @@ def _split_sentences(text: str) -> List[str]:
 
 
 def scrub_advisory_text(text: Optional[str], equipment: Optional[Dict[str, Any]],
-                        lang: str = "es") -> Optional[str]:
-    """Sentence-level scrub for a single free-text advisory string (the
-    AEMET banner's `energy_advisory_es/en`, sourced verbatim from api_exo —
-    never generated here). Drops any sentence mentioning heating/cooling
-    equipment the household lacks and backfills with an equipment-neutral
-    passive-measures sentence for whichever category triggered a removal,
-    so the banner never ends up blank (spec: 'Do NOT leave it empty').
+                        lang: str = "es", backfill: bool = True) -> Optional[str]:
+    """Sentence-level scrub for a single free-text advisory string. Drops
+    any sentence mentioning heating/cooling equipment the household lacks
+    and, when `backfill` (default True), replaces whatever got removed with
+    an equipment-neutral passive-measures sentence so the banner never ends
+    up blank (spec: 'Do NOT leave it empty') — used for the AEMET banner's
+    curated `energy_advisory_es/en` (sourced verbatim from api_exo, never
+    generated here).
+
+    `backfill=False` (bug fix 2026-07-30) is for `body_es/en` — the OFFICIAL
+    AEMET CAP `description`+`instruction` text, verbatim government prose
+    that can also mention heating/cooling ("bombas de calor", "aire
+    acondicionado"...) and previously bypassed this scrub entirely (see
+    `scrub_alerts`). Appending the SAME passive tip there too would just
+    duplicate the one `energy_advisory` already carries, so a scrubbed
+    `body` simply loses the offending sentence(s) — it may end up empty,
+    which the frontend already treats as "nothing to show" for that field.
 
     A household WITH both electric_heating and electric_cooling passes the
     text through untouched. Equipment unknown (no comfort_flex row at all)
@@ -162,17 +197,31 @@ def scrub_advisory_text(text: Optional[str], equipment: Optional[Dict[str, Any]]
     if not removed_cooling and not removed_heating:
         return text  # nothing in this particular text was equipment-specific
 
-    if removed_cooling:
-        kept.append(_PASSIVE_TIP["electric_cooling"].get(lang, _PASSIVE_TIP["electric_cooling"]["es"]))
-    if removed_heating:
-        kept.append(_PASSIVE_TIP["electric_heating"].get(lang, _PASSIVE_TIP["electric_heating"]["es"]))
+    if backfill:
+        if removed_cooling:
+            kept.append(_PASSIVE_TIP["electric_cooling"].get(lang, _PASSIVE_TIP["electric_cooling"]["es"]))
+        if removed_heating:
+            kept.append(_PASSIVE_TIP["electric_heating"].get(lang, _PASSIVE_TIP["electric_heating"]["es"]))
     return " ".join(kept).strip()
 
 
 def scrub_alerts(alerts: List[Dict[str, Any]], equipment: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Gate `energy_advisory_es`/`energy_advisory_en` on every alert in a
-    `/weather/alerts` list. Used by `/consumption/environment` before the
-    payload reaches the browser.
+    """Gate every text field of every alert in a `/weather/alerts` list that
+    can carry equipment-specific advice, before the payload reaches the
+    browser. Used by `/consumption/environment`.
+
+    Gap fix 2026-07-30: this used to scrub ONLY `energy_advisory_es/en` (the
+    curated per-phenomenon text api_exo generates itself). But for official
+    AEMET alerts (`source="AEMET"`, WS-EXO-AEMET) `body_es/en` is VERBATIM
+    government CAP `description`+`instruction` prose, which can independently
+    mention heating/cooling equipment — and the banner renders `body`
+    unconditionally right above `energy_advisory` (see app.js
+    `renderWeatherAlert`). A household without A/C could therefore still see
+    A/C advice smuggled in through `body`, even though `energy_advisory` was
+    already correctly scrubbed. `body` is scrubbed WITHOUT the passive-tip
+    backfill (`backfill=False`) — that backfill already lives in
+    `energy_advisory`; duplicating it in `body` too would just repeat the
+    same sentence twice in the banner.
 
     Returns a NEW list of shallow-copied dicts — never mutates the input.
     `exo_client._get`'s in-process TTL cache returns the SAME parsed dict
@@ -182,6 +231,10 @@ def scrub_alerts(alerts: List[Dict[str, Any]], equipment: Optional[Dict[str, Any
     out: List[Dict[str, Any]] = []
     for a in alerts or []:
         a = dict(a)
+        if a.get("body_es"):
+            a["body_es"] = scrub_advisory_text(a["body_es"], equipment, "es", backfill=False)
+        if a.get("body_en"):
+            a["body_en"] = scrub_advisory_text(a["body_en"], equipment, "en", backfill=False)
         if a.get("energy_advisory_es"):
             a["energy_advisory_es"] = scrub_advisory_text(a["energy_advisory_es"], equipment, "es")
         if a.get("energy_advisory_en"):

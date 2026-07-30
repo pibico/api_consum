@@ -448,6 +448,8 @@ window.I18N_ES = {
   'sav.barExpensive': 'Todo en horas caras',
   'sav.barReal': 'Tu mes, con tus horas',
   'sav.weatherLine': 'El frío/calor explica ~{p} % de lo que consumes — el resto son hábitos, y ahí está el ahorro.',
+  'sav.weatherLineCold': 'El frío explica ~{p} % de lo que consumes — el resto son hábitos, y ahí está el ahorro.',
+  'sav.weatherLineHeat': 'El calor explica ~{p} % de lo que consumes — el resto son hábitos, y ahí está el ahorro.',
   'sav.chartAppliances': 'Qué te cuesta cada aparato',
   'sav.applNote': '€ aproximados con tu precio medio del mes. Las barras respetan tu cableado: si un aparato cuelga de otro (una regleta, un SAI…), al de arriba se le descuenta lo del de abajo — puedes sumarlas sin contar nada dos veces. «Siempre encendidos» es el standby: apagarlos de verdad es ahorro seguro.',
   'sav.restSuffix': '(resto)',
