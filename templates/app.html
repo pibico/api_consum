@@ -67,18 +67,17 @@
 <!-- Panel body (2026-07-30): TWO EQUAL-WIDTH (1fr/1fr) INDEPENDENT vertical
      flex stacks below the untouched KPI row above:
        LEFT  — Tu previsión, Tu casa (hora a hora), Sol en tu tejado, Tu
-               instalación (Windy radar map — NOT explicitly named by the
-               owner in the left/right list; kept here, after Sol, pending
-               confirmation — see report)
-       RIGHT — Ausencias/Vacaciones, Anomalías, El precio de tu luz, Viento
-               e infiltración, El tiempo en tu casa
+               instalación (Windy radar map — confirmed to stay LAST here,
+               after Sol)
+       RIGHT — Ausencias/Vacaciones, Anomalías, El precio de tu luz, El
+               tiempo en tu casa, Viento e infiltración
      Each column packs its cards flush top-to-bottom — no row-alignment
      across columns, no filler gaps (a shorter column simply ends where its
      content ends; it does NOT get stretched to match the other, and the
      other does NOT leave a gap waiting for it). Collapses to one column on
      narrow screens: KPIs → Tu previsión → Tu casa → Sol → Tu instalación →
-     Ausencias → Anomalías → El precio de tu luz → Viento e infiltración →
-     El tiempo en tu casa. Cards themselves are unchanged — only their
+     Ausencias → Anomalías → El precio de tu luz → El tiempo en tu casa →
+     Viento e infiltración. Cards themselves are unchanged — only their
      container/placement moved. NOTE (kept from the original wx-2col
      ordering): the Windy map's <iframe> renders in its own compositing
      layer and can capture pointer events across its box, overlapping
@@ -138,14 +137,18 @@
     </div>
 
     <!-- Windy radar map — kept AFTER solar (see column note above). Taller
-         min-height (2026-07-30) so the embedded Windy <iframe> (JS sets it
-         to width/height:100%, see renderMap() in app.js) actually fills a
-         sizeable card instead of the previous 230px sliver. -->
-    <div class="glass-panel" style="padding:0.75rem 1rem;display:flex;flex-direction:column;min-height:380px;">
+         explicit FIXED height (2026-07-30, not flex:1/min-height — a flex
+         item inside an auto-height flex column has no definite size for
+         CSS percentage-height resolution, so the injected <iframe>'s
+         height:100% (set in renderMap(), app.js) was collapsing to the
+         browser's ~150px iframe default instead of filling the card; a
+         literal px height on #pnl-map is unambiguous and makes 100%
+         resolve correctly) so the Windy radar actually fills the card. -->
+    <div class="glass-panel" style="padding:0.75rem 1rem;">
       <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="app.mapTitle">Tu instalación</span>
         <span class="text-muted" id="pnl-map-muni" style="font-weight:400;"></span>
         <span class="text-muted" style="font-weight:400;">· <span data-i18n="app.radar">radar (Windy)</span></span></h4>
-      <div id="pnl-map" style="flex:1;min-height:340px;border-radius:8px;overflow:hidden;"></div>
+      <div id="pnl-map" style="height:360px;border-radius:8px;overflow:hidden;"></div>
     </div>
   </div>
 
@@ -216,8 +219,18 @@
       </div>
     </div>
 
-    <!-- Personalized exogenous environment — wind. Flush under El precio
-         de tu luz. -->
+    <!-- 7-day weather forecast. Flush under El precio de tu luz. -->
+    <div class="glass-panel" style="padding:0.75rem 1rem;">
+      <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="app.weatherTitle">El tiempo en tu casa</span>
+        <span class="text-muted" id="pnl-wx-muni" style="font-weight:400;"></span>
+        <span class="text-muted" style="font-weight:400;">· <span data-i18n="app.next7">próximos 7 días</span></span></h4>
+      <div id="pnl-weather"><span class="spinner"></span></div>
+      <div id="pnl-wx-chart" style="width:100%;height:165px;margin-top:4px;"></div>
+      <div id="pnl-wx-src"></div>
+    </div>
+
+    <!-- Personalized exogenous environment — wind. Flush under El tiempo
+         en tu casa; now the last card in the column. -->
     <div class="glass-panel" style="padding:0.75rem 1rem;">
       <h4 style="margin:0 0 0.5rem;font-size:0.85rem;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <span data-i18n="app.windTitle">Viento e infiltración</span>
@@ -231,16 +244,6 @@
       <div id="pnl-wind-kpis" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;font-size:0.72rem;"></div>
       <div id="pnl-wind-advisory"></div>
       <div id="pnl-wind-src"></div>
-    </div>
-
-    <!-- 7-day weather forecast. Flush under Viento e infiltración. -->
-    <div class="glass-panel" style="padding:0.75rem 1rem;">
-      <h4 style="margin:0 0 0.5rem;font-size:0.85rem;"><span data-i18n="app.weatherTitle">El tiempo en tu casa</span>
-        <span class="text-muted" id="pnl-wx-muni" style="font-weight:400;"></span>
-        <span class="text-muted" style="font-weight:400;">· <span data-i18n="app.next7">próximos 7 días</span></span></h4>
-      <div id="pnl-weather"><span class="spinner"></span></div>
-      <div id="pnl-wx-chart" style="width:100%;height:165px;margin-top:4px;"></div>
-      <div id="pnl-wx-src"></div>
     </div>
   </div>
 </div>

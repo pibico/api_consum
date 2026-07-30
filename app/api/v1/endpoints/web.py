@@ -27,7 +27,7 @@ jinja_env = Environment(
 STATIC_PREFIX = settings.ROOT_PATH.rstrip("/")
 
 # Bump on every static asset change (guidelines cache-buster scheme).
-ASSET_VERSION = "119"  # 119: Panel layout — full mosaic of every non-KPI card into two equal 1fr/1fr independent flex-column stacks (.panel-forecast-row, consum_app.css + app.html); taller Windy radar card so its iframe fills the card. No card logic/content change.
+ASSET_VERSION = "120"  # 120: Panel layout — right column reorder (El tiempo en tu casa now above Viento e infiltración, last); left column (Tu previsión/Tu casa/Sol/Windy map) unchanged. Fixed #pnl-map's indefinite flex:1 height (iframe height:100% was collapsing to the ~150px UA default) with an explicit height:360px so the Windy radar iframe fully fills its card. No card logic/content change.
 
 
 def render_template(template_name: str, **context) -> str:
