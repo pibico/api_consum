@@ -1,156 +1,312 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="{{ lang | default("es") }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>CONSUM-IA — Entiende y reduce el consumo de tu casa · pibiCo</title>
-<meta name="description" content="CONSUM-IA: la pasarela de energía doméstica de pibiCo. Mide cada aparato, detecta electrodomésticos por su firma de consumo y te lo cuenta en euros y frases claras.">
-<link rel="icon" href="{{ root_path }}/static/icons/pibico_icon.svg">
+<title>CONSUM-IA — Sabes lo que pagas. Ahora vas a saber por qué · pibiCo</title>
+<meta name="description" content="Una pinza en tu cuadro y una caja que la escucha: CONSUM-IA mide lo que gasta cada cosa de tu casa y te lo explica en euros y en frases normales. La caja sigue funcionando aunque se caiga internet.">
+<script>document.documentElement.className += " has-js";</script>
+<link rel="icon" href="{{ root_path }}/static/icons/favicon.ico">
 <link rel="stylesheet" href="{{ root_path }}/static/css/fonts.css">
 <link rel="stylesheet" href="{{ root_path }}/static/css/pibico.css">
-<link rel="stylesheet" href="{{ root_path }}/static/css/consum.css?v=6">
-<script>window.ROOT_PATH = '{{ root_path }}';</script>
-<script src="{{ root_path }}/static/js/i18n.es.js?v=1" defer></script>
-<script src="{{ root_path }}/static/js/i18n.en.js?v=1" defer></script>
-<script src="{{ root_path }}/static/js/i18n.js?v=1" defer></script>
+<link rel="stylesheet" href="{{ root_path }}/static/landing/landing.css?v=l2">
+<script src="{{ root_path }}/static/landing/js/i18n.es.js?v=l2" defer></script>
+<script src="{{ root_path }}/static/landing/js/i18n.en.js?v=l2" defer></script>
+<script src="{{ root_path }}/static/landing/js/i18n.js?v=l2" defer></script>
+<script src="{{ root_path }}/static/landing/js/landing.js?v=l2" defer></script>
 </head>
-<body>
+<body class="ld-body">
 <div class="app-layout">
+
+  <!-- ============================== CABECERA ============================== -->
   <header class="app-header">
     <div class="app-header-title">
       <img src="{{ root_path }}/static/icons/pibico_icon.svg" alt="pibiCo" width="26" height="26">
       <span>CONSUM-IA</span>
     </div>
     <div class="app-header-actions">
-      {% include "partials/lang_dropdown.html" %}
-      <a class="app-header-btn" href="{{ root_path }}/api/redoc" target="_blank" title="API Docs" aria-label="API Docs">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-      </a>
+      <div class="ld-lang" id="ld-lang">
+        <button class="app-header-btn" id="ld-lang-btn" type="button" aria-haspopup="true" aria-expanded="false" title="Idioma" data-i18n-title="ld.lang">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        </button>
+        <div class="ld-lang-menu" id="ld-lang-menu" role="menu">
+          <button type="button" data-lang="es" role="menuitem">Español</button>
+          <button type="button" data-lang="en" role="menuitem">English</button>
+        </div>
+      </div>
+      <a class="app-header-btn" href="{{ root_path }}/api/redoc" target="_blank" rel="noopener" data-i18n-title="ld.apiDocs" title="Documentación de la API" aria-label="Documentación de la API"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></a>
       <a class="app-header-btn" href="{{ root_path }}/app" data-i18n-title="ld.enter" title="Acceder" aria-label="Acceder">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
       </a>
     </div>
   </header>
 
-  <main class="ld">
-    <!-- ====================== HERO (compact) ======================== -->
+  <main class="ld-main">
+
+    <!-- ================================ HERO ================================ -->
     <section class="ld-hero">
-      <h1 data-i18n="ld.heroTitle">Entiende y reduce el consumo de tu casa</h1>
-      <p class="ld-hero-sub" data-i18n="ld.heroSub">CONSUM-IA es una pequeña caja que se conecta a tu cuadro eléctrico. Mide lo que gasta cada cosa, aprende los hábitos de tu hogar y te lo cuenta en euros y frases claras — pensada para que la use cualquiera, sin tecnicismos.</p>
-      <div class="ld-hero-chips">
-        <span class="ld-chip" data-i18n="ld.chip1">Sin cambiar de compañía</span>
-        <span class="ld-chip" data-i18n="ld.chip2">Funciona sin internet en casa</span>
-        <span class="ld-chip" data-i18n="ld.chip3">Tus datos se quedan en casa</span>
+      <div class="ld-hero-media">
+        <video id="ld-hero-video" autoplay muted loop playsinline preload="metadata" poster="{{ root_path }}/static/landing/img/hero-poster.jpg">
+          <source src="{{ root_path }}/static/landing/video/hero-loop.mp4" type="video/mp4">
+        </video>
       </div>
-      <a class="ld-enter-btn" href="{{ root_path }}/app">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-        <span data-i18n="ld.enterPanel">Acceder a mi instalación</span>
-      </a>
-    </section>
+      <div class="ld-hero-veil"></div>
+      <div class="ld-hero-inner">
+        <div class="ld-wrap">
+          <div class="ld-hero-eyebrow" data-i18n="ld.eyebrow">Energía doméstica · Proyecto CONSUM-IA</div>
+          <h1 data-i18n-html="ld.heroTitle">Sabes lo que pagas. <br>Ahora vas a saber <em>por qué</em>.</h1>
+          <p class="ld-hero-sub" data-i18n="ld.heroSub">CONSUM-IA es una pinza en tu cuadro eléctrico y una caja pequeña que la escucha. Mide lo que consume cada cosa, aprende cómo vive tu casa y te lo cuenta en euros y en frases normales. Sin tecnicismos y sin cambiar de compañía.</p>
 
-    <!-- ================= FEATURES (compact 4-col grid) ============== -->
-    <section class="ld-grid">
-      <div class="ld-mini">
-        <div class="ld-mini-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
-        <h3 data-i18n="ld.f1T">Un vistazo y lo sabes</h3>
-        <p data-i18n="ld.f1D">Semáforo del día, euros de hoy y del mes, y si la luz está cara ahora mismo.</p>
-      </div>
-      <div class="ld-mini">
-        <div class="ld-mini-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
-        <h3 data-i18n="ld.f2T">Contadores virtuales</h3>
-        <p data-i18n="ld.f2D">Detecta vitro, horno o plancha por su firma de consumo, sin instalar nada más.</p>
-      </div>
-      <div class="ld-mini">
-        <div class="ld-mini-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
-        <h3 data-i18n="ld.f3T">Tu dinero, con tus precios</h3>
-        <p data-i18n="ld.f3D">Cuánto llevas hoy, cómo acabará el mes y cuánto se va en standby cada noche.</p>
-      </div>
-      <div class="ld-mini">
-        <div class="ld-mini-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div>
-        <h3 data-i18n="ld.f4T">Tu casa, dibujada</h3>
-        <p data-i18n="ld.f4D">Árbol eléctrico, plano por habitaciones y flujo en vivo de cada vatio.</p>
-      </div>
-      <div class="ld-mini">
-        <div class="ld-mini-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
-        <h3 data-i18n="ld.f5T">Tranquilidad familiar</h3>
-        <p data-i18n="ld.f5D">Si algo queda encendido demasiado tiempo, avisa a un familiar o cuidador.</p>
-      </div>
-      <div class="ld-mini">
-        <div class="ld-mini-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></div>
-        <h3 data-i18n="ld.f6T">Tu hogar en la nube</h3>
-        <p data-i18n="ld.f6D">consum.pibico.es: precios, clima, sol y carbono cruzados con tu consumo real.</p>
-      </div>
-      <div class="ld-mini">
-        <div class="ld-mini-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg></div>
-        <h3 data-i18n="ld.f7T">IA que te lo explica</h3>
-        <p data-i18n="ld.f7D">Narrativa diaria y chat sobre tu consumo — solo con tus datos agregados.</p>
-      </div>
-      <div class="ld-mini">
-        <div class="ld-mini-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="12" rx="2"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/></svg></div>
-        <h3 data-i18n="ld.f8T">Tu PLC, desde fuera</h3>
-        <p data-i18n="ld.f8D">La misma pantalla de la caja, en remoto de forma segura (PRO) — para verla desde fuera, la caja sí necesita internet.</p>
-      </div>
-    </section>
+          <div class="ld-chips">
+            <span class="ld-chip">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+              <span data-i18n="ld.chip1">Sin cambiar de compañía</span>
+            </span>
+            <span class="ld-chip">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.7 5.1A11 11 0 0 1 21 8"/><path d="M2 8a11 11 0 0 1 4-2.6"/><path d="M6.3 11.4A7 7 0 0 1 9 9.7"/><path d="M15.5 10.2a7 7 0 0 1 2.2 1.2"/><line x1="12" y1="20" x2="12" y2="20"/></svg>
+              <span data-i18n="ld.chip2">Funciona sin internet en casa</span>
+            </span>
+            <span class="ld-chip">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <span data-i18n="ld.chip3">Solo ve tu hogar</span>
+            </span>
+          </div>
 
-    <!-- ================== CAROUSEL (screenshots) ==================== -->
-    <section class="ld-carousel" id="ld-carousel">
-      <button class="ld-car-arrow ld-car-prev" id="car-prev" aria-label="Anterior">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-      </button>
-      <div class="ld-car-frame">
-        <div class="ld-car-track" id="car-track">
-          <figure><img src="{{ root_path }}/static/images/help/help-home-es.png" alt="" loading="lazy"><figcaption data-i18n="ld.s1Title">Un vistazo y lo sabes todo</figcaption></figure>
-          <figure><img src="{{ root_path }}/static/images/help/help-dashboard-es.png" alt="" loading="lazy"><figcaption data-i18n="ld.s2Title">Contadores virtuales</figcaption></figure>
-          <figure><img src="{{ root_path }}/static/images/help/help-cost-es.png" alt="" loading="lazy"><figcaption data-i18n="ld.s3Title">Tu dinero, con tus precios</figcaption></figure>
-          <figure><img src="{{ root_path }}/static/images/help/help-wiring-es.png" alt="" loading="lazy"><figcaption data-i18n="ld.s4Title">Tu casa, dibujada</figcaption></figure>
-          <figure><img src="{{ root_path }}/static/images/landing/cloud-panel-es.png" alt="" loading="lazy"><figcaption data-i18n="ld.cl1Title">Panel: tu casa ahora mismo</figcaption></figure>
-          <figure><img src="{{ root_path }}/static/images/landing/cloud-consumo-es.png" alt="" loading="lazy"><figcaption data-i18n="ld.cl2Title">Consumo: cada hora, con su precio</figcaption></figure>
-          <figure><img src="{{ root_path }}/static/images/landing/cloud-ahorro-es.png" alt="" loading="lazy"><figcaption data-i18n="ld.cl3Title">Ahorro: cuánto y cuándo</figcaption></figure>
-          <figure><img src="{{ root_path }}/static/images/landing/cloud-ia-es.png" alt="" loading="lazy"><figcaption data-i18n="ld.cl4Title">IA: tu día, explicado</figcaption></figure>
+          <div class="ld-cta-row">
+            <a class="ld-btn ld-btn-primary" href="#dia">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>
+              <span data-i18n="ld.ctaPrimary">Ver un día real</span>
+            </a>
+            <a class="ld-btn ld-btn-ghost" href="{{ root_path }}/app">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+              <span data-i18n="ld.ctaSecondary">Entrar a mi instalación</span>
+            </a>
+          </div>
         </div>
       </div>
-      <button class="ld-car-arrow ld-car-next" id="car-next" aria-label="Siguiente">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-      </button>
-      <div class="ld-car-dots" id="car-dots"></div>
-    </section>
-
-    <!-- ====================== TIERS (compact) ======================= -->
-    <section class="ld-tiers">
-      <div class="ld-tier">
-        <h3 data-i18n="ld.tierBasic">Básico</h3>
-        <ul>
-          <li data-i18n="ld.tb1">Pantalla de Inicio sin tecnicismos</li>
-          <li data-i18n="ld.tb2">Euros con tus precios de factura</li>
-          <li data-i18n="ld.tb3">Contadores virtuales que aprenden</li>
-          <li data-i18n="ld.tb4">Consejo del día y avisos</li>
-          <li data-i18n="ld.tb5">Todo local: funciona sin internet</li>
-        </ul>
-      </div>
-      <div class="ld-tier ld-tier-premium">
-        <h3 data-i18n="ld.tierPremium">Premium</h3>
-        <ul>
-          <li data-i18n="ld.tp1">Precios PVPC de hoy y mañana, mejores horas</li>
-          <li data-i18n="ld.tp2">Aviso a un familiar o cuidador</li>
-          <li data-i18n="ld.tp3">Previsión con clima y recomendación de tarifa</li>
-          <li data-i18n="ld.tp4">Acceso remoto seguro</li>
-        </ul>
+      <div class="ld-scroll-hint">
+        <span data-i18n="ld.scroll">Desliza</span>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
     </section>
 
-    <!-- ====================== CONTACT (compact) ===================== -->
-    <section class="ld-cta">
-      <h2 data-i18n="ld.ctaTitle">¿Quieres probarlo?</h2>
-      <p data-i18n="ld.ctaText">Estamos desplegando pilotos en hogares reales. Escríbenos y te contamos.</p>
-      <a class="ld-cta-btn" href="mailto:proyectos@pibico.org">proyectos@pibico.org</a>
+    <!-- ========================= EL DÍA, HORA A HORA ========================= -->
+    <section class="ld-sec ld-sec-tint" id="dia">
+      <div class="ld-wrap">
+        <div class="ld-reveal">
+          <div class="ld-kicker" data-i18n="ld.dayKicker">El gesto que harás cada día</div>
+          <h2 class="ld-h2" data-i18n="ld.dayTitle">Arrastra por el día y mira lo que costó cada hora</h2>
+          <p class="ld-lede" data-i18n="ld.dayLede">Esto es, en pequeño, lo que verás dentro. La luz no cuesta lo mismo a las tres de la madrugada que a las ocho de la tarde, y tu casa tampoco gasta lo mismo. Cruza esas dos curvas y aparece la cifra que de verdad se nota: lo que llevas gastado.</p>
+        </div>
+
+        <div class="ld-day ld-reveal">
+          <div class="ld-day-head">
+            <div class="ld-readout">
+              <div class="ld-read-item">
+                <div class="ld-read-label" data-i18n="ld.dayHour">Hora</div>
+                <div class="ld-read-value" id="rd-hour">08:00</div>
+              </div>
+              <div class="ld-read-item">
+                <div class="ld-read-label" data-i18n="ld.dayPrice">Precio</div>
+                <div class="ld-read-value" id="rd-price">0,1352<small>€/kWh</small></div>
+              </div>
+              <div class="ld-read-item">
+                <div class="ld-read-label" data-i18n="ld.dayUse">Consumo</div>
+                <div class="ld-read-value" id="rd-kwh">0,68<small>kWh</small></div>
+              </div>
+              <div class="ld-read-item">
+                <div class="ld-read-label" data-i18n="ld.dayRunning">Acumulado</div>
+                <div class="ld-read-value" id="rd-total">0,27<small>€</small></div>
+              </div>
+            </div>
+            <div class="ld-band" id="rd-band" data-band="P2">
+              <span class="ld-band-dot"></span>
+              <span id="rd-band-text">Llano · P2</span>
+            </div>
+          </div>
+
+          <div class="ld-chart" id="ld-chart" data-slider-label="Consumo y precio hora a hora">
+            <!-- Estado inicial en el HTML: sin JS la sección sigue enseñando el día -->
+            <svg id="ld-svg" viewBox="0 0 992 240" aria-hidden="true"><rect x="14.91" y="179.57" width="26.84" height="34.43" rx="2.5" fill="#5CCEA0" class="ld-bar"></rect><rect x="55.58" y="183.87" width="26.84" height="30.13" rx="2.5" fill="#5CCEA0" class="ld-bar"></rect><rect x="96.25" y="186.74" width="26.84" height="27.26" rx="2.5" fill="#5CCEA0" class="ld-bar"></rect><rect x="136.91" y="188.17" width="26.84" height="25.83" rx="2.5" fill="#5CCEA0" class="ld-bar"></rect><rect x="177.58" y="188.17" width="26.84" height="25.83" rx="2.5" fill="#5CCEA0" class="ld-bar"></rect><rect x="218.25" y="185.30" width="26.84" height="28.70" rx="2.5" fill="#5CCEA0" class="ld-bar"></rect><rect x="258.91" y="175.26" width="26.84" height="38.74" rx="2.5" fill="#5CCEA0" class="ld-bar"></rect><rect x="299.58" y="155.17" width="26.84" height="58.83" rx="2.5" fill="#5CCEA0" class="ld-bar"></rect><rect x="340.25" y="116.43" width="26.84" height="97.57" rx="2.5" fill="#F2A872" class="ld-bar is-active"></rect><rect x="380.91" y="135.09" width="26.84" height="78.91" rx="2.5" fill="#F2A872" class="ld-bar"></rect><rect x="421.58" y="148.00" width="26.84" height="66.00" rx="2.5" fill="#D4505E" class="ld-bar"></rect><rect x="462.25" y="150.87" width="26.84" height="63.13" rx="2.5" fill="#D4505E" class="ld-bar"></rect><rect x="502.91" y="110.70" width="26.84" height="103.30" rx="2.5" fill="#D4505E" class="ld-bar"></rect><rect x="543.58" y="36.09" width="26.84" height="177.91" rx="2.5" fill="#D4505E" class="ld-bar"></rect><rect x="584.25" y="80.57" width="26.84" height="133.43" rx="2.5" fill="#F2A872" class="ld-bar"></rect><rect x="624.91" y="153.74" width="26.84" height="60.26" rx="2.5" fill="#F2A872" class="ld-bar"></rect><rect x="665.58" y="159.48" width="26.84" height="54.52" rx="2.5" fill="#F2A872" class="ld-bar"></rect><rect x="706.25" y="150.87" width="26.84" height="63.13" rx="2.5" fill="#F2A872" class="ld-bar"></rect><rect x="746.91" y="126.48" width="26.84" height="87.52" rx="2.5" fill="#D4505E" class="ld-bar"></rect><rect x="787.58" y="89.17" width="26.84" height="124.83" rx="2.5" fill="#D4505E" class="ld-bar"></rect><rect x="828.25" y="47.57" width="26.84" height="166.43" rx="2.5" fill="#D4505E" class="ld-bar"></rect><rect x="868.91" y="16.00" width="26.84" height="198.00" rx="2.5" fill="#D4505E" class="ld-bar"></rect><rect x="909.58" y="79.13" width="26.84" height="134.87" rx="2.5" fill="#F2A872" class="ld-bar"></rect><rect x="950.25" y="140.83" width="26.84" height="73.17" rx="2.5" fill="#F2A872" class="ld-bar"></rect><polyline points="28.33,177.64 69.00,182.49 109.67,185.21 150.33,186.28 191.00,185.45 231.67,180.95 272.33,171.60 313.00,158.45 353.67,125.54 394.33,117.72 435.00,87.53 475.67,93.69 516.33,98.07 557.00,95.23 597.67,120.33 638.33,133.94 679.00,137.97 719.67,127.08 760.33,82.91 801.00,60.89 841.67,43.72 882.33,56.27 923.00,105.17 963.67,131.93" fill="none" stroke="#0f1c2b" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.72"></polyline><text x="28.33" y="232.00" text-anchor="middle" class="ld-axis-label ld-static-axis">00:00</text><text x="191.00" y="232.00" text-anchor="middle" class="ld-axis-label ld-static-axis">04:00</text><text x="353.67" y="232.00" text-anchor="middle" class="ld-axis-label ld-static-axis">08:00</text><text x="516.33" y="232.00" text-anchor="middle" class="ld-axis-label ld-static-axis">12:00</text><text x="679.00" y="232.00" text-anchor="middle" class="ld-axis-label ld-static-axis">16:00</text><text x="841.67" y="232.00" text-anchor="middle" class="ld-axis-label ld-static-axis">20:00</text><line y1="10" y2="214" class="ld-cursor-line" x1="353.67" x2="353.67"></line></svg>
+          </div>
+
+          <div class="ld-nojs-axis" aria-hidden="true"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+          <div class="ld-chart-foot">
+            <div class="ld-legend">
+              <span class="ld-legend-item"><span class="ld-legend-swatch" style="background:var(--ld-p1)"></span><span data-i18n="ld.legendP1">Punta (P1)</span></span>
+              <span class="ld-legend-item"><span class="ld-legend-swatch" style="background:var(--ld-p2)"></span><span data-i18n="ld.legendP2">Llano (P2)</span></span>
+              <span class="ld-legend-item"><span class="ld-legend-swatch" style="background:var(--ld-p3)"></span><span data-i18n="ld.legendP3">Valle (P3)</span></span>
+            </div>
+            <p class="ld-note">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+              <span data-i18n="ld.dayDisclaimer">Demostración con un día de ejemplo y la forma de banda del 2.0TD. Dentro verás tu curva real y el precio que te aplica tu contrato.</span>
+            </p>
+          </div>
+        </div>
+      </div>
     </section>
+
+    <!-- ============================== QUÉ SABE =============================== -->
+    <section class="ld-sec">
+      <div class="ld-wrap">
+        <div class="ld-reveal">
+          <div class="ld-kicker" data-i18n="ld.featKicker">Lo que hace, sin adornos</div>
+          <h2 class="ld-h2" data-i18n="ld.featTitle">Seis cosas que tu casa pasa a saber</h2>
+          <p class="ld-lede" data-i18n="ld.featLede">Cada una viene con su letra pequeña en la propia tarjeta. Preferimos que sepas dónde acaba la medición y dónde empieza la estimación.</p>
+        </div>
+
+        <div class="ld-grid">
+          <article class="ld-card ld-card-warm ld-reveal">
+            <div class="ld-card-dot"></div>
+            <h3 data-i18n="ld.f1T">Contadores para aparatos sin contador, en la propia caja</h3>
+            <p data-i18n="ld.f1D">El frigorífico, la vitro y el microondas consumen con una forma tan reconocible como una firma. La caja los separa del resto en la pantalla de casa, sin que instales nada en esos aparatos.</p>
+            <span class="ld-caveat" data-i18n="ld.f1C">La letra pequeña: ocurre en la caja, no en la web. Horno, hervidor y vitro comparten banda de potencia y pueden confundirse entre sí, un segundo aparato de firma parecida se mezcla con el primero, y cada arranque se contabiliza tarde. Se reparte siempre dentro de lo que aún no está explicado, así que las cuentas cuadran.</span>
+          </article>
+
+          <article class="ld-card ld-card-mint ld-reveal">
+            <div class="ld-card-dot"></div>
+            <h3 data-i18n="ld.f2T">Sigue funcionando con el internet caído</h3>
+            <p data-i18n="ld.f2D">Medir, separar aparatos, detectar y enseñarte el panel ocurre dentro de casa, en la propia caja. Si se cae la línea, la pantalla de casa sigue viva.</p>
+            <span class="ld-caveat" data-i18n="ld.f2C">La letra pequeña: para verla desde fuera, la caja sí necesita línea. Sin línea sigue habiendo euros, calculados con la tarifa de tu propio contrato; lo que no entra es el precio de mercado más allá de lo ya descargado, y no se puede iniciar sesión de cero: una sesión ya abierta aguanta semanas.</span>
+          </article>
+
+          <article class="ld-card ld-card-sky ld-reveal">
+            <div class="ld-card-dot"></div>
+            <h3 data-i18n="ld.f3T">Tu factura, en palabras normales</h3>
+            <p data-i18n="ld.f3D">Subes el PDF —o una foto, activando el reconocimiento de imagen— y te devuelve qué pagas por la energía, qué por la potencia, qué son los peajes y cuánto se lleva el impuesto. Con tus euros y tus kilovatios, no con un ejemplo.</p>
+            <span class="ld-caveat" data-i18n="ld.f3C">La letra pequeña: la tarifa que lee se te enseña para que la confirmes antes de aplicarla. La factura se archiva si la lectura sale bien; si falla, no se guarda nada.</span>
+          </article>
+
+          <article class="ld-card ld-card-lav ld-reveal">
+            <div class="ld-card-dot"></div>
+            <h3 data-i18n="ld.f4T">Una previsión que dice por qué</h3>
+            <p data-i18n="ld.f4D">No solo cuánto vas a gastar: cuánto es costumbre de la casa, cuánto pone el frío o el calor y cuánto el calendario. Y cuando no hay historia suficiente, lo dice en vez de inventar.</p>
+            <span class="ld-caveat" data-i18n="ld.f4C">La letra pequeña: si tu casa no tiene calefacción o aire eléctricos, no te atribuye consumo de clima ni te da consejos de climatización.</span>
+          </article>
+
+          <article class="ld-card ld-card-warm ld-reveal">
+            <div class="ld-card-dot"></div>
+            <h3 data-i18n="ld.f5T">Avisa cuando algo se sale de lo normal</h3>
+            <p data-i18n="ld.f5D">Compara cada hora con lo que es habitual en tu casa a esa hora de esa clase de día, ya corregido por lo frío o caluroso que fue el día. Si algo se queda encendido o el gasto se dispara, aparece en la app.</p>
+            <span class="ld-caveat" data-i18n="ld.f5C">La letra pequeña: el aviso vive dentro de la aplicación. Hoy no se envía ninguno por correo, y a terceras personas no hay nada construido.</span>
+          </article>
+
+          <article class="ld-card ld-card-mint ld-reveal">
+            <div class="ld-card-dot"></div>
+            <h3 data-i18n="ld.f6T">Mandar desde la pantalla de casa</h3>
+            <p data-i18n="ld.f6D">Desde la pantalla de la caja enciendes y apagas tus enchufes, y con el nivel PRO llegas a esa misma pantalla desde fuera. Existe además una regla que decide cuándo cargar la batería, por nivel o por precio.</p>
+            <span class="ld-caveat" data-i18n="ld.f6C">La letra pequeña: sobre equipos compatibles ya instalados. La regla de carga se puede ver y editar, pero la única que existe está en modo manual y no ha actuado desde julio: hoy no gobierna ninguna batería.</span>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================= NUESTRO PROPIO ERROR ======================== -->
+    <section class="ld-sec ld-sec-dark">
+      <div class="ld-wrap">
+        <div class="ld-reveal">
+          <div class="ld-kicker" data-i18n="ld.evalKicker">Lo incómodo, publicado</div>
+          <h2 class="ld-h2" data-i18n="ld.evalTitle">Medimos cada semana en qué nos equivocamos</h2>
+          <p class="ld-lede" data-i18n="ld.evalLede">Cualquiera puede prometer precisión. Cada lunes se ejecuta sola una prueba que compara lo que el sistema esperaba con lo que de verdad pasó. Estos son los números del 17 de agosto de 2026, sobre tres cuentas del piloto y cuatro contadores principales —uno de ellos nuestra propia oficina— y unas dos semanas y media de datos. La cifra de precio no va por hogares: compara nuestra previsión con el precio que luego se publicó. Con sus asteriscos.</p>
+        </div>
+        <div class="ld-honest">
+          <div class="ld-metric ld-reveal">
+            <div class="ld-metric-value" data-i18n-html="ld.evalV1">39,7<small>%</small></div>
+            <div class="ld-metric-label" data-i18n="ld.eval1">entre el consumo real y el que el detector de anomalías esperaba para esa hora, en 1.594 pares de hora y contador. También con suelo, de 30 W</div>
+          </div>
+          <div class="ld-metric ld-reveal">
+            <div class="ld-metric-value" data-i18n="ld.evalV2">sin dato</div>
+            <div class="ld-metric-label" data-i18n="ld.eval2">para la factura estimada: hay 56 facturas cargadas, pero ninguna marcada como cerrada, que es lo único que la prueba mira</div>
+          </div>
+          <div class="ld-metric ld-reveal">
+            <div class="ld-metric-value" data-i18n-html="ld.evalV3">23,0<small>%</small></div>
+            <div class="ld-metric-label" data-i18n="ld.eval3">entre el último precio que pronosticamos y el que después se publicó, en 438 horas. Con suelo de 0,01 €/kWh en el divisor; sin ese suelo ronda el 27,6 %</div>
+          </div>
+          <div class="ld-metric ld-reveal">
+            <div class="ld-metric-value" data-i18n="ld.evalV4">sin dato</div>
+            <div class="ld-metric-label" data-i18n="ld.eval4">para el reparto por aparato: la pinza de contraste existe y la calibración está activa, pero para lavadora y lavavajillas el estimador no ha propuesto ni un solo candidato que medir</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =============================== NIVELES ============================== -->
+    <section class="ld-sec">
+      <div class="ld-wrap">
+        <div class="ld-reveal">
+          <div class="ld-kicker" data-i18n="ld.tierKicker">Qué se activa y cuándo</div>
+          <h2 class="ld-h2" data-i18n="ld.tierTitle">No hay muro que pagar: hay cosas que activamos</h2>
+          <p class="ld-lede" data-i18n="ld.tierLede">CONSUM-IA no está a la venta todavía, así que esto no es una lista de precios. Es lo que trae cualquier instalación y lo que además habilitamos cuando un hogar entra en el piloto ampliado.</p>
+        </div>
+        <div class="ld-tiers">
+          <div class="ld-tier ld-reveal">
+            <h3 class="ld-tier-name" data-i18n="ld.tierBasic">En toda instalación</h3>
+            <p class="ld-tier-note" data-i18n="ld.tierBasicNote">Lo que ve cualquier hogar del piloto desde el primer día.</p>
+            <ul>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span data-i18n="ld.tb1">Consumo y coste hora a hora, con su banda</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span data-i18n="ld.tb2">Precio de hoy y de mañana, y las mejores horas</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span data-i18n="ld.tb3">Coste aproximado por aparato sobre los enchufes que ya miden</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span data-i18n="ld.tb4">Anomalías, ausencias y consejo del día</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span data-i18n="ld.tb5">Sol en tu tejado, tiempo y avisos oficiales</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span data-i18n="ld.tb6">Subir facturas y guardar tu contrato</span></li>
+            </ul>
+          </div>
+          <div class="ld-tier ld-tier-pro ld-reveal">
+            <h3 class="ld-tier-name"><span data-i18n="ld.tierPro">Se habilita aparte</span> <span class="ld-tier-tag">PRO</span></h3>
+            <p class="ld-tier-note" data-i18n="ld.tierProNote">Marcado como PRO en el código. Lo encendemos por hogar, no se compra.</p>
+            <ul>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span data-i18n="ld.tp1">Cómo va a terminar el mes, en kWh y en euros</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span data-i18n="ld.tp2">Desglose por franjas P1, P2 y P3</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span data-i18n="ld.tp3">Estimación completa de la factura del periodo</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span data-i18n="ld.tp4">Exportar tus horas a CSV</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span data-i18n="ld.tp5">Entrar a la pantalla de tu caja desde fuera</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ================================ SPOT ================================ -->
+    <section class="ld-sec ld-sec-tint" id="spot">
+      <div class="ld-wrap">
+        <div class="ld-reveal">
+          <div class="ld-kicker" data-i18n="ld.spotKicker">Quince segundos</div>
+          <h2 class="ld-h2" data-i18n="ld.spotTitle">La energía que no se ve</h2>
+          <p class="ld-lede" data-i18n="ld.spotLede">Una ventana encendida en un bloque a oscuras, una cocina de noche, una caja gris en el cuadro y un salón tranquilo.</p>
+        </div>
+        <figure class="ld-spot ld-reveal">
+          <video id="ld-spot-video" preload="none" playsinline poster="{{ root_path }}/static/landing/img/spot-poster.jpg">
+            <source src="{{ root_path }}/static/landing/video/spot-15s.mp4" type="video/mp4">
+          </video>
+          <button class="ld-spot-play" id="ld-spot-play" type="button" data-i18n-title="ld.spotPlay" title="Reproducir" aria-label="Reproducir">
+            <svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+          <figcaption class="ld-note" data-i18n="ld.spotNote">Pieza de marca con sonido ambiente. No muestra pantallas del producto ni datos de ningún hogar.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ================================ CTA ================================= -->
+    <section class="ld-cta" id="acceso">
+      <div class="ld-wrap">
+        <h2 class="ld-h2 ld-reveal" data-i18n="ld.ctaTitle">Estamos instalando en hogares de verdad</h2>
+        <p class="ld-lede ld-reveal" data-i18n="ld.ctaText">CONSUM-IA es un proyecto de I+D en pilotos reales, no un producto de estantería. Si tienes una casa y curiosidad, escríbenos y te contamos qué implica entrar.</p>
+        <a class="ld-cta-mail ld-reveal" href="mailto:proyectos@pibico.org">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 6L2 7"/></svg>
+          proyectos@pibico.org
+        </a>
+      </div>
+    </section>
+
   </main>
-  <script src="{{ root_path }}/static/js/landing.js?v=4" defer></script>
 
   <footer class="app-footer">
     <span>&copy; 2026 pibiCo</span>
     <span class="footer-sep">|</span>
-    <a href="{{ root_path }}/api/docs" target="_blank">API Docs</a>
+    <a href="{{ root_path }}/api/docs" target="_blank" rel="noopener" data-i18n="ld.apiDocs">Documentación de la API</a>
+    <span class="footer-sep">|</span>
+    <span data-i18n="ld.project">Proyecto CONSUM-IA</span>
     <span class="footer-sep">|</span>
     <span>v{{ version }}</span>
   </footer>

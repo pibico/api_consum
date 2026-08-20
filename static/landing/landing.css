@@ -1,0 +1,744 @@
+/* ==========================================================================
+   CONSUM-IA — landing v2
+   Tema: doméstico, cálido, "tu casa en euros".
+   Marca pibiCo intacta (tokens, tipografías, cabecera/pie); la libertad
+   creativa vive dentro de <main>.
+   ========================================================================== */
+
+:root {
+  /* Acentos propios de esta landing, derivados de la paleta extendida pibiCo */
+  --ld-warm:      #F2C84E;   /* marigold 400 — gasto */
+  --ld-warm-deep: #C49A18;   /* marigold 600 */
+  --ld-peach:     #F2A872;   /* peach 400 */
+  --ld-mint:      #5CCEA0;   /* mint 400 — ahorro */
+  --ld-mint-deep: #28946A;   /* mint 600 */
+  --ld-ink:       #0f1c2b;
+  --ld-ink-soft:  #3d4a5a;
+  --ld-paper:     #f7f5f1;
+  --ld-rule:      rgba(15, 28, 43, 0.10);
+
+  /* Bandas tarifarias 2.0TD */
+  --ld-p1: #D4505E;
+  --ld-p2: #F2A872;
+  --ld-p3: #5CCEA0;
+
+  --ld-max: 1180px;
+  --ld-gut: clamp(20px, 5vw, 64px);
+}
+
+/* --------------------------------------------------------------- base --- */
+
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
+
+body.ld-body {
+  background: var(--ld-paper);
+  color: var(--ld-ink);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.ld-body .app-layout { height: auto; min-height: 100vh; }
+
+.ld-main {
+  flex: 1;
+  display: block;
+  overflow: visible;
+  padding: 0;
+}
+
+.ld-wrap {
+  max-width: var(--ld-max);
+  margin: 0 auto;
+  padding: 0 var(--ld-gut);
+}
+
+.ld-body ::selection { background: var(--ld-warm); color: var(--ld-ink); }
+
+/* Foco visible en todo lo interactivo — nunca outline:none a secas */
+.ld-main a:focus-visible,
+.ld-main button:focus-visible,
+.ld-main [tabindex]:focus-visible {
+  outline: 3px solid #8a6a0f;
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* ---------------------------------------------------------------- hero --- */
+
+.ld-hero {
+  position: relative;
+  min-height: min(88vh, 760px);
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  background: #14202e;
+}
+
+.ld-hero-media {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+.ld-hero-media video,
+.ld-hero-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Velo: garantiza contraste AA del texto blanco sobre el vídeo, más denso
+   en el tercio izquierdo, que es donde vive el titular. */
+.ld-hero-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    linear-gradient(100deg, rgba(10,18,28,0.94) 0%, rgba(10,18,28,0.86) 34%,
+                            rgba(10,18,28,0.68) 62%, rgba(10,18,28,0.58) 100%);
+}
+
+.ld-hero-inner {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  padding: clamp(48px, 9vh, 104px) 0;
+}
+
+.ld-hero-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ld-warm);
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ld-hero-eyebrow::before {
+  content: "";
+  width: 28px;
+  height: 1px;
+  background: var(--ld-warm);
+  display: block;
+}
+
+.ld-hero h1 {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: clamp(2.1rem, 5.6vw, 4rem);
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+  color: #fff;
+  margin: 0 0 20px;
+  max-width: 15ch;
+  text-wrap: balance;
+}
+.ld-hero h1 em {
+  font-style: normal;
+  color: var(--ld-warm);
+}
+
+.ld-hero-sub {
+  font-size: clamp(1rem, 1.6vw, 1.16rem);
+  line-height: 1.5;
+  color: rgba(255,255,255,0.88);
+  max-width: 46ch;
+  margin: 0 0 28px;
+}
+
+.ld-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 32px; }
+.ld-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.10);
+  border: 1px solid rgba(255,255,255,0.20);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 500;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.ld-chip svg { width: 15px; height: 15px; opacity: 0.9; }
+
+.ld-cta-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+
+.ld-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 24px;
+  border-radius: 10px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.94rem;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
+}
+.ld-btn svg { width: 18px; height: 18px; }
+.ld-btn-primary {
+  background: var(--ld-warm);
+  color: var(--ld-ink);
+  box-shadow: 0 6px 20px rgba(242,200,78,0.30);
+}
+.ld-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(242,200,78,0.40); }
+.ld-btn-ghost {
+  background: rgba(255,255,255,0.10);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.26);
+}
+.ld-btn-ghost:hover { background: rgba(255,255,255,0.18); transform: translateY(-2px); }
+
+/* Indicador de scroll */
+.ld-scroll-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  z-index: 2;
+  color: rgba(255,255,255,0.82);
+  font-size: 0.68rem;
+  font-family: var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.ld-scroll-hint span { animation: ld-bob 2.6s ease-in-out infinite; }
+@keyframes ld-bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(5px); } }
+
+/* ------------------------------------------------------------ secciones --- */
+
+.ld-sec { padding: clamp(64px, 11vh, 128px) 0; }
+.ld-sec-dark { background: #14202e; color: #fff; }
+.ld-sec-tint { background: linear-gradient(180deg, #fff 0%, var(--ld-paper) 100%); }
+
+.ld-kicker {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8a6a0f;
+  margin-bottom: 14px;
+}
+.ld-sec-dark .ld-kicker { color: var(--ld-warm); }
+
+.ld-h2 {
+  color: var(--ld-ink);
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: clamp(1.6rem, 3.6vw, 2.5rem);
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  margin: 0 0 16px;
+  max-width: 20ch;
+  text-wrap: balance;
+}
+.ld-lede {
+  font-size: clamp(0.98rem, 1.4vw, 1.1rem);
+  line-height: 1.6;
+  color: var(--ld-ink-soft);
+  max-width: 58ch;
+  margin: 0 0 40px;
+}
+.ld-sec-dark .ld-lede { color: rgba(255,255,255,0.78); }
+/* pibico.css da color propio a h2: hay que ganarlo explícitamente en fondo oscuro */
+.ld-sec-dark .ld-h2 { color: #fff; }
+
+/* ------------------------------------------------- el día, hora a hora --- */
+/* La interacción central: arrastrar por 24 h y ver precio, consumo y coste
+   acumulado. Es el gesto real de la app, en miniatura, antes de registrarse. */
+
+.ld-day {
+  background: #fff;
+  border-radius: 20px;
+  padding: clamp(20px, 3vw, 34px);
+  box-shadow: 0 10px 40px rgba(15,28,43,0.10);
+}
+
+.ld-day-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 22px;
+}
+
+.ld-readout { display: flex; flex-wrap: wrap; gap: clamp(18px, 4vw, 44px); }
+.ld-read-item { min-width: 92px; }
+.ld-read-label {
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #67707d;
+  margin-bottom: 4px;
+}
+.ld-read-value {
+  font-family: var(--font-mono);
+  font-size: clamp(1.3rem, 3vw, 1.9rem);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--ld-ink);
+  font-variant-numeric: tabular-nums;
+}
+.ld-read-value small { font-size: 0.5em; font-weight: 500; color: #67707d; margin-left: 3px; }
+
+.ld-band {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+.ld-band-dot { width: 8px; height: 8px; border-radius: 50%; }
+.ld-band[data-band="P1"] { background: rgba(212,80,94,0.12);  color: #9E3A4A; }
+.ld-band[data-band="P1"] .ld-band-dot { background: var(--ld-p1); }
+.ld-band[data-band="P2"] { background: rgba(242,168,114,0.16); color: #944A20; }
+.ld-band[data-band="P2"] .ld-band-dot { background: var(--ld-p2); }
+.ld-band[data-band="P3"] { background: rgba(92,206,160,0.14);  color: #1A5C3A; }
+.ld-band[data-band="P3"] .ld-band-dot { background: var(--ld-p3); }
+
+/* Gráfico */
+.ld-chart {
+  position: relative;
+  cursor: ew-resize;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.ld-chart svg { display: block; width: 100%; height: auto; }
+
+.ld-bar { transition: opacity 0.12s; }
+.ld-chart:hover .ld-bar { opacity: 0.5; }
+.ld-bar.is-active { opacity: 1 !important; }
+
+.ld-cursor-line { stroke: var(--ld-ink); stroke-width: 1.5; stroke-dasharray: 3 3; opacity: 0.55; }
+
+.ld-axis-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  fill: #67707d;
+}
+
+.ld-chart-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--ld-rule);
+}
+.ld-legend { display: flex; gap: 14px; flex-wrap: wrap; }
+.ld-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  color: var(--ld-ink-soft);
+}
+.ld-legend-swatch { width: 10px; height: 10px; border-radius: 3px; }
+
+/* Nota de honestidad: los datos del demostrador son de ejemplo */
+.ld-note {
+  font-size: 0.74rem;
+  color: #67707d;
+  line-height: 1.5;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  max-width: 62ch;
+}
+.ld-note svg { width: 14px; height: 14px; flex-shrink: 0; margin-top: 2px; }
+
+/* ------------------------------------------------------------ features --- */
+
+.ld-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
+  gap: 18px;
+}
+
+.ld-card {
+  position: relative;
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px 22px 22px;
+  box-shadow: 0 3px 14px rgba(15,28,43,0.07);
+  transition: transform 0.22s, box-shadow 0.22s;
+  overflow: hidden;
+}
+.ld-card:hover { transform: translateY(-3px); box-shadow: 0 12px 32px rgba(15,28,43,0.12); }
+
+/* Punto de color + fondo tintado — nunca border-left de acento */
+.ld-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--card-tint, transparent);
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 0;
+}
+.ld-card > * { position: relative; z-index: 1; }
+
+.ld-card-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--card-dot, var(--ld-warm));
+  margin-bottom: 14px;
+}
+.ld-card h3 {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 1.02rem;
+  line-height: 1.25;
+  margin: 0 0 8px;
+  color: var(--ld-ink);
+}
+.ld-card p {
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--ld-ink-soft);
+  margin: 0;
+}
+/* El matiz honesto de cada tarjeta */
+.ld-card .ld-caveat {
+  display: block;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ld-rule);
+  font-size: 0.78rem;
+  color: #67707d;
+}
+
+.ld-card-warm { --card-tint: var(--marigold-50, #FFF8E6); --card-dot: var(--ld-warm); }
+.ld-card-mint { --card-tint: var(--mint-50, #ECFDF5);     --card-dot: var(--ld-mint); }
+.ld-card-sky  { --card-tint: var(--sky-50, #EEF6FF);      --card-dot: #6AB4F0; }
+.ld-card-lav  { --card-tint: var(--lavender-50, #F4F0FF); --card-dot: #A88EF0; }
+
+/* --------------------------------------------------------- error bars --- */
+
+.ld-honest {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 16px;
+  margin-top: 34px;
+}
+.ld-metric {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.13);
+  border-radius: 14px;
+  padding: 20px 18px;
+}
+.ld-metric-value {
+  font-family: var(--font-mono);
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--ld-warm);
+  line-height: 1;
+  margin-bottom: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.ld-metric-label {
+  font-size: 0.82rem;
+  color: rgba(255,255,255,0.82);
+  line-height: 1.45;
+}
+
+/* ------------------------------------------------------------- niveles --- */
+
+.ld-tiers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+.ld-tier {
+  background: #fff;
+  border-radius: 18px;
+  padding: 28px 26px;
+  box-shadow: 0 3px 14px rgba(15,28,43,0.07);
+}
+.ld-tier-pro {
+  background: linear-gradient(160deg, #1b2a3c 0%, #24384f 100%);
+  color: #fff;
+  box-shadow: 0 14px 40px rgba(15,28,43,0.24);
+}
+.ld-tier-name {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 1.15rem;
+  margin: 0 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ld-tier-tag {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--ld-warm);
+  color: var(--ld-ink);
+}
+.ld-tier-note {
+  font-size: 0.82rem;
+  color: var(--ld-ink-soft);
+  margin: 0 0 18px;
+  line-height: 1.5;
+}
+.ld-tier-pro .ld-tier-note { color: rgba(255,255,255,0.72); }
+/* mismo caso que el h2: pibico.css pinta los encabezados y hay que vencerlo */
+.ld-tier-pro .ld-tier-name { color: #fff; }
+
+.ld-tier ul { list-style: none; margin: 0; padding: 0; }
+.ld-tier li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  border-top: 1px solid var(--ld-rule);
+}
+.ld-tier-pro li { border-top-color: rgba(255,255,255,0.12); }
+.ld-tier li:first-child { border-top: none; }
+.ld-tier li svg { width: 15px; height: 15px; flex-shrink: 0; margin-top: 3px; color: var(--ld-mint-deep); }
+.ld-tier-pro li svg { color: var(--ld-warm); }
+
+/* ----------------------------------------------------------------- cta --- */
+
+.ld-cta {
+  text-align: center;
+  padding: clamp(64px, 11vh, 120px) 0;
+  background: linear-gradient(135deg, #203c55 0%, #305b7e 50%, #3f7099 100%);
+  color: #fff;
+}
+.ld-cta .ld-h2 { margin-left: auto; margin-right: auto; color: #fff; }
+.ld-cta .ld-lede { margin-left: auto; margin-right: auto; color: rgba(255,255,255,0.86); }
+.ld-cta-mail {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 28px;
+  border-radius: 10px;
+  background: #fff;
+  color: #2c5171;
+  font-weight: 600;
+  text-decoration: none;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.ld-cta-mail:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(0,0,0,0.22); }
+
+/* ------------------------------------------------------------- reveal --- */
+
+.ld-reveal { opacity: 1; transform: none; }
+.has-js .ld-reveal {
+  opacity: 0;
+  transform: translateY(22px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.has-js .ld-reveal.is-in { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .has-js .ld-reveal { opacity: 1; transform: none; transition: none; }
+  .ld-scroll-hint span { animation: none; }
+  .ld-card:hover, .ld-btn:hover, .ld-cta-mail:hover { transform: none; }
+}
+
+/* -------------------------------------------------------------- móvil --- */
+
+@media (max-width: 768px) {
+  .ld-hero { min-height: 84vh; }
+  .ld-hero-veil {
+    background: linear-gradient(180deg, rgba(10,18,28,0.78) 0%, rgba(10,18,28,0.90) 100%);
+  }
+  .ld-hero h1 { max-width: 100%; }
+  .ld-readout { gap: 16px; }
+  .ld-read-item { min-width: 74px; }
+  .ld-day { padding: 16px; border-radius: 16px; }
+  .ld-scroll-hint { display: none; }
+}
+
+/* Nunca provocar auto-zoom en iOS: cualquier control táctil a 16px mínimo,
+   sin tocar user-scalable ni maximum-scale (romperían el pinch). */
+@media (max-width: 768px) {
+  .ld-main input,
+  .ld-main select,
+  .ld-main textarea { font-size: 16px; }
+}
+
+/* ------------------------------------------------------------- idioma --- */
+
+.ld-lang { position: relative; }
+
+.ld-lang-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 148px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(15,28,43,0.18);
+  padding: 5px;
+  display: none;
+  z-index: 200;
+}
+.ld-lang.is-open .ld-lang-menu { display: block; }
+
+.ld-lang-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  border-radius: 7px;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  color: var(--ld-ink);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.ld-lang-menu button:hover { background: rgba(70,130,180,0.10); }
+
+/* --------------------------------------------------------------- spot --- */
+
+.ld-spot { position: relative; margin: 0; }
+.ld-spot video {
+  display: block;
+  width: 100%;
+  border-radius: 16px;
+  background: #14202e;
+  box-shadow: 0 12px 44px rgba(15,28,43,0.18);
+}
+.ld-spot figcaption { margin-top: 12px; }
+
+.ld-spot-play {
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: 76px; height: 76px;
+  border: none; border-radius: 50%;
+  background: var(--ld-warm);
+  color: var(--ld-ink);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.34);
+  transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
+}
+.ld-spot-play:hover { transform: translate(-50%, -50%) scale(1.06); }
+.ld-spot-play.is-hidden { opacity: 0; pointer-events: none; }
+.ld-spot-play svg { margin-left: 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ld-spot-play:hover { transform: translate(-50%, -50%); }
+}
+
+/* --------------------------------------------------- desbordes en móvil ---
+   El <br> del titular no puede partirse y `max-width` en ch puede superar el
+   ancho real del viewport: ambos sacaban el hero fuera de pantalla a 360 px. */
+.ld-hero h1, .ld-hero-sub, .ld-h2, .ld-lede {
+  max-width: min(100%, var(--ld-measure, 60ch));
+  overflow-wrap: break-word;
+}
+.ld-hero h1 { --ld-measure: 15ch; }
+.ld-hero-sub { --ld-measure: 46ch; }
+.ld-h2 { --ld-measure: 20ch; }
+.ld-lede { --ld-measure: 58ch; }
+
+@media (max-width: 560px) {
+  .ld-hero h1 br { display: none; }
+  .ld-hero h1 { font-size: clamp(1.7rem, 7.6vw, 2.3rem); }
+  .ld-wrap { padding-left: 18px; padding-right: 18px; }
+}
+
+/* Texto para lectores de pantalla: describe lo que la animación no dice */
+.ld-sr {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* El anillo de foco estaba limitado a <main>; la cabecera caía al de fábrica */
+.app-header a:focus-visible,
+.app-header button:focus-visible {
+  outline: 3px solid #8a6a0f;
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* ------------------------------------------------- cabecera canónica ---
+   `.app-header-btn` vive en collab.css, que no forma parte de este paquete
+   autónomo. Se replica con los valores exactos de pibico-guidelines para que
+   la cabecera no caiga al chrome por defecto del navegador. */
+.app-header-btn {
+  width: 36px; height: 36px; min-width: 36px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(44, 81, 113, 0.12);
+  border: none; padding: 0;
+  color: #1a3a54;
+  border-radius: var(--radius-sm, 8px);
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
+  text-decoration: none;
+}
+.app-header-btn:hover { background: rgba(44, 81, 113, 0.2); }
+.app-header-btn svg {
+  width: 18px; height: 18px;
+  stroke: currentColor; fill: none;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.app-header-actions { display: flex; align-items: center; gap: 0.5rem; }
+
+/* M7 — a 360 px el SVG escala uniforme y el eje quedaba a 3,6 px */
+@media (max-width: 768px) {
+  /* El viewBox lo fija el JS al ancho real del contenedor, así que estas
+     unidades de usuario son píxeles CSS de verdad. */
+  .ld-axis-label { font-size: 13px; }
+}
+
+/* Ronda 4 — el SVG estático del caso sin JavaScript lleva un viewBox fijo, así
+   que sus etiquetas se hunden a ~4 px en móvil. Sin JS se ocultan y el eje se
+   dibuja como texto HTML normal, que sí escala. */
+.ld-nojs-axis { display: none; }
+html:not(.has-js) .ld-static-axis { display: none; }
+html:not(.has-js) .ld-nojs-axis {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: #5a6474;
+  padding: 6px 2px 0;
+}
+
+/* Ronda 5 — el enlace del pie hereda --primary-color de pibico.css y mide
+   4,07:1 sobre el cristal del pie. No se toca pibico.css (es chrome compartido
+   con todas las consolas): se corrige sólo aquí, con un token de la marca. */
+.app-footer a { color: var(--accent-color); }
