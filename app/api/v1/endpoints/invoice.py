@@ -179,14 +179,39 @@ async def upload_invoice(
 _CONSUMOS_RE = re.compile(
     r"consumos\s+han\s+sido\s+punta:\s*([\d.,]+)\s*kWh,\s*llano:\s*([\d.,]+)"
     r"\s*kWh,\s*valle:\s*([\d.,]+)\s*kWh", re.IGNORECASE)
+# Total consumption for bills with NO per-band split. `\s*` everywhere on
+# purpose: docling welds the label to the number ('Consumo total506kWh').
+_TOTAL_KWH_RE = re.compile(
+    r"consumo\s*total\s*(?:de\s*)?:?\s*([\d.,]+)\s*kWh", re.IGNORECASE)
 
 
 def _es_num(s: str) -> float:
     return float(s.replace(".", "").replace(",", "."))
 
 
+async def _kwh_plausible(invoice_id: int, kwh: float) -> bool:
+    """Guard against the reader handing back EUROS as kWh — noisy bill OCR
+    makes the LLM sometimes pick the € amount of the 'X kWh x Y €/kWh'
+    breakdown lines instead of X (seen live: 3.85/4.88/0.84 stored as kWh).
+    A Spanish domestic bill's all-in price sits well inside 0.03–2.5 €/kWh;
+    outside that, store nothing rather than garbage. Undecidable without a
+    total to divide by → trust the reader."""
+    inv = await invoices.get(invoice_id)
+    total_eur = (inv or {}).get("total_eur")
+    if not total_eur or not kwh:
+        return True
+    ratio = float(total_eur) / kwh
+    if 0.03 <= ratio <= 2.5:
+        return True
+    logger.warning("kWh REJECTED for invoice %s: %.2f kWh vs %.2f EUR "
+                   "(%.2f EUR/kWh implausible — likely EUR-as-kWh mixup)",
+                   invoice_id, kwh, float(total_eur), ratio)
+    return False
+
+
 async def _fill_band_kwh(invoice_id: int, markdown: str) -> None:
-    """Best-effort: band kWh (P1/P2/P3) → energy_p1/2/3_kwh columns.
+    """Best-effort: band kWh (P1/P2/P3) → energy_p1/2/3_kwh columns, and with
+    them the `energy_kwh` total (derived — see invoices.set_band_kwh).
 
     Deterministic fast path FIRST: TotalEnergies (and others) print the split
     literally — 'Los consumos han sido punta: X kWh, llano: Y kWh, valle: Z
@@ -194,11 +219,10 @@ async def _fill_band_kwh(invoice_id: int, markdown: str) -> None:
     summing billed-line groups instead of the canonical split). Only without
     it do we fall back to the AI amounts extraction.
 
-    Sanity guard (LLM path): noisy bill OCR makes the LLM sometimes pick the
-    € amount of the 'X kWh x Y €/kWh' breakdown lines instead of X (seen
-    live: 3.85/4.88/0.84 stored as kWh). A Spanish domestic bill's all-in
-    price sits well inside 0.03–2.5 €/kWh — outside that, the "kWh" are
-    almost certainly euros, so store nothing rather than garbage."""
+    Last resort, for bills that state a total with NO per-band split: the
+    'Consumo total X kWh' line. Worth having — it is precisely those bills
+    that `is_estimated_read` wants to flag, and it cannot without the total.
+    """
     m = _CONSUMOS_RE.search(markdown)
     if m:
         try:
@@ -210,19 +234,31 @@ async def _fill_band_kwh(invoice_id: int, markdown: str) -> None:
     try:
         from app.services.ai import registry
         got = await registry.get("invoice").extract_bill_amounts(markdown)
-        if got and (got.kwh_horas_caras or got.kwh_horas_normales or got.kwh_horas_baratas):
+        amounts = got.model_dump() if got else {}
+        bands_ok = bool(got and (got.kwh_horas_caras or got.kwh_horas_normales
+                                 or got.kwh_horas_baratas))
+        if bands_ok:
             total_kwh = ((got.kwh_horas_caras or 0) + (got.kwh_horas_normales or 0)
                          + (got.kwh_horas_baratas or 0))
-            inv = await invoices.get(invoice_id)
-            total_eur = (inv or {}).get("total_eur")
-            if total_eur and total_kwh and not (0.03 <= float(total_eur) / total_kwh <= 2.5):
-                logger.warning("band kWh REJECTED for invoice %s: %.2f kWh vs %.2f EUR "
-                               "(%.2f EUR/kWh implausible — likely EUR-as-kWh mixup)",
-                               invoice_id, total_kwh, float(total_eur),
-                               float(total_eur) / total_kwh)
-                return
+            if not await _kwh_plausible(invoice_id, total_kwh):
+                bands_ok = False
+                for k in ("kwh_horas_caras", "kwh_horas_normales", "kwh_horas_baratas"):
+                    amounts[k] = None      # euros-as-kWh: drop, never persist
+        # The SAME call already carries the €-split the cost bar needs
+        # (energía/potencia/peajes/impuestos/alquiler). Persisting it here
+        # means the detail view renders the split straight away instead of
+        # paying for a second, identical extraction on first 'Explicar'.
+        if amounts:
+            await invoices.set_breakdown_key(invoice_id, "ai_amounts", amounts)
+        if bands_ok:
             await invoices.set_band_kwh(invoice_id, got.kwh_horas_caras,
                                         got.kwh_horas_normales, got.kwh_horas_baratas)
+            return
+        tm = _TOTAL_KWH_RE.search(markdown)
+        if tm:
+            total = _es_num(tm.group(1))
+            if total > 0 and await _kwh_plausible(invoice_id, total):
+                await invoices.set_total_kwh(invoice_id, total)
     except Exception:                                    # noqa: BLE001
         pass                                             # list shows — until then
 

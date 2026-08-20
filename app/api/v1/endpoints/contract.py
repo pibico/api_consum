@@ -19,7 +19,8 @@ from app.api.v1.dependencies.rbac import (ConsumContext, consum_context,
                                           require_role, require_tier)
 from app.api.v1.endpoints.consumption import _slugs, _sp
 from app.services import (ai_client, consumption, contracts, convert_client,
-                          exo_client, pricing, tariff_catalog)
+                          exo_client, invoices, pdf_text, pricing,
+                          tariff_catalog)
 from app.services.ai import registry
 
 router = APIRouter(prefix="/contracts", tags=["contracts"])
@@ -236,6 +237,8 @@ async def extract_contract(
     if not ai_client.configured():
         raise HTTPException(503, detail="La lectura con IA no está disponible ahora.")
     md: Optional[str] = None
+    blob: Optional[bytes] = None      # kept for the raw-PDF CUPS fallback below
+    fname: Optional[str] = None
     if file is not None:
         blob = await file.read()
         if len(blob) > _MAX_UPLOAD:
@@ -263,6 +266,20 @@ async def extract_contract(
     # hallucinates both on unrelated docs (verified: a project memo came back
     # as document_kind='ficha', retailer='pibiCo', confidence 1.0).
     d = row.model_dump()
+    # docling DESCARTA texto que sí está en la capa del PDF, y el CUPS cae ahí
+    # con frecuencia (caso 03-08 en facturas). En esta ruta el daño es otro: el
+    # contrato se guarda con CUPS vacío y ya no se puede casar con su punto de
+    # suministro (contrato 19 / oficina, 05-08). Misma red de seguridad de tres
+    # fuentes que services/invoices.store_uploaded: markdown → capa de texto
+    # del PDF (cuesta CPU: solo si hace falta) → nombre del fichero.
+    if not d.get("cups"):
+        for source in (lambda: md,
+                       lambda: pdf_text.extract(blob) if blob else None,
+                       lambda: fname):
+            found = invoices.find_cups(source() or "")
+            if found:
+                d["cups"] = found
+                break
     hard_signals = ("cups", "power_p1_kw", "energy_p1_eur_kwh", "energy_p2_eur_kwh",
                     "energy_p3_eur_kwh", "margin_eur_kwh", "power_p1_eur_kw_day",
                     "meter_rental_eur_month", "total_eur", "billing_period_start")

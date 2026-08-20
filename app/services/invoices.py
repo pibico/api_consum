@@ -24,10 +24,39 @@ from fastapi import HTTPException
 from psycopg.types.json import Jsonb
 
 from app.core import db
-from app.services import consumption, pricing
+from app.services import consumption, pdf_text, pricing
 from app.services import contracts as contracts_svc
 
 logger = logging.getLogger("consum.invoices")
+
+# A Spanish CUPS is 'ES' + 16 digits + 2 check letters, optionally followed by
+# the border/measure-point suffix (1 digit + 1 letter) — strict enough to be
+# matched ANYWHERE in the document without an anchoring 'CUPS:' label, which
+# retailers write in a dozen ways ('CUPS:', 'CUPS nº', 'Datos referidos al
+# CUPS:'). An IBAN ('ES' + 22 digits) cannot match: 16 digits must be followed
+# by LETTERS, not more digits.
+# The trailing guard is a lookahead, not \b: the CUPS often arrives embedded in
+# a filename ('ES0026000000796350SZ_E260800047.pdf'), where \b would fail on the
+# following underscore.
+_CUPS_RE = re.compile(r"\bES\d{16}[A-Z]{2}(?:\d[A-Z])?(?![0-9A-Z])")
+# Same shape, tolerating the spacing some retailers print it with
+# ('CUPS : ES 0021 0000 1035 8090 JZ' — seen on invoice 61). Tried only after
+# the strict form. `\s` never matches '|', so a match cannot bridge two table
+# cells; an IBAN still cannot match (16 digits must be followed by letters).
+_CUPS_SPACED_RE = re.compile(r"\bES\s*(?:\d\s*){16}[A-Z]\s*[A-Z](?:\s*\d\s*[A-Z])?")
+
+
+def find_cups(text: str) -> Optional[str]:
+    """Public: /contracts/extract reuses it — docling drops the CUPS on the
+    contract path too, and a contract saved without CUPS can never be matched
+    to its supply point."""
+    m = _CUPS_RE.search(text) or _CUPS_SPACED_RE.search(text)
+    return re.sub(r"\s+", "", m.group(0)) if m else None
+# 'IMPORTE TOTAL … 264,91 €' (TotalEnergies) and the equally literal
+# 'TOTAL FACTURA' / 'TOTAL A PAGAR' of other retailers.
+_TOTAL_RE = re.compile(
+    r"(?:IMPORTE\s+TOTAL|TOTAL\s+FACTURA|TOTAL\s+A\s+PAGAR)[^|\n]*?"
+    r"([\d.]+,\d{2})\s*€", re.IGNORECASE)
 
 _TOTALS = ("energy_kwh", "energy_eur", "power_eur", "fixed_eur",
            "iee_eur", "vat_eur", "total_eur", "uncosted_kwh")
@@ -278,6 +307,17 @@ async def update_uploaded(invoice_id: int,
     cols = {k: v for k, v in fields.items() if k in _UPLOADED_PATCHABLE}
     if not cols:
         return None
+    # The bands are the input, `energy_kwh` the derived total — a hand
+    # correction in the edit panel has to carry it along or the two drift
+    # apart. Recomputed from the FULL band triple (patched values over the
+    # stored ones), never from the patch alone: editing P2 only must not
+    # silently drop P1 and P3 from the total.
+    if any(b in cols for b in _BANDS):
+        current = await get(invoice_id) or {}
+        bands = [cols.get(b, current.get(b)) for b in _BANDS]
+        total = _total_kwh(*bands)
+        if total is not None:
+            cols["energy_kwh"] = total
     sets = ", ".join(f"{k} = %s" for k in cols)
     async with db.raw_connection() as con:
         async with con.cursor() as cur:
@@ -344,16 +384,62 @@ async def store_uploaded(customer_slug: str, pdf_bytes: bytes, filename: str,
     # Deterministic fallbacks from the bill TEXT when the LLM missed them —
     # TotalEnergies prints both literally ('IMPORTE TOTAL ... 264,91 €',
     # 'CUPS: ES...'). Regex beats a null.
-    if markdown:
+    #
+    # Read from THREE sources in order of fidelity: the converted markdown,
+    # the PDF's own text layer, and finally the filename. The markdown alone
+    # is not enough — docling drops text it treats as page furniture, and a
+    # bill whose CUPS lands in a dropped run gets stored unattached, which
+    # makes `GET /invoices?supply=<id>` hide it completely (the user sees a
+    # 409 "ya está subida" for an invoice that appears nowhere).
+    def _missing() -> bool:
+        return not cups or not isinstance(total, (int, float))
+
+    for source in (lambda: markdown,
+                   lambda: pdf_text.extract(pdf_bytes),   # lazy: costs CPU
+                   lambda: filename):
+        if not _missing():
+            break
+        text = source()
+        if not text:
+            continue
         if not isinstance(total, (int, float)):
-            m = re.search(r"IMPORTE\s+TOTAL[^|\n]*?([\d.]+,\d{2})\s*€", markdown,
-                          re.IGNORECASE)
+            m = _TOTAL_RE.search(text)
             if m:
                 total = float(m.group(1).replace(".", "").replace(",", "."))
         if not cups:
-            m = re.search(r"CUPS:\s*(ES[0-9A-Z]{18,20})", markdown)
-            if m:
-                cups = m.group(1)
+            cups = find_cups(text)
+
+    # ¿Es realmente una factura? Decide el SERVIDOR con datos duros, NO la
+    # etiqueta del modelo. `document_kind` se alucina con facilidad: medido
+    # sobre facturas reales (2026-08-05) dijo 'contrato' en 2 de 3 — y el
+    # frontend archivaba SOLO si decía 'factura', así que una factura bien
+    # leída se esfumaba sin error ninguno (caso oficina).
+    #
+    # Orden de fiabilidad, de más duro a más blando:
+    #   1. periodo de facturación o importe total  → es una factura, seguro.
+    #   2. 'ficha' = ficha comercial de tarifa; es el ÚNICO tipo que nunca va
+    #      asociado a un suministro concreto, así que su etiqueta sí se respeta.
+    #   3. sin evidencia y SIN CUPS no hay nada que atribuir a ningún punto:
+    #      la factura sería invisible en el listado (mismo agujero que dejó la
+    #      factura fantasma del 03-08) — mejor decirlo que archivar un mudo.
+    # Con CUPS pero sin periodo/importe se archiva: es un documento de ESE
+    # suministro que el usuario ha subido por el panel "Sube tu factura", el
+    # periodo cae al día de subida y se puede corregir o borrar desde la lista.
+    if not ex_start and total is None:
+        if ex.get("document_kind") == "ficha":
+            raise HTTPException(
+                422,
+                detail="Esto es una ficha de tarifa, no una factura. La tarifa "
+                       "sí se ha configurado, pero el documento no se archiva "
+                       "en tus facturas.")
+        if not cups:
+            raise HTTPException(
+                422,
+                detail="No he podido leer ni el CUPS, ni el periodo de "
+                       "facturación, ni el importe total, así que no puedo "
+                       "archivar el documento en tus facturas. Si es una "
+                       "factura, prueba a subir el PDF original (o marca «Es "
+                       "una foto o un escaneo» si la has fotografiado).")
 
     # Duplicados: (1) mismo FICHERO (md5 del PDF, nativo en Postgres) para
     # cualquier factura del hogar; (2) misma factura por CONTENIDO — mismo
@@ -490,16 +576,47 @@ async def set_breakdown_key(invoice_id: int, key: str, value: Any) -> None:
                 (Jsonb({key: value}), invoice_id))
 
 
+def _total_kwh(p1: Optional[float], p2: Optional[float],
+               p3: Optional[float]) -> Optional[float]:
+    """Billed total kWh = sum of the bands. On a 2.0TD bill P1+P2+P3 IS the
+    total consumption, so the two can never legitimately disagree — deriving
+    it here (rather than storing an independently-read number) keeps that
+    invariant true by construction."""
+    vals = [float(v) for v in (p1, p2, p3) if v is not None]
+    return round(sum(vals), 3) if vals else None
+
+
 async def set_band_kwh(invoice_id: int, p1: Optional[float], p2: Optional[float],
                        p3: Optional[float]) -> None:
     """Persist the per-band kWh of an UPLOADED bill (AI amounts extraction) —
-    background fill on upload + lazy backfill from the explain/amounts path."""
+    background fill on upload + lazy backfill from the explain/amounts path.
+
+    Also fills `energy_kwh`, the bill's total consumption: uploaded rows used
+    to leave it at its 0 default, so an imported bill silently answered "no
+    sé" to everything reading that column — AIDA's `invoice_detail` tool, the
+    kWh/day figure in the explain payload, `is_estimated_read`'s round-total
+    heuristic. The list view papered over it with a client-side band sum; the
+    backend consumers had no such fallback.
+    """
     async with db.raw_connection() as con:
         async with con.cursor() as cur:
             await cur.execute(
                 "UPDATE consum.invoices SET energy_p1_kwh=%s, energy_p2_kwh=%s, "
-                "energy_p3_kwh=%s WHERE id=%s AND origin='uploaded'",
-                (p1, p2, p3, invoice_id))
+                "energy_p3_kwh=%s, energy_kwh=COALESCE(%s, energy_kwh) "
+                "WHERE id=%s AND origin='uploaded'",
+                (p1, p2, p3, _total_kwh(p1, p2, p3), invoice_id))
+
+
+async def set_total_kwh(invoice_id: int, kwh: float) -> None:
+    """`energy_kwh` alone, for an UPLOADED bill that states a total with NO
+    P1/P2/P3 split — the band columns stay untouched (writing NULLs over them
+    through set_band_kwh would erase a split someone had already read or
+    hand-corrected)."""
+    async with db.raw_connection() as con:
+        async with con.cursor() as cur:
+            await cur.execute(
+                "UPDATE consum.invoices SET energy_kwh=%s "
+                "WHERE id=%s AND origin='uploaded'", (kwh, invoice_id))
 
 
 async def history_before(customer_id: str, before_start: str,

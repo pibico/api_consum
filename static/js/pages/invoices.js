@@ -769,9 +769,12 @@
   // Archive the uploaded bill itself (origin='uploaded') — the Facturas page
   // KEEPS the document besides configuring the tariff. Fire-and-forget.
   function archiveUpload(file, ex, markdown) {
-    // Archive ONLY confirmed bills — a contract isn't an invoice, and an
-    // unclassified doc must never land in the list (kind gets hallucinated).
-    if (!file || !ex || ex.document_kind !== 'factura') return;
+    // El servidor decide si es factura (evidencia de facturación), NO la
+    // etiqueta `document_kind` del modelo: se alucina — medido sobre facturas
+    // reales, 'contrato' en 2 de 3 — y este gate era SILENCIOSO, así que la
+    // factura se leía bien, configuraba la tarifa y luego se esfumaba sin
+    // ningún aviso ("no answer and no results", 2026-08-05).
+    if (!file) return;
     var fd = new FormData();
     fd.append('file', file);
     if (ex) fd.append('extracted', JSON.stringify(ex));
@@ -780,12 +783,18 @@
     if (slug) fd.append('customer', slug);
     upfetch('/invoices/upload', fd).then(function () {
       loadAll();   // the bill appears in the list right away
+      App.showNotification(__t('inv.archivedTitle', 'Factura archivada'),
+        __t('inv.archivedMsg', 'La hemos guardado en tus facturas.'), 'success');
     }).catch(function (e) {
-      // Duplicado (409): avisa sin romper el flujo de tarifa; el resto de
-      // fallos de archivado siguen siendo best-effort silencioso.
-      if (/ya está subida/i.test(e.message || '')) {
-        App.showNotification(__t('inv.dupTitle', 'Factura repetida'), e.message, 'warning');
-      }
+      // Nunca en silencio: el usuario tiene que saber si su documento acabó
+      // o no en la lista. Duplicado (409) y "no es una factura" (422) son
+      // resultados normales del flujo de tarifa, no errores rotos.
+      var msg = e.message || __t('inv.archiveFail', 'No se ha podido archivar el documento.');
+      App.showNotification(
+        /ya está subida/i.test(msg)
+          ? __t('inv.dupTitle', 'Factura repetida')
+          : __t('inv.notArchivedTitle', 'No archivada'),
+        msg, 'warning');
     });
   }
 
